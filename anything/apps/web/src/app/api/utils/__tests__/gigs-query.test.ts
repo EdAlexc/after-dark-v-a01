@@ -1,0 +1,71 @@
+import { describe, expect, it } from 'vitest';
+import { GIG_LIST_LIMIT, buildGigsListQuery } from '../gigs-query';
+import { GigListQuerySchema } from '../schemas';
+
+const EMPTY = GigListQuerySchema.parse({});
+
+describe('buildGigsListQuery', () => {
+  it('always pins status to PUBLISHED as $1 (draft-leak regression)', () => {
+    const { text, values } = buildGigsListQuery(EMPTY);
+    expect(text).toContain('g.status = $1');
+    expect(values[0]).toBe('PUBLISHED');
+    expect(text).not.toMatch(/DRAFT/);
+  });
+
+  it('numbers placeholders sequentially for every filter combination', () => {
+    const { text, values } = buildGigsListQuery(
+      GigListQuerySchema.parse({
+        neighborhood: 'Bushwick',
+        role: 'DJ',
+        minRate: '50',
+        maxRate: '300',
+        tonightOnly: 'true',
+      })
+    );
+    expect(values).toEqual(['PUBLISHED', '%Bushwick%', '%DJ%', 50, 300]);
+    expect(text).toContain('LIKE LOWER($2)');
+    expect(text).toContain('LIKE LOWER($3)');
+    expect(text).toContain('base_rate >= $4');
+    expect(text).toContain('base_rate <= $5');
+    expect(text).toContain('CURRENT_DATE');
+  });
+
+  it('keeps placeholder numbering dense when only later filters are present', () => {
+    const { text, values } = buildGigsListQuery(GigListQuerySchema.parse({ maxRate: '100' }));
+    expect(text).toContain('base_rate <= $2');
+    expect(values).toEqual(['PUBLISHED', 100]);
+  });
+
+  it('never interpolates user input into SQL text (SQLi regression)', () => {
+    const payloads = [
+      "'; DROP TABLE gigs; --",
+      "%' OR '1'='1",
+      'UNION SELECT totp_secret FROM "user"--',
+      '$1; DELETE FROM gigs',
+    ];
+    for (const payload of payloads) {
+      const { text, values } = buildGigsListQuery(
+        GigListQuerySchema.parse({ neighborhood: payload.slice(0, 80), role: payload.slice(0, 80) })
+      );
+      expect(text).not.toContain(payload);
+      expect(values).toContain(`%${payload.slice(0, 80)}%`);
+      // Structure stays intact: one SELECT, no statement separator.
+      expect(text.trim().startsWith('SELECT')).toBe(true);
+      expect(text).not.toContain(';');
+    }
+  });
+
+  it('applies a bounded constant LIMIT', () => {
+    const { text } = buildGigsListQuery(EMPTY);
+    expect(text).toContain(`LIMIT ${GIG_LIST_LIMIT}`);
+    expect(GIG_LIST_LIMIT).toBeLessThanOrEqual(50);
+  });
+
+  it('omits rate clauses when rates are 0-vs-undefined correctly (0 is a real filter)', () => {
+    const withZero = buildGigsListQuery(GigListQuerySchema.parse({ minRate: '0' }));
+    expect(withZero.text).toContain('base_rate >= $2');
+    expect(withZero.values).toEqual(['PUBLISHED', 0]);
+    const without = buildGigsListQuery(EMPTY);
+    expect(without.text).not.toContain('base_rate');
+  });
+});

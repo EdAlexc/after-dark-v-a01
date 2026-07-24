@@ -4,8 +4,9 @@ import "./global.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-	title: "Anything App",
-	description: "Created with Anything",
+	title: "AfterDark — NYC Nightlife Marketplace",
+	description:
+		"AfterDark connects premium NYC venues with world-class nightlife talent — post gigs, book DJs, mixologists, security, and get paid securely.",
 	icons: {
 		icon: "/favicon.png",
 	},

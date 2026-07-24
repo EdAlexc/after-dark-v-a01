@@ -8,40 +8,47 @@
 
 ## 1. Current status — YOU ARE HERE
 
-- **Date:** 2026-07-24 · **Branch:** `claude/afterdark-pwa-spec-audit-f3b67a` (worktree off `main`)
-- **Project stage:** **Pre-alpha. Spec-vs-code audit complete; no app code changed.**
-- Baseline: create.xyz export in `anything/` (commits `70ae201` → `1d88889`). Working tree clean
-  apart from the three audit docs produced by this session (CLAUDE.md, DEV_TIMELINE.MD,
-  TENANT_GUARDRAIL.md).
-- **What actually works today** (wired to Neon Postgres): email/social auth + sessions,
-  onboarding role selection, talent profile CRUD, venue profile CRUD, venue gig creation
-  (POST `/api/gigs`), unused-but-real gig listing (GET `/api/gigs`), settings
-  (profile/password/hand-rolled 2FA).
-- **What is UI-with-mock-data only:** landing featured gigs, both dashboards, browse (talent &
-  venue), applicants, messages, schedule/availability, live-ops checkout. **Missing entirely:**
-  gig detail page, applications, messaging backend, availability backend, check-in/out,
-  Stripe/payments, admin, notifications, search, map, PWA manifest/service worker, tests,
-  migrations, RBAC/middleware. Full matrix: CLAUDE.md §4.
-- **Environment gaps a new dev must solve first:** no `.env` committed (`DATABASE_URL`
-  required); DB columns/tables referenced by code exist only if created out-of-band — there are
-  **no migrations**; web has **zero tests**; `next build` hides type errors
-  (`ignoreBuildErrors: true`).
-- **Known security holes to fix before any real users:** ADMIN self-escalation via
-  `POST /api/user/role`; no route/RBAC protection; plaintext TOTP secrets + secret sent to
-  `api.qrserver.com`; open redirect on `callbackUrl`; no security headers/rate limiting/input
-  validation. Details: CLAUDE.md §7, procedures: TENANT_GUARDRAIL §5.
+- **Date:** 2026-07-24 · **Branch:** `claude/p0-foundations` (worktree off `main`)
+- **Project stage:** **P0 (Foundations & hardening) landed. Security/privacy baseline in place;
+  next is P1 (gigs live end-to-end).**
+- Baseline: create.xyz export in `anything/` + the three audit docs (merged/PR'd earlier).
+- **P0 delivered this session** (all security findings CLAUDE.md §7 #1–#9 addressed):
+  - **Migrations**: `apps/web/migrations/0001_baseline.sql` (reproduces §6.1) + `0002_audit_logs.sql`;
+    idempotent runner `scripts/migrate.mjs` (`yarn db:migrate`) + demo seed `scripts/seed.ts`
+    (`yarn db:seed`); `.env.example`. **Verified end-to-end against a disposable Neon branch.**
+  - **RBAC + authN gate**: `src/middleware.ts` (session gate on `/dashboard/*` + `/onboarding`)
+    and a DB-backed `AuthGuard` (`api/utils/auth-guard.ts`) enforcing the §6.1 authZ matrix on
+    every write route. **ADMIN self-escalation fixed** — `/api/user/role` rejects ADMIN (schema).
+  - **Input validation**: zod schemas (`api/utils/schemas.ts`) + `parseBody`/`parseQuery` on
+    every route; unknown-key stripping, body-size caps, public gig GET pinned to PUBLISHED.
+  - **2FA hardened**: TOTP secrets encrypted at rest (AES-256-GCM `SecretBox`), **QR generated
+    locally** (no more `api.qrserver.com` leak), secret never re-disclosed once enrolled,
+    verification rate-limited + constant-time.
+  - **Open-redirect fixed**: `sanitizeCallbackUrl` (relative paths only) on signin/signup + middleware.
+  - **Security headers**: CSP/HSTS/X-Content-Type-Options/Referrer-Policy/Permissions-Policy via
+    `security-headers.js` wired into `next.config.js`; `ignoreBuildErrors` removed.
+  - **Audit + logging**: append-only `audit_logs` via `AuditLogger`; structured `Logger` with
+    PII redaction; better-auth `rateLimit` config on credential endpoints.
+  - **CI**: `.github/workflows/ci.yml` (typecheck, vitest, build, `yarn npm audit`, gitleaks).
+  - **Tests**: **219 passing** (unit + route + middleware + headers + migration-core), heavy on
+    edge cases (SQLi payloads, escalation, redirect smuggling, TOTP RFC vectors, GCM tampering,
+    rate-limit window edges). Dead code removed; app metadata renamed to AfterDark.
+- **Still UI-with-mock-data only** (unchanged): landing featured gigs, both dashboards, browse,
+  applicants, messages, schedule, live-ops checkout. **Still missing:** gig detail page,
+  applications, messaging/availability/shifts backends, Stripe, admin, notifications, search,
+  map, PWA. Full matrix: CLAUDE.md §4.
+- **New env var**: `AUTH_SECRET_ENCRYPTION_KEY` is now **required** for 2FA (see `.env.example`;
+  2FA fails closed without it). `DATABASE_URL` still required.
 
 ### Pick-up-here: next five tasks (in order)
-1. P0.1 — Create migration baseline (SQL or drizzle-kit) reproducing CLAUDE.md §6.1 exactly;
-   add seed script; document `.env.example`.
-2. P0.2 — `middleware.ts`: session gate on `/dashboard/*` + role gate map; strip `ADMIN` from
-   `/api/user/role` POST.
-3. P0.3 — zod schemas for every existing POST/PUT body; security headers in `next.config.js`;
-   allowlist `callbackUrl` to relative paths.
-4. P0.4 — CI: typecheck (remove `ignoreBuildErrors`), vitest, oxlint, `yarn npm audit`,
-   gitleaks; wire `test` script in `apps/web`.
-5. P1.1 — Point `dashboard/talent/browse` at real `GET /api/gigs` (filters + pagination),
-   delete `MOCK_GIGS`.
+1. P1.1 — Point `dashboard/talent/browse` (and venue browse) at real `GET /api/gigs` (filters +
+   pagination), delete `MOCK_GIGS`; reuse the validated query params.
+2. P1.2 — `/gigs/[id]` detail page per wireframe p4 (payout hero, about, venue card; map deferred).
+3. P1.3 — Gig lifecycle statuses (extend enum DRAFT→PUBLISHED→FILLED→COMPLETED/CANCELLED via a
+   new migration) + venue dashboard Open Gigs reading real data.
+4. P1.4 — Landing "Featured Tonight" reads real published-tonight gigs (reuse `buildGigsListQuery`).
+5. P0 follow-ups (carry-over, non-blocking): apply CSP nonce (drop `unsafe-inline`); migrate to
+   better-auth twoFactor plugin for recovery codes; add Sentry with PII scrubbing; RLS policies.
 
 ---
 
@@ -52,15 +59,17 @@ shippable behind the previous one. Acceptance for every slice additionally inclu
 guardrail gates: unit+integration tests green, authZ/tenant-isolation tests for new endpoints,
 Lighthouse budgets green, no new ZAP high/medium (TENANT_GUARDRAIL §7 checklist).
 
-### P0 — Foundations & hardening (≈1 wk) — ☐ not started
-- ☐ Migration baseline + seed data + `.env.example`
-- ☐ Auth middleware + RBAC map; fix ADMIN escalation; open-redirect allowlist
-- ☐ zod input validation on all routes; security headers; rate limiting on auth endpoints
-- ☐ Replace hand-rolled 2FA with better-auth twoFactor plugin (encrypted secret, local QR)
-- ☐ Structured logging + `audit_logs` table; error tracking (e.g. Sentry) w/ PII scrubbing
-- ☐ CI pipeline (typecheck strict, vitest, lint, audit, secret scan); remove dead code
+### P0 — Foundations & hardening (≈1 wk) — ✅ **landed 2026-07-24** (219 tests green)
+- ☑ Migration baseline + seed data + `.env.example` (verified on a disposable Neon branch)
+- ☑ Auth middleware + RBAC map; fix ADMIN escalation; open-redirect allowlist
+- ☑ zod input validation on all routes; security headers; rate limiting on auth endpoints
+- ☑ 2FA hardened: encrypted secret at rest (AES-256-GCM) + local QR (no third-party leak).
+  Note: full better-auth twoFactor-plugin migration (recovery codes) deferred to Backlog #17
+- ☑ Structured logging + `audit_logs` table (PII-redacted). Sentry/error-tracking deferred (Backlog)
+- ☑ CI pipeline (typecheck strict, vitest, build, `yarn npm audit`, gitleaks); dead code removed
   (`useUpload.ts`, `api/utils/upload.ts`, `useHandleStreamResponse.ts`, stray
-  `api/vitest.config.ts`); app metadata "Anything App" → "AfterDark"
+  `api/vitest.config.ts`); app metadata "Anything App" → "AfterDark".
+  Note: oxlint not yet wired into CI (config present) — carry into P1.
 
 ### P1 — Gigs end-to-end (≈1 wk) — ☐ not started
 - ☐ Browse consumes real `GET /api/gigs` (neighborhood/role/pay/tonight filters, pagination)
@@ -132,9 +141,9 @@ Items noted during the audit that are **not** required for the alpha gate but mu
    tag invalidation is ever relied on, configure a real tag cache (or deploy to Vercel).
 10. **Uploads pipeline hardening**: image resizing/thumbnailing, EXIF-strip (GPS metadata =
     PII), AV scanning on user uploads incl. PDF tech riders.
-11. **Legacy dead code removal** if not done in P0: `src/utils/useUpload.ts`,
-    `src/app/api/utils/upload.ts`, `src/utils/useHandleStreamResponse.ts`, orphan
-    `src/app/api/vitest.config.ts`, talent create-gig page (not a PRD flow).
+11. **Legacy dead code** — ✅ done in P0 (`useUpload.ts`, `api/utils/upload.ts`,
+    `useHandleStreamResponse.ts`, `api/vitest.config.ts` removed). **Still open:** talent
+    create-gig page (`dashboard/talent/create-gig`) — not a PRD flow; remove or repurpose in P1.
 12. **DashboardSidebar** hardcoded identity ("DJ Marcus Lee"/"Nebula NYC") and badge counts —
     replaced during P2/P3; keep an eye out for other hardcoded demo strings.
 13. **Accessibility deep pass**: neon-on-dark contrast ratios, focus states on custom chips/
@@ -143,6 +152,18 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     capture design; consider a simple `events` table now to avoid losing history.
 15. **Rate-limit store**: P0 rate limiting can be in-memory per-lambda; multi-region scale
     needs a shared store (Upstash Redis or Postgres-based) — revisit at load-test time.
-16. **iframe embedding posture**: cookies are `SameSite=None` and there's no `X-Frame-Options`
-    because create.xyz embeds the app in its builder; before GA, decide whether to keep the
-    builder pathway or lock frame-ancestors down to first-party only.
+16. **iframe embedding posture**: cookies are `SameSite=None`; P0 set CSP `frame-ancestors` to
+    `'self'` + configured create.xyz origins (no `X-Frame-Options`, superseded by CSP). Before
+    GA, decide whether to keep the builder pathway or lock `frame-ancestors` to `'self'` only.
+17. **2FA → better-auth twoFactor plugin**: P0 hardened the hand-rolled TOTP (encrypted secret,
+    local QR, rate limits) but kept it hand-rolled. Migrate to the plugin for **recovery/backup
+    codes** and trusted-device handling; re-encrypt legacy plaintext secrets on next enroll
+    (the disable path already tolerates them).
+18. **CSP nonce**: P0 CSP allows `'unsafe-inline'` for scripts (Next.js inline bootstrap).
+    Move to nonce-based CSP to drop `unsafe-inline` (A05 hardening).
+19. **Error tracking**: wire Sentry (or similar) with the `redactPii` scrubber so exceptions are
+    captured without PII; pair with the structured `Logger` added in P0.
+20. **oxlint in CI**: repo has `.oxlintrc.json` but CI doesn't run it yet; add a lint job.
+21. **Shared rate-limit store** (was #15's concern): the in-memory `SlidingWindowRateLimiter` is
+    per-instance. For multi-region/serverless fan-out, back `getRateLimiter` with Upstash Redis
+    or a Postgres token-bucket at load-test time.

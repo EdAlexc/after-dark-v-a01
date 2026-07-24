@@ -1,9 +1,8 @@
+const { buildSecurityHeaders } = require('./security-headers');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   devIndicators: false,
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   env: {
     NEXT_PUBLIC_CREATE_BASE_URL: process.env.NEXT_PUBLIC_CREATE_BASE_URL,
     NEXT_PUBLIC_CREATE_HOST: process.env.NEXT_PUBLIC_CREATE_HOST,
@@ -15,6 +14,14 @@ const nextConfig = {
     '@better-auth/kysely-adapter',
     'kysely',
   ],
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: buildSecurityHeaders({ isDev: process.env.NODE_ENV !== 'production' }),
+      },
+    ];
+  },
   rewrites() {
     return [
       {

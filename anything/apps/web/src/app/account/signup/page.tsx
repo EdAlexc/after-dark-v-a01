@@ -3,6 +3,7 @@
 import { useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, useState } from 'react';
 import { authClient } from '@/lib/auth-client';
+import { sanitizeCallbackUrl } from '@/lib/safe-redirect';
 import { Music, Wine, Zap, Briefcase, User, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { SocialSignInButtons } from '@/components/SocialSignInButtons';
@@ -333,7 +334,8 @@ function SignUpForm({
 
 function SignUpFlow() {
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/onboarding';
+  // Open-redirect fix: only same-origin paths survive (CLAUDE.md §7.4).
+  const callbackUrl = sanitizeCallbackUrl(searchParams.get('callbackUrl'), '/onboarding');
 
   const [step, setStep] = useState<Step>('account-type');
   const [accountType, setAccountType] = useState<AccountType>('professional');

@@ -1,99 +1,50 @@
 import sql from '@/app/api/utils/sql';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { authGuard } from '@/app/api/utils/auth-guard';
+import { auditLogger } from '@/app/api/utils/audit';
+import { parseBody, parseQuery } from '@/app/api/utils/validation';
+import { GigCreateSchema, GigListQuerySchema } from '@/app/api/utils/schemas';
+import { buildGigsListQuery } from '@/app/api/utils/gigs-query';
+import { ApiError, withRoute } from '@/app/api/utils/route-kit';
+import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const neighborhood = searchParams.get('neighborhood');
-  const role = searchParams.get('role');
-  const minRate = searchParams.get('minRate');
-  const maxRate = searchParams.get('maxRate');
-  const status = searchParams.get('status') ?? 'PUBLISHED';
-  const tonightOnly = searchParams.get('tonightOnly') === 'true';
+const createLimiter = getRateLimiter('gigs-create', { windowMs: 60 * 60 * 1000, max: 30 });
 
-  let query = `
-    SELECT g.*, vp.venue_name, vp.address, vp.rating as venue_rating
-    FROM gigs g
-    JOIN venue_profiles vp ON g.venue_id = vp.id
-    WHERE g.status = $1
+/** Public listing. Only PUBLISHED gigs are ever served (drafts stay private). */
+export const GET = withRoute('gigs.list', async (request) => {
+  const filters = parseQuery(request.url, GigListQuerySchema);
+  const { text, values } = buildGigsListQuery(filters);
+  const gigs = await sql(text, values as (string | number)[]);
+  return Response.json({ gigs });
+});
+
+/** Creates a gig for the calling venue (venue id derived from session, §6.2). */
+export const POST = withRoute('gigs.create', async (request) => {
+  const user = await authGuard.requireRole('VENUE');
+  enforceRateLimit(createLimiter, clientKey(request, user.id));
+
+  const gig = await parseBody(request, GigCreateSchema);
+
+  const venueRows = await sql`
+    SELECT id FROM venue_profiles WHERE user_id = ${user.id} LIMIT 1
   `;
-  const values: (string | number)[] = [status];
-  let idx = 2;
-
-  if (tonightOnly) {
-    query += ` AND DATE(g.start_time) = CURRENT_DATE`;
+  if (venueRows.length === 0) {
+    throw ApiError.badRequest('No venue profile found');
   }
-  if (neighborhood) {
-    query += ` AND LOWER(vp.address) LIKE LOWER($${idx})`;
-    values.push(`%${neighborhood}%`);
-    idx++;
-  }
-  if (role) {
-    query += ` AND LOWER(g.role_needed) LIKE LOWER($${idx})`;
-    values.push(`%${role}%`);
-    idx++;
-  }
-  if (minRate) {
-    query += ` AND g.base_rate >= $${idx}`;
-    values.push(Number(minRate));
-    idx++;
-  }
-  if (maxRate) {
-    query += ` AND g.base_rate <= $${idx}`;
-    values.push(Number(maxRate));
-    idx++;
-  }
+  const venueId = venueRows[0].id;
 
-  query += ` ORDER BY g.created_at DESC LIMIT 50`;
+  const result = await sql`
+    INSERT INTO gigs (venue_id, title, role_needed, description, start_time, end_time, base_rate, tips_included, status)
+    VALUES (${venueId}, ${gig.title}, ${gig.role_needed}, ${gig.description}, ${gig.start_time}, ${gig.end_time}, ${gig.base_rate}, ${gig.tips_included}, ${gig.status})
+    RETURNING *
+  `;
 
-  try {
-    const gigs = await sql(query, values);
-    return Response.json({ gigs });
-  } catch (error) {
-    console.error('Error fetching gigs:', error);
-    return Response.json({ error: 'Failed to fetch gigs' }, { status: 500 });
-  }
-}
+  await auditLogger.record({
+    actorId: user.id,
+    action: 'gig.create',
+    entityType: 'gig',
+    entityId: String(result[0]?.id ?? ''),
+    metadata: { status: gig.status, venueId: String(venueId) },
+  });
 
-export async function POST(request: Request) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  try {
-    const body = await request.json();
-    const {
-      title,
-      role_needed,
-      description,
-      start_time,
-      end_time,
-      base_rate,
-      tips_included = false,
-      status = 'DRAFT',
-    } = body;
-
-    // Get the venue profile for this user
-    const venueRows = await sql`
-      SELECT id FROM venue_profiles WHERE user_id = ${session.user.id} LIMIT 1
-    `;
-
-    if (!venueRows.length) {
-      return Response.json({ error: 'No venue profile found' }, { status: 400 });
-    }
-
-    const venue_id = venueRows[0].id;
-
-    const result = await sql`
-      INSERT INTO gigs (venue_id, title, role_needed, description, start_time, end_time, base_rate, tips_included, status)
-      VALUES (${venue_id}, ${title}, ${role_needed}, ${description}, ${start_time}, ${end_time}, ${base_rate}, ${tips_included}, ${status})
-      RETURNING *
-    `;
-
-    return Response.json({ gig: result[0] }, { status: 201 });
-  } catch (error) {
-    console.error('Error creating gig:', error);
-    return Response.json({ error: 'Failed to create gig' }, { status: 500 });
-  }
-}
+  return Response.json({ gig: result[0] }, { status: 201 });
+});
