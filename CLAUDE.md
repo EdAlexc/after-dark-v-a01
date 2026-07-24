@@ -220,6 +220,15 @@ Add, via a migration tool (recommend **drizzle-kit** or plain SQL migrations che
 - Tenant = venue (venue org owns gigs, applicants, ops data); talent are cross-tenant actors;
   every query MUST be scoped by the session user's profile id server-side — never trust client
   ids (current `/api/gigs` POST correctly derives venue from session; keep that pattern).
+- **Party People** are a third actor type (landing "Roles We Power", wireframe p5): consumers,
+  not marketplace principals. Their **sole** capability is **read-only discovery** — search and
+  browse public events/parties and browse venues to book for private parties. They never post
+  gigs, apply, negotiate rates, or touch the payout/live-ops surfaces. Model as `role = PARTY`
+  (extend the `TALENT|VENUE|ADMIN` enum) with a minimal `party_profiles` row (or just the
+  `user` record) and a public-content-only authZ scope — deny-by-default on everything in the
+  gig/application/message/shift/payout tables; a private-party inquiry to a venue routes through
+  the same conversations model (P3) but flagged as a consumer inquiry, not a gig application.
+  Add PARTY to the TENANT_GUARDRAIL §6.1 authZ matrix (public reads ✅, all principal writes ❌).
 - Recommended defense-in-depth: Postgres **RLS** policies per table keyed on
   `current_setting('app.user_id')`, plus application-level checks. Verification procedures in
   TENANT_GUARDRAIL §6.
