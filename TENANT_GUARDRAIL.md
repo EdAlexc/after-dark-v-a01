@@ -158,22 +158,28 @@ Neon, Stripe, AWS/Vercel, error-tracking = **processors**.
 ## 6. Multi-tenant & platform guardrails
 
 ### 6.1 AuthZ matrix (enforce + test; deny-by-default)
-| Endpoint / surface | Anon | TALENT | VENUE | ADMIN |
-|---|---|---|---|---|
-| `GET /api/gigs` (published only) | ✅ | ✅ | ✅ | ✅ |
-| `POST /api/gigs`, gig edit/close | ❌ | ❌ | ✅ own venue | ✅ |
-| Apply / withdraw application | ❌ | ✅ self | ❌ | ✅ |
-| Review/shortlist/hire applicants | ❌ | ❌ | ✅ own gigs | ✅ |
-| Conversations/messages | ❌ | ✅ participant | ✅ participant | ✅ (moderation, audited) |
-| Availability CRUD | ❌ | ✅ self | ❌ | ✅ |
-| Check-in/out | ❌ | ✅ own shift | ✅ own venue's shifts | ✅ |
-| Payout ledger | ❌ | ✅ own rows | ✅ own venue rows | ✅ |
-| `/api/user/role` POST | ❌ | TALENT/VENUE only — **never ADMIN** | same | n/a |
-| Admin dashboard/APIs, reports, audit logs | ❌ | ❌ | ❌ | ✅ |
-| Settings/profile/2FA | ❌ | ✅ self | ✅ self | ✅ self |
+PARTY = "Party People" consumer persona (CLAUDE.md §6.3): read-only discovery + private-party
+inquiries only; never a marketplace principal.
+
+| Endpoint / surface | Anon | TALENT | VENUE | PARTY | ADMIN |
+|---|---|---|---|---|---|
+| `GET /api/gigs` / events / venue browse (public) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Global search (events/parties/venues) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `POST /api/gigs`, gig edit/close | ❌ | ❌ | ✅ own venue | ❌ | ✅ |
+| Apply / withdraw application | ❌ | ✅ self | ❌ | ❌ | ✅ |
+| Review/shortlist/hire applicants | ❌ | ❌ | ✅ own gigs | ❌ | ✅ |
+| Conversations/messages | ❌ | ✅ participant | ✅ participant | ✅ own private-party inquiries | ✅ (moderation, audited) |
+| Availability CRUD | ❌ | ✅ self | ❌ | ❌ | ✅ |
+| Check-in/out | ❌ | ✅ own shift | ✅ own venue's shifts | ❌ | ✅ |
+| Payout ledger | ❌ | ✅ own rows | ✅ own venue rows | ❌ | ✅ |
+| `/api/user/role` POST | ❌ | TALENT/VENUE/PARTY only — **never ADMIN** | same | same | n/a |
+| Admin dashboard/APIs, reports, audit logs | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Settings/profile/2FA | ❌ | ✅ self | ✅ self | ✅ self | ✅ self |
 
 Test: generated integration suite iterates `role × endpoint × (own id, other tenant's id)`
 asserting 200/401/403 per this table — the single most important test artifact in the repo.
+PARTY rows matter most for negative coverage: assert 403 on every gig/application/shift/payout
+write.
 
 ### 6.2 Tenant isolation
 - All queries scoped server-side from session (pattern already used in `/api/gigs` POST — keep).
