@@ -1,0 +1,6 @@
+.DS_Store
+
+# Claude Code: machine-local settings and scratch worktrees. The shared bits of
+# .claude/ (launch.json, run-web.sh) are committed.
+.claude/settings.local.json
+.claude/worktrees/
