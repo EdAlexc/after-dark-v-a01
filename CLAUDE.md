@@ -84,20 +84,33 @@ To bump Yarn later, run `yarn set version <version> --yarn-path` from `anything/
 new release. Plain `yarn set version` is a **no-op** here — Yarn 4 defers to Corepack and only
 rewrites `packageManager` without downloading a binary.
 
-**Diagnosing a 404 on a deployment:** if you get the *white Vercel platform* 404 page, the
-request never reached Next.js (bad Root Directory, failed/absent build, or wrong repo connected).
-A genuine app-level miss renders the dark-themed `src/app/not-found.tsx` instead. That
-distinction tells you which side of the boundary to debug.
+**Diagnosing a 404 on a deployment:** if you get the *white Vercel platform* 404 page
+(`404: NOT_FOUND` + a `Code`/`ID` box), the request never reached Next.js. A genuine app-level
+miss renders the dark AfterDark 404 from `src/app/not-found.tsx` instead. That distinction tells
+you which side of the boundary to debug.
+
+> **A "successful" deploy that 404s on every path is the Root Directory symptom.** With Root
+> Directory left at the repo root, Vercel finds no `package.json`, detects no framework, and
+> falls back to serving the repo as static files — the build *succeeds*, uploads nothing
+> runnable, and every path (including `/`) returns the platform 404. Confirm it in the
+> deployment's **Build Logs**: a correct build prints the Next.js route table (`Route (app)`,
+> `┌ ○ /`, ~33 routes). If the log is a few lines with no route table, the Root Directory is
+> wrong. **This cannot be fixed from the repo** — `vercel.json` has no `rootDirectory`
+> property (see the property table in Vercel's Project Configuration docs); it is Project
+> Settings → Build & Deployment → Root Directory, or `vercel link --repo` from the CLI.
 
 **Env vars to set in Vercel** (Production + Preview): `DATABASE_URL` (Neon **pooled** string),
 `AUTH_SECRET_ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`. The build itself passes
 without them (every page is `'use client'`, so nothing touches the DB at build time), but the
 running app will not.
 
-> ⚠ **Known gap — auth on preview deployments.** `trustedOrigins` in `src/lib/auth.ts` is built
-> entirely from env vars, and every preview gets a unique URL. A preview whose origin isn't in
-> that list will reject auth requests as "Invalid origin". Fix tracked in DEV_TIMELINE →
-> Technical Backlog #22 (wire Vercel's `VERCEL_URL`/`VERCEL_BRANCH_URL` into `trustedOrigins`).
+**Auth on preview deployments** works without per-preview config: `src/lib/deployment-origins.ts`
+reads Vercel's `VERCEL_URL`, `VERCEL_BRANCH_URL` and `VERCEL_PROJECT_PRODUCTION_URL` at runtime
+and `auth.ts` appends them to `trustedOrigins`, so each preview trusts its own generated
+hostname instead of failing better-auth's CSRF check with "Invalid origin". This relies on
+Vercel's **Automatically expose System Environment Variables** setting (on by default) — if
+sign-in on a preview starts returning "Invalid origin", check that first. There is intentionally
+no `*.vercel.app` wildcard, which would trust every app on the platform.
 
 Note the mobile workspace (`anything/apps/mobile`) is installed on every web deploy because it
 shares the workspace root — see Technical Backlog #23 to scope installs to `web`.

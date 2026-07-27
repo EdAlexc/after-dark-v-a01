@@ -22,6 +22,7 @@ import { createAuthMiddleware } from 'better-auth/api';
 import { verifyPassword } from 'better-auth/crypto';
 import { bearer } from 'better-auth/plugins';
 import ws from 'ws';
+import { vercelOrigins } from './deployment-origins';
 
 neonConfig.webSocketConstructor = ws;
 
@@ -33,6 +34,10 @@ const pool = new Pool({
 // served under so better-auth's CSRF check doesn't reject legitimate requests
 // as "Invalid origin". The request's own origin + known sandbox / published
 // URLs + the mobile iframe proxy URL are all listed here.
+//
+// Vercel's per-deployment hostnames are appended at runtime: preview URLs are
+// generated per deployment, so they cannot be pre-set in BETTER_AUTH_URL and
+// every preview would otherwise reject sign-in. See ./deployment-origins.
 const trustedOrigins = [
   process.env.BETTER_AUTH_URL,
   process.env.EXPO_PUBLIC_PROXY_BASE_URL,
@@ -40,6 +45,7 @@ const trustedOrigins = [
   process.env.NEXT_PUBLIC_CREATE_HOST
     ? `https://${process.env.NEXT_PUBLIC_CREATE_HOST}`
     : null,
+  ...vercelOrigins(),
 ].filter((v): v is string => Boolean(v));
 
 // Social providers self-activate when the platform has injected their OAuth
