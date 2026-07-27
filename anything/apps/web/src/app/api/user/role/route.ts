@@ -1,89 +1,79 @@
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
 import sql from '@/app/api/utils/sql';
+import { authGuard } from '@/app/api/utils/auth-guard';
+import { auditLogger } from '@/app/api/utils/audit';
+import { parseBody } from '@/app/api/utils/validation';
+import { RoleSelectionSchema } from '@/app/api/utils/schemas';
+import { withRoute } from '@/app/api/utils/route-kit';
+import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 
-export async function POST(request: Request) {
-  try {
-    const session = await auth.api.getSession({ headers: await headers() });
-    if (!session?.user?.id) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+const roleLimiter = getRateLimiter('user-role', { windowMs: 60 * 60 * 1000, max: 10 });
+
+/**
+ * Sets the caller's marketplace role. Self-service roles only —
+ * RoleSelectionSchema rejects ADMIN (privilege-escalation fix, CLAUDE.md §7.1);
+ * admin is granted out-of-band directly in the database.
+ */
+export const POST = withRoute('user.role.set', async (request) => {
+  const user = await authGuard.requireSession();
+  enforceRateLimit(roleLimiter, clientKey(request, user.id));
+
+  const { role, stageName, venueName, neighborhood } = await parseBody(
+    request,
+    RoleSelectionSchema
+  );
+
+  await sql`
+    UPDATE "user"
+    SET role = ${role}, "updatedAt" = NOW()
+    WHERE id = ${user.id}
+  `;
+
+  if (role === 'TALENT') {
+    const existing = await sql`SELECT id FROM talent_profiles WHERE user_id = ${user.id} LIMIT 1`;
+    if (existing.length > 0) {
+      await sql`
+        UPDATE talent_profiles
+        SET stage_name = ${stageName ?? ''}, neighborhood = ${neighborhood ?? ''}, updated_at = NOW()
+        WHERE user_id = ${user.id}
+      `;
+    } else {
+      await sql`
+        INSERT INTO talent_profiles (user_id, stage_name, neighborhood, profile_completion_pct)
+        VALUES (${user.id}, ${stageName ?? ''}, ${neighborhood ?? ''}, ${stageName ? 20 : 10})
+      `;
     }
-
-    const userId = session.user.id;
-    const body = (await request.json()) as {
-      role?: string;
-      subRole?: string;
-      stageName?: string;
-      venueName?: string;
-      neighborhood?: string;
-    };
-
-    const { role, subRole: _subRole, stageName, venueName, neighborhood } = body;
-
-    if (!role || !['TALENT', 'VENUE', 'ADMIN'].includes(role)) {
-      return Response.json({ error: 'Invalid role' }, { status: 400 });
+  } else if (role === 'VENUE') {
+    const existing = await sql`SELECT id FROM venue_profiles WHERE user_id = ${user.id} LIMIT 1`;
+    if (existing.length > 0) {
+      await sql`
+        UPDATE venue_profiles
+        SET venue_name = ${venueName ?? ''}, updated_at = NOW()
+        WHERE user_id = ${user.id}
+      `;
+    } else {
+      await sql`
+        INSERT INTO venue_profiles (user_id, venue_name, description)
+        VALUES (${user.id}, ${venueName ?? ''}, ${''})
+      `;
     }
-
-    // Update the role on the user record
-    await sql`
-      UPDATE "user"
-      SET role = ${role}, "updatedAt" = NOW()
-      WHERE id = ${userId}
-    `;
-
-    // Create the role-specific profile
-    if (role === 'TALENT') {
-      // Check if profile already exists
-      const existing = await sql`SELECT id FROM talent_profiles WHERE user_id = ${userId} LIMIT 1`;
-      if (existing.length > 0) {
-        await sql`
-          UPDATE talent_profiles
-          SET stage_name = ${stageName ?? ''}, neighborhood = ${neighborhood ?? ''}, updated_at = NOW()
-          WHERE user_id = ${userId}
-        `;
-      } else {
-        await sql`
-          INSERT INTO talent_profiles (user_id, stage_name, neighborhood, profile_completion_pct)
-          VALUES (${userId}, ${stageName ?? ''}, ${neighborhood ?? ''}, ${stageName ? 20 : 10})
-        `;
-      }
-    } else if (role === 'VENUE') {
-      const existing = await sql`SELECT id FROM venue_profiles WHERE user_id = ${userId} LIMIT 1`;
-      if (existing.length > 0) {
-        await sql`
-          UPDATE venue_profiles
-          SET venue_name = ${venueName ?? ''}, updated_at = NOW()
-          WHERE user_id = ${userId}
-        `;
-      } else {
-        await sql`
-          INSERT INTO venue_profiles (user_id, venue_name, description)
-          VALUES (${userId}, ${venueName ?? ''}, ${''})
-        `;
-      }
-    }
-
-    return Response.json({ success: true, role });
-  } catch (err) {
-    console.error('POST /api/user/role error:', err);
-    return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
-}
+  // PARTY (consumer persona) carries no marketplace profile — role only.
 
-export async function GET() {
-  try {
-    const session = await auth.api.getSession({ headers: await headers() });
-    if (!session?.user?.id) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  await auditLogger.record({
+    actorId: user.id,
+    action: 'role.set',
+    entityType: 'user',
+    entityId: user.id,
+    metadata: { role },
+  });
 
-    const rows = await sql`
-      SELECT id, name, email, role FROM "user" WHERE id = ${session.user.id} LIMIT 1
-    `;
+  return Response.json({ success: true, role });
+});
 
-    return Response.json({ user: rows[0] ?? null });
-  } catch (err) {
-    console.error('GET /api/user/role error:', err);
-    return Response.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
+export const GET = withRoute('user.role.get', async () => {
+  const user = await authGuard.requireSession();
+  const rows = await sql`
+    SELECT id, name, email, role FROM "user" WHERE id = ${user.id} LIMIT 1
+  `;
+  return Response.json({ user: rows[0] ?? null });
+});

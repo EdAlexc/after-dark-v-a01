@@ -1,44 +1,44 @@
-import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
+import { auth } from '@/lib/auth';
+import { authGuard } from '@/app/api/utils/auth-guard';
+import { auditLogger } from '@/app/api/utils/audit';
+import { parseBody } from '@/app/api/utils/validation';
+import { ChangePasswordSchema } from '@/app/api/utils/schemas';
+import { ApiError, withRoute } from '@/app/api/utils/route-kit';
+import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 
-export async function POST(request: Request) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+/** Credential change is brute-forceable — keep this tight (A07). */
+const passwordLimiter = getRateLimiter('change-password', {
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+});
 
+export const POST = withRoute('settings.change-password', async (request) => {
+  const user = await authGuard.requireSession();
+  enforceRateLimit(passwordLimiter, clientKey(request, user.id));
+
+  const { currentPassword, newPassword } = await parseBody(request, ChangePasswordSchema);
+
+  let result: unknown;
   try {
-    const body = await request.json();
-    const { currentPassword, newPassword } = body;
-
-    if (!currentPassword || !newPassword) {
-      return Response.json({ error: 'Current and new password are required' }, { status: 400 });
-    }
-
-    if (newPassword.length < 8) {
-      return Response.json(
-        { error: 'New password must be at least 8 characters' },
-        { status: 400 }
-      );
-    }
-
-    // Use better-auth's changePassword endpoint via internal call
-    const result = await auth.api.changePassword({
+    result = await auth.api.changePassword({
       body: { currentPassword, newPassword, revokeOtherSessions: false },
       headers: await headers(),
     });
-
-    if (!result) {
-      return Response.json(
-        { error: 'Failed to change password — check your current password' },
-        { status: 400 }
-      );
-    }
-
-    return Response.json({ success: true });
-  } catch (error) {
-    console.error('Error changing password:', error);
-    return Response.json(
-      { error: 'Current password is incorrect or another error occurred' },
-      { status: 400 }
-    );
+  } catch {
+    // better-auth throws on wrong current password — keep the message generic.
+    throw ApiError.badRequest('Current password is incorrect or another error occurred');
   }
-}
+  if (!result) {
+    throw ApiError.badRequest('Failed to change password — check your current password');
+  }
+
+  await auditLogger.record({
+    actorId: user.id,
+    action: 'password.change',
+    entityType: 'user',
+    entityId: user.id,
+  });
+
+  return Response.json({ success: true });
+});

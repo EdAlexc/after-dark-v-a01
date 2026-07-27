@@ -1,119 +1,86 @@
 import sql from '@/app/api/utils/sql';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { authGuard } from '@/app/api/utils/auth-guard';
+import { auditLogger } from '@/app/api/utils/audit';
+import { parseBody } from '@/app/api/utils/validation';
+import { TalentProfileUpdateSchema } from '@/app/api/utils/schemas';
+import { withRoute } from '@/app/api/utils/route-kit';
+import { buildUpdateByKey, jsonify } from '@/app/api/utils/sql-builder';
+import { computeTalentProfileCompletion } from '@/app/api/utils/profile-completion';
 
-export async function GET() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+/** Media-carrying route: base64 data URLs until object storage lands (P3). */
+const MAX_PROFILE_BODY_BYTES = 12_000_000;
 
+export const GET = withRoute('talent.profile.get', async () => {
+  const user = await authGuard.requireSession();
   const rows = await sql`
-    SELECT * FROM talent_profiles WHERE user_id = ${session.user.id} LIMIT 1
+    SELECT * FROM talent_profiles WHERE user_id = ${user.id} LIMIT 1
+  `;
+  return Response.json({ profile: rows[0] ?? null });
+});
+
+export const PUT = withRoute('talent.profile.update', async (request) => {
+  const user = await authGuard.requireRole('TALENT');
+  const body = await parseBody(request, TalentProfileUpdateSchema, {
+    maxBytes: MAX_PROFILE_BODY_BYTES,
+  });
+
+  const profile_completion_pct = computeTalentProfileCompletion(body);
+
+  const existing = await sql`
+    SELECT id FROM talent_profiles WHERE user_id = ${user.id} LIMIT 1
   `;
 
-  if (!rows.length) {
-    // Return empty profile so UI can upsert
-    return Response.json({ profile: null });
-  }
-
-  return Response.json({ profile: rows[0] });
-}
-
-export async function PUT(request: Request) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
-
-  try {
-    const body = await request.json();
-    const {
-      stage_name,
-      pronouns,
-      neighborhood,
-      bio,
-      primary_role,
-      genres_vibes,
-      hourly_rate_min,
-      hourly_rate_max,
-      social_links,
-      avatar_url,
-      portfolio_images,
-    } = body;
-
-    // Calculate completion pct
-    let filled = 0;
-    const total = 9;
-    if (stage_name) filled++;
-    if (pronouns) filled++;
-    if (neighborhood) filled++;
-    if (bio) filled++;
-    if (primary_role) filled++;
-    if (genres_vibes?.length) filled++;
-    if (hourly_rate_min || hourly_rate_max) filled++;
-    if (social_links && Object.values(social_links).some(Boolean)) filled++;
-    if (avatar_url) filled++;
-    const profile_completion_pct = Math.round((filled / total) * 100);
-
-    const existing =
-      await sql`SELECT id FROM talent_profiles WHERE user_id = ${session.user.id} LIMIT 1`;
-
-    let profile;
-    if (existing.length) {
-      const setClauses: string[] = [];
-      const vals: unknown[] = [];
-      let idx = 1;
-
-      const fields: Record<string, unknown> = {
-        stage_name,
-        pronouns,
-        neighborhood,
-        bio,
-        primary_role,
-        genres_vibes: genres_vibes ? JSON.stringify(genres_vibes) : undefined,
-        hourly_rate_min,
-        hourly_rate_max,
-        social_links: social_links ? JSON.stringify(social_links) : undefined,
-        avatar_url,
-        portfolio_images: portfolio_images ? JSON.stringify(portfolio_images) : undefined,
+  let profile;
+  if (existing.length > 0) {
+    const statement = buildUpdateByKey({
+      table: 'talent_profiles',
+      keyColumn: 'user_id',
+      keyValue: user.id,
+      fields: {
+        stage_name: body.stage_name,
+        pronouns: body.pronouns,
+        neighborhood: body.neighborhood,
+        bio: body.bio,
+        primary_role: body.primary_role,
+        genres_vibes: jsonify(body.genres_vibes),
+        hourly_rate_min: body.hourly_rate_min,
+        hourly_rate_max: body.hourly_rate_max,
+        social_links: jsonify(body.social_links),
+        avatar_url: body.avatar_url,
+        portfolio_images: jsonify(body.portfolio_images),
         profile_completion_pct,
         updated_at: new Date().toISOString(),
-      };
-
-      for (const [key, val] of Object.entries(fields)) {
-        if (val !== undefined) {
-          setClauses.push(`"${key}" = $${idx}`);
-          vals.push(val);
-          idx++;
-        }
-      }
-
-      vals.push(session.user.id);
-      const result = await sql(
-        `UPDATE talent_profiles SET ${setClauses.join(', ')} WHERE user_id = $${idx} RETURNING *`,
-        vals
-      );
-      profile = result[0];
-    } else {
-      const result = await sql`
-        INSERT INTO talent_profiles (
-          user_id, stage_name, pronouns, neighborhood, bio,
-          primary_role, genres_vibes, hourly_rate_min, hourly_rate_max,
-          social_links, avatar_url, portfolio_images, profile_completion_pct
-        ) VALUES (
-          ${session.user.id}, ${stage_name ?? null}, ${pronouns ?? null}, ${neighborhood ?? null},
-          ${bio ?? null}, ${primary_role ?? null},
-          ${genres_vibes ? JSON.stringify(genres_vibes) : '[]'},
-          ${hourly_rate_min ?? null}, ${hourly_rate_max ?? null},
-          ${social_links ? JSON.stringify(social_links) : '{}'},
-          ${avatar_url ?? null},
-          ${portfolio_images ? JSON.stringify(portfolio_images) : '[]'},
-          ${profile_completion_pct}
-        ) RETURNING *
-      `;
-      profile = result[0];
-    }
-
-    return Response.json({ profile });
-  } catch (error) {
-    console.error('Error updating talent profile:', error);
-    return Response.json({ error: 'Failed to update profile' }, { status: 500 });
+      },
+    });
+    const result = await sql(statement!.text, statement!.values);
+    profile = result[0];
+  } else {
+    const result = await sql`
+      INSERT INTO talent_profiles (
+        user_id, stage_name, pronouns, neighborhood, bio,
+        primary_role, genres_vibes, hourly_rate_min, hourly_rate_max,
+        social_links, avatar_url, portfolio_images, profile_completion_pct
+      ) VALUES (
+        ${user.id}, ${body.stage_name ?? null}, ${body.pronouns ?? null}, ${body.neighborhood ?? null},
+        ${body.bio ?? null}, ${body.primary_role ?? null},
+        ${jsonify(body.genres_vibes) ?? '[]'},
+        ${body.hourly_rate_min ?? null}, ${body.hourly_rate_max ?? null},
+        ${jsonify(body.social_links) ?? '{}'},
+        ${body.avatar_url ?? null},
+        ${jsonify(body.portfolio_images) ?? '[]'},
+        ${profile_completion_pct}
+      ) RETURNING *
+    `;
+    profile = result[0];
   }
-}
+
+  await auditLogger.record({
+    actorId: user.id,
+    action: 'profile.talent.update',
+    entityType: 'talent_profile',
+    entityId: String(profile?.id ?? ''),
+    metadata: { changed: Object.keys(body) },
+  });
+
+  return Response.json({ profile });
+});

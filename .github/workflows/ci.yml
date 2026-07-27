@@ -1,0 +1,67 @@
+# AfterDark CI (DEV_TIMELINE P0.4 / TENANT_GUARDRAIL §7 gates)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web — typecheck, tests, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: anything
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable corepack (Yarn 4)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Typecheck (strict — no ignoreBuildErrors)
+        run: yarn workspace web run typecheck
+
+      - name: Unit & route tests (vitest)
+        run: yarn workspace web run test
+
+      - name: Production build
+        run: yarn workspace web run build
+
+  security:
+    name: Security — dependency audit & secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks scans history
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable corepack (Yarn 4)
+        run: corepack enable
+
+      - name: Install dependencies
+        working-directory: anything
+        run: yarn install --immutable
+
+      - name: Dependency audit (fail on high+)
+        working-directory: anything
+        run: yarn npm audit --severity high
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

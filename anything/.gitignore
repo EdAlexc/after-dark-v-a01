@@ -55,3 +55,6 @@ apps/mobile/caches/*
 playwright-report
 test-results
 
+
+# vitest cache
+.vitest

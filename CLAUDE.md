@@ -32,19 +32,30 @@ cd anything                 # Yarn 4.12 workspaces (node-modules linker)
 yarn install
 cd apps/web
 yarn dev                    # Next.js dev server on port 4000
-yarn build                  # production build (currently with typescript.ignoreBuildErrors: true)
+yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
+yarn test                   # vitest run (219 tests as of P0)
+yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
+yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
 ```
 
-- **Required env**: `DATABASE_URL` (Neon Postgres). Optional: `BETTER_AUTH_URL`,
+- **Required env**: `DATABASE_URL` (Neon Postgres) and `AUTH_SECRET_ENCRYPTION_KEY` (encrypts
+  2FA secrets; `openssl rand -base64 32`). Optional: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
   `GOOGLE_CLIENT_ID/SECRET`, `APPLE_CLIENT_ID/SECRET/APP_BUNDLE_IDENTIFIER`,
-  `EXPO_PUBLIC_PROXY_BASE_URL`, `NEXT_PUBLIC_CREATE_*`. No `.env` is committed.
-- **No migrations exist.** The DB schema is implicit in raw SQL (see §6). Creating a migration
-  baseline is the first engineering task (see DEV_TIMELINE P0).
-- Web tests: Vitest + Testing Library are configured (`vitest.config.ts`, `test/setupTests.ts`)
-  but **zero test files exist**. No test script is wired into `apps/web/package.json` yet.
+  `EXPO_PUBLIC_PROXY_BASE_URL`, `NEXT_PUBLIC_CREATE_*`. See `apps/web/.env.example`; no real
+  `.env` is committed.
+- **Migrations live in `apps/web/migrations/`** (P0). `0001_baseline.sql` reproduces §6.1;
+  `0002_audit_logs.sql` adds the audit trail. The runner records applied files in `_migrations`.
+- Web tests: Vitest (`vitest.config.mts`). Shared logic + every route has an edge-case suite
+  under `__tests__/`. `yarn test` is wired and gated in CI (`.github/workflows/ci.yml`).
 - Platform files marked `DO NOT REWRITE` (`src/lib/auth.ts`, `src/app/api/auth/[...all]/route.ts`)
-  are create.xyz integration points — extend via config, don't rewrite.
+  are create.xyz integration points — extend via config, don't rewrite. (P0 added only an
+  additive `rateLimit` config block to `auth.ts`, which the header explicitly permits.)
+- **Shared API utilities** (`src/app/api/utils/`, reuse these — don't re-roll): `route-kit`
+  (`withRoute` + `ApiError`), `auth-guard` (`authGuard.requireRole`), `validation`
+  (`parseBody`/`parseQuery`) + `schemas`, `rate-limit`, `crypto-box` (`SecretBox`), `totp`,
+  `audit` (`auditLogger`), `logger`, `sql-builder`, `gigs-query`, `profile-completion`.
+  `src/lib/safe-redirect.ts` guards all `callbackUrl` handling.
 
 ## 3. Tech stack (as found)
 

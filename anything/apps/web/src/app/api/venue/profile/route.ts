@@ -1,99 +1,82 @@
 import sql from '@/app/api/utils/sql';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { authGuard } from '@/app/api/utils/auth-guard';
+import { auditLogger } from '@/app/api/utils/audit';
+import { parseBody } from '@/app/api/utils/validation';
+import { VenueProfileUpdateSchema } from '@/app/api/utils/schemas';
+import { withRoute } from '@/app/api/utils/route-kit';
+import { buildUpdateByKey, jsonify } from '@/app/api/utils/sql-builder';
 
-export async function GET() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+/** Media-carrying route: base64 data URLs until object storage lands (P3). */
+const MAX_PROFILE_BODY_BYTES = 20_000_000;
 
+export const GET = withRoute('venue.profile.get', async () => {
+  const user = await authGuard.requireSession();
   const rows = await sql`
-    SELECT * FROM venue_profiles WHERE user_id = ${session.user.id} LIMIT 1
+    SELECT * FROM venue_profiles WHERE user_id = ${user.id} LIMIT 1
+  `;
+  return Response.json({ profile: rows[0] ?? null });
+});
+
+export const PUT = withRoute('venue.profile.update', async (request) => {
+  const user = await authGuard.requireRole('VENUE');
+  const body = await parseBody(request, VenueProfileUpdateSchema, {
+    maxBytes: MAX_PROFILE_BODY_BYTES,
+  });
+
+  const existing = await sql`
+    SELECT id FROM venue_profiles WHERE user_id = ${user.id} LIMIT 1
   `;
 
-  return Response.json({ profile: rows[0] ?? null });
-}
-
-export async function PUT(request: Request) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
-
-  try {
-    const body = await request.json();
-    const {
-      venue_name,
-      neighborhood,
-      address,
-      description,
-      venue_type,
-      capacity,
-      music_genres,
-      operating_hours,
-      avatar_url,
-      gallery_images,
-      social_links,
-    } = body;
-
-    const existing =
-      await sql`SELECT id FROM venue_profiles WHERE user_id = ${session.user.id} LIMIT 1`;
-
-    let profile;
-    if (existing.length) {
-      const setClauses: string[] = [];
-      const vals: unknown[] = [];
-      let idx = 1;
-
-      const fields: Record<string, unknown> = {
-        venue_name,
-        neighborhood,
-        address,
-        description,
-        venue_type,
-        capacity: capacity ? Number(capacity) : undefined,
-        music_genres: music_genres ? JSON.stringify(music_genres) : undefined,
-        operating_hours: operating_hours ? JSON.stringify(operating_hours) : undefined,
-        avatar_url,
-        gallery_images: gallery_images ? JSON.stringify(gallery_images) : undefined,
-        social_links: social_links ? JSON.stringify(social_links) : undefined,
+  let profile;
+  if (existing.length > 0) {
+    const statement = buildUpdateByKey({
+      table: 'venue_profiles',
+      keyColumn: 'user_id',
+      keyValue: user.id,
+      fields: {
+        venue_name: body.venue_name,
+        neighborhood: body.neighborhood,
+        address: body.address,
+        description: body.description,
+        venue_type: body.venue_type,
+        capacity: body.capacity,
+        music_genres: jsonify(body.music_genres),
+        operating_hours: jsonify(body.operating_hours),
+        avatar_url: body.avatar_url,
+        gallery_images: jsonify(body.gallery_images),
+        social_links: jsonify(body.social_links),
         updated_at: new Date().toISOString(),
-      };
-
-      for (const [key, val] of Object.entries(fields)) {
-        if (val !== undefined) {
-          setClauses.push(`"${key}" = $${idx}`);
-          vals.push(val);
-          idx++;
-        }
-      }
-
-      vals.push(session.user.id);
-      const result = await sql(
-        `UPDATE venue_profiles SET ${setClauses.join(', ')} WHERE user_id = $${idx} RETURNING *`,
-        vals
-      );
-      profile = result[0];
-    } else {
-      const result = await sql`
-        INSERT INTO venue_profiles (
-          user_id, venue_name, neighborhood, address, description,
-          venue_type, capacity, music_genres, operating_hours,
-          avatar_url, gallery_images, social_links
-        ) VALUES (
-          ${session.user.id}, ${venue_name ?? null}, ${neighborhood ?? null},
-          ${address ?? null}, ${description ?? null},
-          ${venue_type ?? null}, ${capacity ? Number(capacity) : null},
-          ${music_genres ? JSON.stringify(music_genres) : '[]'},
-          ${operating_hours ? JSON.stringify(operating_hours) : '{}'},
-          ${avatar_url ?? null},
-          ${gallery_images ? JSON.stringify(gallery_images) : '[]'},
-          ${social_links ? JSON.stringify(social_links) : '{}'}
-        ) RETURNING *
-      `;
-      profile = result[0];
-    }
-
-    return Response.json({ profile });
-  } catch (error) {
-    console.error('Error updating venue profile:', error);
-    return Response.json({ error: 'Failed to update profile' }, { status: 500 });
+      },
+    });
+    const result = await sql(statement!.text, statement!.values);
+    profile = result[0];
+  } else {
+    const result = await sql`
+      INSERT INTO venue_profiles (
+        user_id, venue_name, neighborhood, address, description,
+        venue_type, capacity, music_genres, operating_hours,
+        avatar_url, gallery_images, social_links
+      ) VALUES (
+        ${user.id}, ${body.venue_name ?? null}, ${body.neighborhood ?? null},
+        ${body.address ?? null}, ${body.description ?? null},
+        ${body.venue_type ?? null}, ${body.capacity ?? null},
+        ${jsonify(body.music_genres) ?? '[]'},
+        ${jsonify(body.operating_hours) ?? '{}'},
+        ${body.avatar_url ?? null},
+        ${jsonify(body.gallery_images) ?? '[]'},
+        ${jsonify(body.social_links) ?? '{}'}
+      ) RETURNING *
+    `;
+    profile = result[0];
   }
-}
+
+  await auditLogger.record({
+    actorId: user.id,
+    action: 'profile.venue.update',
+    entityType: 'venue_profile',
+    entityId: String(profile?.id ?? ''),
+    metadata: { changed: Object.keys(body) },
+  });
+
+  return Response.json({ profile });
+});

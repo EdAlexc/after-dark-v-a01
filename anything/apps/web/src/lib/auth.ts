@@ -139,6 +139,19 @@ export const auth = betterAuth({
       maxAge: 60 * 60 * 24 * 7, // 7 days
     },
   },
+  // Additive hardening (safe per the header contract: config tuning only).
+  // Throttles credential endpoints against brute force (OWASP A07). Memory
+  // storage = per-instance; shared store is tracked in the Technical Backlog.
+  rateLimit: {
+    enabled: process.env.NODE_ENV === 'production',
+    window: 60,
+    max: 60,
+    customRules: {
+      '/sign-in/email': { window: 60, max: 10 },
+      '/sign-up/email': { window: 60, max: 5 },
+      '/change-password': { window: 900, max: 5 },
+    },
+  },
   user: {
     additionalFields: {
       image: {
