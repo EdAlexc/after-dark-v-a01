@@ -68,7 +68,21 @@ relative to the Root Directory, so it must be pointed at the app:
 | **Root Directory** | `anything/apps/web` | The Next.js app lives 3 levels down. Left at the repo root, Vercel detects no framework, builds nothing, and every path returns the platform `404: NOT_FOUND`. Not settable from `vercel.json` — dashboard only. |
 | **Include files outside the Root Directory** | enabled | The Yarn workspace root is `anything/` (above the root dir): `yarn.lock`, `.yarnrc.yml`, and the 10 committed `.yarn/patches/*.patch` all live there. |
 | **Node version** | 22 | Next 16. |
-| `ENABLE_EXPERIMENTAL_COREPACK=1` | env var, if needed | The workspace pins `packageManager: yarn@4.12.0` with no `.yarn/releases` committed, so Corepack is what resolves Yarn 4. Add it if the build log shows a Yarn version/lockfile error. |
+
+**Yarn version — solved by a committed release, not by Corepack.** Vercel's build image ships
+Yarn 1.22.x, which cannot install this workspace: it rejects the Berry `patch:` resolutions (all
+10 patches use them), can't read the v4 lockfile, and fails outright with
+`error Workspaces can only be enabled in private projects.` Vercel's
+`ENABLE_EXPERIMENTAL_COREPACK=1` flag is *supposed* to make it honor
+`packageManager: yarn@4.12.0`, but it did not take on this project. The durable fix is
+`.yarn/releases/yarn-4.12.0.cjs` + `yarnPath` in `.yarnrc.yml`: Yarn 1.22 honors `yarnPath` and
+hands off to that binary, so builds no longer depend on any Vercel flag and local/CI/Vercel all
+run a byte-identical Yarn. The workspace root also carries `"private": true` (required by Yarn 1
+for workspaces; correct hygiene regardless).
+
+To bump Yarn later, run `yarn set version <version> --yarn-path` from `anything/` and commit the
+new release. Plain `yarn set version` is a **no-op** here — Yarn 4 defers to Corepack and only
+rewrites `packageManager` without downloading a binary.
 
 **Diagnosing a 404 on a deployment:** if you get the *white Vercel platform* 404 page, the
 request never reached Next.js (bad Root Directory, failed/absent build, or wrong repo connected).
