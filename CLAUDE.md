@@ -57,6 +57,37 @@ yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses pr
   `audit` (`auditLogger`), `logger`, `sql-builder`, `gigs-query`, `profile-completion`.
   `src/lib/safe-redirect.ts` guards all `callbackUrl` handling.
 
+### 2.1 Deployment (Vercel)
+
+The app is **not** at the repository root — the repo root has no `package.json` at all. Vercel
+resolves framework detection, install, build, and the expected `.next` output location all
+relative to the Root Directory, so it must be pointed at the app:
+
+| Vercel setting | Value | Why |
+|---|---|---|
+| **Root Directory** | `anything/apps/web` | The Next.js app lives 3 levels down. Left at the repo root, Vercel detects no framework, builds nothing, and every path returns the platform `404: NOT_FOUND`. Not settable from `vercel.json` — dashboard only. |
+| **Include files outside the Root Directory** | enabled | The Yarn workspace root is `anything/` (above the root dir): `yarn.lock`, `.yarnrc.yml`, and the 10 committed `.yarn/patches/*.patch` all live there. |
+| **Node version** | 22 | Next 16. |
+| `ENABLE_EXPERIMENTAL_COREPACK=1` | env var, if needed | The workspace pins `packageManager: yarn@4.12.0` with no `.yarn/releases` committed, so Corepack is what resolves Yarn 4. Add it if the build log shows a Yarn version/lockfile error. |
+
+**Diagnosing a 404 on a deployment:** if you get the *white Vercel platform* 404 page, the
+request never reached Next.js (bad Root Directory, failed/absent build, or wrong repo connected).
+A genuine app-level miss renders the dark-themed `src/app/not-found.tsx` instead. That
+distinction tells you which side of the boundary to debug.
+
+**Env vars to set in Vercel** (Production + Preview): `DATABASE_URL` (Neon **pooled** string),
+`AUTH_SECRET_ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`. The build itself passes
+without them (every page is `'use client'`, so nothing touches the DB at build time), but the
+running app will not.
+
+> ⚠ **Known gap — auth on preview deployments.** `trustedOrigins` in `src/lib/auth.ts` is built
+> entirely from env vars, and every preview gets a unique URL. A preview whose origin isn't in
+> that list will reject auth requests as "Invalid origin". Fix tracked in DEV_TIMELINE →
+> Technical Backlog #22 (wire Vercel's `VERCEL_URL`/`VERCEL_BRANCH_URL` into `trustedOrigins`).
+
+Note the mobile workspace (`anything/apps/mobile`) is installed on every web deploy because it
+shares the workspace root — see Technical Backlog #23 to scope installs to `web`.
+
 ## 3. Tech stack (as found)
 
 - **Frontend**: Next.js 16 App Router, React 19, all pages `'use client'`; Tailwind v4,
@@ -65,10 +96,12 @@ yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses pr
 - **Backend**: Next.js route handlers; `@neondatabase/serverless` tagged-template SQL
   (`src/app/api/utils/sql.ts`); **better-auth** (email/password + Google/Apple + bearer plugin
   for mobile), sessions via `sameSite=None; Secure; HttpOnly` cookies (iframe-friendly).
-- **Deploy**: `publisher/open-next.config.ts` → AWS Lambda + S3 (`tagCache: "dummy"` —
-  `revalidateTag()` is a no-op). Vercel is a viable alternative target.
-- **Absent**: middleware, RBAC, Stripe, WebSockets/SSE, service worker/manifest (no PWA),
-  zod (web), rate limiting, security headers, structured logging, tests, migrations.
+- **Deploy**: **Vercel is the active target** (setup + gotchas in §2.1). `publisher/open-next.config.ts`
+  → AWS Lambda + S3 remains as inherited create.xyz tooling (`tagCache: "dummy"` —
+  `revalidateTag()` is a no-op); it is unused by the Vercel pipeline.
+- **Absent** (as found; P0 has since added middleware, RBAC, zod, rate limiting, security
+  headers, structured logging, tests, and migrations): Stripe, WebSockets/SSE, service
+  worker/manifest (no PWA).
 
 ## 4. Spec-vs-code audit (feature matrix)
 
