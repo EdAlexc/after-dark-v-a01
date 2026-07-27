@@ -167,12 +167,13 @@ Items noted during the audit that are **not** required for the alpha gate but mu
 21. **Shared rate-limit store** (was #15's concern): the in-memory `SlidingWindowRateLimiter` is
     per-instance. For multi-region/serverless fan-out, back `getRateLimiter` with Upstash Redis
     or a Postgres token-bucket at load-test time.
-22. **Auth on Vercel preview deployments** (blocks testing auth on previews): `trustedOrigins`
-    in `src/lib/auth.ts` is built only from env vars, but every preview deploy gets a unique
-    URL, so better-auth rejects those origins as "Invalid origin". Append Vercel's
-    `VERCEL_URL` / `VERCEL_BRANCH_URL` (and set `BETTER_AUTH_URL` per-environment). Note
-    `auth.ts` is a `DO NOT REWRITE` platform file — this is an **additive** change to the
-    existing `trustedOrigins` array, the same shape of edit as the P0 `rateLimit` block.
+22. ~~**Auth on Vercel preview deployments**~~ — **DONE (2026-07-27).** `src/lib/
+    deployment-origins.ts` derives this deployment's own origins from `VERCEL_URL`,
+    `VERCEL_BRANCH_URL` and `VERCEL_PROJECT_PRODUCTION_URL`, and `auth.ts` spreads them into
+    `trustedOrigins` (additive one-liner, as planned). Deliberately no `*.vercel.app`
+    wildcard — that would trust every app on the platform. Covered by
+    `src/lib/__tests__/deployment-origins.test.ts`. Requires Vercel's "Automatically expose
+    System Environment Variables" (on by default).
 23. **Scope Vercel installs to the web workspace**: because the workspace root is shared, every
     web deploy also installs the Expo/React Native mobile app (all 10 yarn patches are
     mobile-only). A `vercel.json` `installCommand` using `yarn workspaces focus web` would cut

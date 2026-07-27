@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "afterdark-web",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [".claude/run-web.sh"],
+      "port": 4000
+    }
+  ]
+}
