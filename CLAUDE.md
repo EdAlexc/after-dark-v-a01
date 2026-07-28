@@ -39,6 +39,11 @@ yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
 ```
 
+- **Explore mode**: `DISABLE_AUTH_GATE=1` lets you walk `/dashboard/*` and `/onboarding`
+  without signing in — useful for demoing the UI, since most dashboards are still mock data.
+  It only lifts the `middleware.ts` cookie check; route handlers still enforce authZ via
+  `authGuard`, so API-backed screens (profile editors, settings) still 401. Hard-disabled when
+  `VERCEL_ENV=production`. Never a substitute for a real session when testing data flows.
 - **Required env**: `DATABASE_URL` (Neon Postgres) and `AUTH_SECRET_ENCRYPTION_KEY` (encrypts
   2FA secrets; `openssl rand -base64 32`). Optional: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
   `GOOGLE_CLIENT_ID/SECRET`, `APPLE_CLIENT_ID/SECRET/APP_BUNDLE_IDENTIFIER`,
