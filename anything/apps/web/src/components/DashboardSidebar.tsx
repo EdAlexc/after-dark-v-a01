@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { authClient } from '@/lib/auth-client';
 import {
   LayoutDashboard,
   Calendar,
@@ -70,16 +71,9 @@ const TALENT_NAV: SidebarItem[] = [
       },
       {
         kind: 'link',
-        label: 'Post a Gig',
-        href: '/dashboard/talent/create-gig',
-        icon: <PlusCircle className="w-4 h-4" />,
-      },
-      {
-        kind: 'link',
-        label: 'Applicants',
+        label: 'My Applications',
         href: '/dashboard/talent/applicants',
         icon: <Users className="w-4 h-4" />,
-        badge: 4,
       },
     ],
   },
@@ -94,7 +88,6 @@ const TALENT_NAV: SidebarItem[] = [
     label: 'Messages',
     href: '/dashboard/talent/messages',
     icon: <MessageSquare className="w-5 h-5" />,
-    badge: 3,
   },
   {
     kind: 'link',
@@ -134,7 +127,6 @@ const VENUE_NAV: SidebarItem[] = [
         label: 'Applicants',
         href: '/dashboard/venue/applicants',
         icon: <Users className="w-4 h-4" />,
-        badge: 12,
       },
     ],
   },
@@ -149,7 +141,6 @@ const VENUE_NAV: SidebarItem[] = [
     label: 'Messages',
     href: '/dashboard/venue/messages',
     icon: <MessageSquare className="w-5 h-5" />,
-    badge: 2,
   },
   {
     kind: 'link',
@@ -401,7 +392,10 @@ export default function DashboardSidebar({ role, userName }: DashboardSidebarPro
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const navItems = role === 'talent' ? TALENT_NAV : VENUE_NAV;
-  const displayName = userName ?? (role === 'talent' ? 'DJ Marcus Lee' : 'Nebula NYC');
+  // Real identity from the session — no more hardcoded demo names (Backlog #12).
+  const { data: session } = authClient.useSession();
+  const displayName =
+    userName ?? session?.user?.name ?? (role === 'talent' ? 'Talent' : 'Venue');
 
   // Close mobile drawer on route change
   useEffect(() => {

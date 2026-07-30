@@ -13,8 +13,21 @@ describe('buildCsp', () => {
     expect(csp).not.toContain('unsafe-eval');
   });
 
+  it('emits a nonce + strict-dynamic script policy when given a nonce (Backlog #18)', () => {
+    const csp: string = buildCsp({ isDev: false, env: {}, nonce: 'abc123==' });
+    expect(csp).toContain("script-src 'self' 'nonce-abc123==' 'strict-dynamic'");
+    expect(csp.match(/script-src[^;]*/)?.[0]).not.toContain("'unsafe-inline'");
+    // Styles keep the inline allowance (styled-jsx/tailwind inline styles).
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+  });
+
+  it('falls back to the legacy inline script policy without a nonce', () => {
+    const csp: string = buildCsp({ isDev: false, env: {} });
+    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+  });
+
   it('allows eval + websockets only in dev (HMR)', () => {
-    const dev: string = buildCsp({ isDev: true, env: {} });
+    const dev: string = buildCsp({ isDev: true, env: {}, nonce: 'n' });
     expect(dev).toContain("'unsafe-eval'");
     expect(dev).toContain('ws:');
     expect(dev).not.toContain('upgrade-insecure-requests');
@@ -36,6 +49,19 @@ describe('buildCsp', () => {
   it('falls back to self-only frame-ancestors without platform env', () => {
     expect(buildCsp({ isDev: false, env: {} })).toContain("frame-ancestors 'self'");
   });
+
+  it('admits the Sentry ingest origin into connect-src only when configured', () => {
+    const withDsn: string = buildCsp({
+      isDev: false,
+      env: { NEXT_PUBLIC_SENTRY_DSN: 'https://abc123@o4507.ingest.us.sentry.io/123456' },
+    });
+    expect(withDsn.match(/connect-src[^;]*/)?.[0]).toContain('https://o4507.ingest.us.sentry.io');
+    const without: string = buildCsp({ isDev: false, env: {} });
+    expect(without).not.toContain('sentry.io');
+    // Garbage DSN must not throw or leak into the policy.
+    const garbage: string = buildCsp({ isDev: false, env: { NEXT_PUBLIC_SENTRY_DSN: '::::' } });
+    expect(garbage).toContain("connect-src 'self'");
+  });
 });
 
 describe('buildSecurityHeaders', () => {
@@ -45,10 +71,9 @@ describe('buildSecurityHeaders', () => {
   });
   const byKey = Object.fromEntries(headers.map((header) => [header.key, header.value]));
 
-  it('sends the full A05 header set', () => {
+  it('sends the full A05 header set (CSP is per-request via middleware)', () => {
     expect(Object.keys(byKey).sort()).toEqual(
       [
-        'Content-Security-Policy',
         'Permissions-Policy',
         'Referrer-Policy',
         'Strict-Transport-Security',
@@ -56,6 +81,9 @@ describe('buildSecurityHeaders', () => {
         'X-DNS-Prefetch-Control',
       ].sort()
     );
+    // The nonce CSP must come from middleware only — a second static CSP
+    // here would enforce the intersection and break the nonce.
+    expect(byKey['Content-Security-Policy']).toBeUndefined();
   });
 
   it('HSTS ≥ 1 year with subdomains; nosniff; strict referrer', () => {

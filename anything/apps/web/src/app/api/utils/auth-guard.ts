@@ -39,6 +39,18 @@ export class AuthGuard {
   }
 
   /**
+   * Returns the user + DB role, or null when signed out. For public surfaces
+   * that show extras to the owner (e.g. a venue viewing its own draft gig) —
+   * never use this where access must be denied; that's requireRole's job.
+   */
+  async optionalUser(): Promise<(SessionUser & { role: Role | null }) | null> {
+    const user = await this.deps.getSessionUser();
+    if (!user?.id) return null;
+    const role = (await this.deps.getUserRole(user.id)) as Role | null;
+    return { ...user, role };
+  }
+
+  /**
    * Returns the user + role when the role is one of `allowed` (ADMIN always
    * passes). Throws 401 when signed out, 403 otherwise.
    */

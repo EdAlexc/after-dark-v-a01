@@ -239,6 +239,7 @@ describe('GigListQuerySchema', () => {
       minRate: 50,
       maxRate: 300,
       tonightOnly: true,
+      page: 1,
     });
   });
 

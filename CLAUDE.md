@@ -24,6 +24,7 @@ with high multi-user/multi-tenant concurrency and PII/transactional data protect
 | `anything/apps/mobile/` | Expo 54 / RN 0.81 scaffold — **generic, unbuilt** (renders `null`, still named "Anything mobile app") |
 | `anything/publisher/` | Deploy tooling: `@opennextjs/aws` build for AWS Lambda + S3 |
 | `CLAUDE.md` / `DEV_TIMELINE.MD` / `TENANT_GUARDRAIL.md` | This audit & planning set (2026-07-24) |
+| `TESTING.md` | Verification playbook: automated suites, manual E2E checklists, security probes, shared preview accounts (2026-07-30) |
 
 ## 2. Commands & environment
 
@@ -34,18 +35,21 @@ cd apps/web
 yarn dev                    # Next.js dev server on port 4000
 yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
-yarn test                   # vitest run (219 tests as of P0)
+yarn test                   # vitest run (285 tests as of P1)
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
+yarn db:preview-accounts    # shared talent/venue/party preview accounts (TESTING.md §2; idempotent)
 ```
 
 - **Required env**: `DATABASE_URL` (Neon Postgres) and `AUTH_SECRET_ENCRYPTION_KEY` (encrypts
   2FA secrets; `openssl rand -base64 32`). Optional: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
   `GOOGLE_CLIENT_ID/SECRET`, `APPLE_CLIENT_ID/SECRET/APP_BUNDLE_IDENTIFIER`,
-  `EXPO_PUBLIC_PROXY_BASE_URL`, `NEXT_PUBLIC_CREATE_*`. See `apps/web/.env.example`; no real
-  `.env` is committed.
+  `EXPO_PUBLIC_PROXY_BASE_URL`, `NEXT_PUBLIC_CREATE_*`, `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN`
+  (error tracking — no-op unset). See `apps/web/.env.example`; no real `.env` is committed.
 - **Migrations live in `apps/web/migrations/`** (P0). `0001_baseline.sql` reproduces §6.1;
-  `0002_audit_logs.sql` adds the audit trail. The runner records applied files in `_migrations`.
+  `0002_audit_logs.sql` adds the audit trail; `0003_gig_lifecycle.sql` widens gig status to
+  the full lifecycle (P1); `0004_rls.sql` ships dormant RLS policies (active once a non-owner
+  DB role is adopted — Backlog #25). The runner records applied files in `_migrations`.
 - Web tests: Vitest (`vitest.config.mts`). Shared logic + every route has an edge-case suite
   under `__tests__/`. `yarn test` is wired and gated in CI (`.github/workflows/ci.yml`).
 - Platform files marked `DO NOT REWRITE` (`src/lib/auth.ts`, `src/app/api/auth/[...all]/route.ts`)
@@ -94,8 +98,8 @@ you which side of the boundary to debug.
 > falls back to serving the repo as static files — the build *succeeds*, uploads nothing
 > runnable, and every path (including `/`) returns the platform 404. Confirm it in the
 > deployment's **Build Logs**: a correct build prints the Next.js route table (`Route (app)`,
-> `┌ ○ /`, ~33 routes). If the log is a few lines with no route table, the Root Directory is
-> wrong. **This cannot be fixed from the repo** — `vercel.json` has no `rootDirectory`
+> `┌ ƒ /`, ~36 routes — all `ƒ` dynamic since the P1 nonce-CSP change). If the log is a few
+> lines with no route table, the Root Directory is wrong. **This cannot be fixed from the repo** — `vercel.json` has no `rootDirectory`
 > property (see the property table in Vercel's Project Configuration docs); it is Project
 > Settings → Build & Deployment → Root Directory, or `vercel link --repo` from the CLI.
 
@@ -126,9 +130,12 @@ shares the workspace root — see Technical Backlog #23 to scope installs to `we
 - **Deploy**: **Vercel is the active target** (setup + gotchas in §2.1). `publisher/open-next.config.ts`
   → AWS Lambda + S3 remains as inherited create.xyz tooling (`tagCache: "dummy"` —
   `revalidateTag()` is a no-op); it is unused by the Vercel pipeline.
-- **Absent** (as found; P0 has since added middleware, RBAC, zod, rate limiting, security
-  headers, structured logging, tests, and migrations): Stripe, WebSockets/SSE, service
-  worker/manifest (no PWA).
+- **Security/observability layers added since the audit**: middleware (auth gate + per-request
+  **nonce CSP** — the root layout is `force-dynamic` because prerendered HTML can't carry a
+  nonce), RBAC guard, zod validation, rate limiting, security headers, structured logging +
+  audit trail, optional **Sentry** (PII-scrubbed, no-op without DSN), dormant RLS policies,
+  migrations + tests (P0–P1).
+- **Absent**: Stripe, WebSockets/SSE, service worker/manifest (no PWA).
 
 ## 4. Spec-vs-code audit (feature matrix)
 
@@ -136,16 +143,17 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 
 | Feature (PRD §) | Wireframe | Code location | Status |
 |---|---|---|---|
-| Landing page (3.1) | p5 | `src/app/page.tsx` | 🟡 static; `FEATURED_GIGS` hardcoded; footer links `#` |
+| Landing page (3.1) | p5 | `src/app/page.tsx` | 🟡 "Hot Gigs Tonight" real (P1.4, `FeaturedTonight.tsx`); rest static; footer links `#` |
 | Sign up / sign in / logout | — | `src/app/account/*` | ✅ better-auth, social self-activating |
 | Onboarding (role select + basics) | — | `src/app/onboarding/page.tsx` → `/api/user/role` | ✅ (but accepts `ADMIN` — see §7) |
-| Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | 🟡 `MOCK_GIGS`; **does not call the real `/api/gigs` GET** |
+| Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | ✅ real `GET /api/gigs` (P1.1): validated filters, pagination, HOT/NEW badges; multi-select refines client-side (Backlog #26) |
+| Browse talent (venue directory) | — | `dashboard/venue/browse/page.tsx` | ✅ real public `GET /api/talent` (P1.1); saved-talent list is client-local |
 | Browse gigs: map view (3.2) | p2 | — | ❌ no map integration |
-| Gig details + application + 5% fee estimator (3.2) | p4 | — | ❌ no gig detail page, no applications API/table |
+| Gig details + application + 5% fee estimator (3.2) | p4 | `gigs/[id]/page.tsx` → `GET /api/gigs/[id]` | ✅ detail + live estimator (P1.2); **submit disabled until P2 applications** |
 | Availability calendar, 3 slots (3.2) | p7 | `dashboard/talent/schedule/page.tsx` | 🟡 mock calendar; no `availabilities` table/API |
 | Talent dashboard: stats, applications, upcoming, check-in (3.2) | p8 | `dashboard/talent/page.tsx` | 🟡 all `STATS`/mock |
 | Talent public profile editor (3.2) | p9 | `dashboard/talent/profile/page.tsx` → `/api/talent/profile` | ✅ real; media = base64 in DB (placeholder) |
-| Venue dashboard: metrics, open gigs, live ops (3.3) | p10 | `dashboard/venue/page.tsx` | 🟡 mock; `handleCheckout` toggles local state only |
+| Venue dashboard: metrics, open gigs, live ops (3.3) | p10 | `dashboard/venue/page.tsx` | 🟡→✅ Open Gigs real w/ lifecycle actions (`GET /api/venue/gigs` + `PATCH /api/gigs/[id]`, P1.3); Active-Gigs/Filling-Rate stats real; payouts/time-to-hire muted until P5/P2; Live Tonight labeled *Sample* |
 | Create gig wizard (3.3) | p3 | `dashboard/venue/create-gig/page.tsx` → POST `/api/gigs` | ✅ persists; "Live Analytics" candidates are mock |
 | Applicant tracking: shortlist/hire (3.3) | p10 | `dashboard/{talent,venue}/applicants/page.tsx` | 🟡 `MOCK_APPLICATIONS` |
 | Messages: 2-pane chat, attachments, propose-rate (3.4) | p6 | `dashboard/*/messages/page.tsx` | 🟡 UI only; no conversations/messages backend |
@@ -158,11 +166,13 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Venue↔external calendar & ticketing integrations (2.B) | — | — | ❌ (post-alpha candidate) |
 | Settings (profile, password, 2FA) | — | `dashboard/settings/*` + `/api/settings*` | ✅ real (2FA is hand-rolled; see §7) |
 | PWA (installable, offline, service worker) | — | `public/` has favicon only | ❌ |
-| Talent create-gig page | — | `dashboard/talent/create-gig/page.tsx` | 🟡 not in PRD (talent don't post gigs) — persists nothing; likely remove or repurpose |
+| Talent create-gig page | — | — | ✅ removed 2026-07-30 (was off-PRD; Backlog #11) |
 
 **API inventory (real endpoints):** `/api/auth/[...all]`, `/api/auth/token`,
 `/api/auth/expo-web-success`, `/api/session`, `/api/user/role` (GET/POST), `/api/gigs`
-(GET public, POST auth), `/api/talent/profile` (GET/PUT), `/api/venue/profile` (GET/PUT),
+(GET public paginated, POST venue), `/api/gigs/[id]` (GET public-when-published,
+PATCH owner status transition), `/api/venue/gigs` (GET own, all statuses), `/api/talent`
+(GET public directory), `/api/talent/profile` (GET/PUT), `/api/venue/profile` (GET/PUT),
 `/api/settings` (GET/PUT), `/api/settings/change-password` (POST), `/api/settings/2fa` (GET/POST),
 `/api/__create/check-social-secrets` (dev only).
 

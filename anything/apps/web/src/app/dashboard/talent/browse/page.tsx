@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   Search,
   MapPin,
@@ -10,9 +12,12 @@ import {
   SlidersHorizontal,
   LayoutGrid,
   Map,
-  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Bell,
   X,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,166 +25,109 @@ import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { cn } from '@/lib/utils';
-
-// ─── Types ──────────────────────────────────────────────────────────────────
-
-interface Gig {
-  id: number;
-  venueName: string;
-  neighborhood: string;
-  role: string;
-  genre?: string;
-  time: string;
-  endTime: string;
-  rate: number;
-  tipsIncluded: boolean;
-  distance: string;
-  urgency?: 'HOT' | 'URGENT' | 'NEW';
-  image: string;
-  applied?: boolean;
-}
-
-// ─── Mock Data ───────────────────────────────────────────────────────────────
-
-const MOCK_GIGS: Gig[] = [
-  {
-    id: 1,
-    venueName: 'Nebula NYC',
-    neighborhood: 'Midtown',
-    role: 'DJ / Producer',
-    genre: 'House / Techno',
-    time: '10:00 PM',
-    endTime: '3:00 AM',
-    rate: 180,
-    tipsIncluded: false,
-    distance: '0.4 mi',
-    urgency: 'HOT',
-    image: 'https://images.unsplash.com/photo-1571266028243-e4733b0f0bb0?w=400&q=80',
-  },
-  {
-    id: 2,
-    venueName: 'PHD Rooftop',
-    neighborhood: 'Downtown',
-    role: 'DJ',
-    genre: 'Hip-Hop / R&B',
-    time: '11:00 PM',
-    endTime: '4:00 AM',
-    rate: 220,
-    tipsIncluded: false,
-    distance: '1.1 mi',
-    urgency: 'URGENT',
-    image: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=400&q=80',
-  },
-  {
-    id: 3,
-    venueName: 'Limelight',
-    neighborhood: 'Chelsea',
-    role: 'Go-Go Dancer',
-    genre: 'Afrobeats',
-    time: '9:00 PM',
-    endTime: '2:00 AM',
-    rate: 140,
-    tipsIncluded: true,
-    distance: '0.8 mi',
-    urgency: 'NEW',
-    image: 'https://images.unsplash.com/photo-1485579149621-3123dd979885?w=400&q=80',
-  },
-  {
-    id: 4,
-    venueName: 'Butter Group',
-    neighborhood: 'Meatpacking',
-    role: 'Bottle Server',
-    time: '8:00 PM',
-    endTime: '2:00 AM',
-    rate: 100,
-    tipsIncluded: true,
-    distance: '1.4 mi',
-    image: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&q=80',
-  },
-  {
-    id: 5,
-    venueName: '230 Fifth',
-    neighborhood: 'Flatiron',
-    role: 'Bartender',
-    genre: 'Mixed',
-    time: '6:00 PM',
-    endTime: '11:00 PM',
-    rate: 75,
-    tipsIncluded: true,
-    distance: '2.0 mi',
-    image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=80',
-  },
-  {
-    id: 6,
-    venueName: 'Output BK',
-    neighborhood: 'Williamsburg',
-    role: 'DJ / Producer',
-    genre: 'Techno',
-    time: '11:00 PM',
-    endTime: '6:00 AM',
-    rate: 200,
-    tipsIncluded: false,
-    distance: '4.3 mi',
-    urgency: 'HOT',
-    image: 'https://images.unsplash.com/photo-1598387181032-a3103a2db5b3?w=400&q=80',
-  },
-  {
-    id: 7,
-    venueName: 'The Box',
-    neighborhood: 'LES',
-    role: 'Photographer',
-    time: '9:00 PM',
-    endTime: '3:00 AM',
-    rate: 120,
-    tipsIncluded: false,
-    distance: '1.7 mi',
-    urgency: 'NEW',
-    image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=400&q=80',
-  },
-  {
-    id: 8,
-    venueName: 'The Standard',
-    neighborhood: 'Meatpacking',
-    role: 'Go-Go Dancer',
-    genre: 'Latin',
-    time: '10:00 PM',
-    endTime: '4:00 AM',
-    rate: 160,
-    tipsIncluded: true,
-    distance: '1.2 mi',
-    image: 'https://images.unsplash.com/photo-1504609813442-a8924e83f76e?w=400&q=80',
-  },
-];
+import {
+  type ApiGig,
+  type GigListResponse,
+  formatRate,
+  formatTimeRange,
+  formatDate,
+  gigRate,
+  gigUrgency,
+} from '@/lib/gigs';
 
 const NEIGHBORHOODS = ['Chelsea', 'Midtown', 'Meatpacking', 'Flatiron', 'LES', 'Williamsburg'];
-const ROLES = ['DJ', 'Go-Go Dancer', 'Bartender', 'Bottle Server', 'Photographer', 'Bouncer'];
-const GENRES = ['House', 'Hip-Hop', 'Techno', 'R&B', 'Afrobeats', 'Pop', 'Latin'];
+const ROLES = ['DJ', 'Go-Go Dancer', 'Bartender', 'Bottle Server', 'Photographer', 'Security'];
+const PAY_RANGE_DEFAULT: number[] = [20, 400];
 
 const URGENCY_CONFIG = {
   HOT: { label: 'HOT', color: 'bg-red-500 text-white' },
-  URGENT: { label: 'URGENT', color: 'bg-orange-500 text-white' },
   NEW: { label: 'NEW', color: 'bg-[#00FFCC] text-black' },
 };
 
+// ─── Data ────────────────────────────────────────────────────────────────────
+
+interface BrowseFilters {
+  tonightOnly: boolean;
+  payRange: number[];
+  neighborhoods: string[];
+  roles: string[];
+  page: number;
+}
+
+/**
+ * Server-side filtering via the validated /api/gigs query params. The API
+ * takes a single neighborhood/role, so multi-selects send the sole selection
+ * when there is exactly one and refine client-side otherwise.
+ */
+function gigsQueryString(filters: BrowseFilters): string {
+  const params = new URLSearchParams();
+  if (filters.tonightOnly) params.set('tonightOnly', 'true');
+  if (filters.payRange[0] > PAY_RANGE_DEFAULT[0]) params.set('minRate', String(filters.payRange[0]));
+  if (filters.payRange[1] < PAY_RANGE_DEFAULT[1]) params.set('maxRate', String(filters.payRange[1]));
+  if (filters.neighborhoods.length === 1) params.set('neighborhood', filters.neighborhoods[0]);
+  if (filters.roles.length === 1) params.set('role', filters.roles[0]);
+  if (filters.page > 1) params.set('page', String(filters.page));
+  return params.toString();
+}
+
+function matchesClientFilters(gig: ApiGig, filters: BrowseFilters, search: string): boolean {
+  const haystack =
+    `${gig.title} ${gig.venue_name ?? ''} ${gig.role_needed ?? ''} ${gig.venue_neighborhood ?? ''}`.toLowerCase();
+  if (search && !haystack.includes(search.toLowerCase())) return false;
+  if (filters.neighborhoods.length > 1) {
+    const hood = (gig.venue_neighborhood ?? gig.address ?? '').toLowerCase();
+    if (!filters.neighborhoods.some((n) => hood.includes(n.toLowerCase()))) return false;
+  }
+  if (filters.roles.length > 1) {
+    const role = (gig.role_needed ?? '').toLowerCase();
+    if (!filters.roles.some((r) => role.includes(r.toLowerCase()))) return false;
+  }
+  return true;
+}
+
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function GigCard({ gig, onApply }: { gig: Gig; onApply: (id: number) => void }) {
+function GigImage({ gig, className }: { gig: ApiGig; className?: string }) {
+  if (gig.venue_avatar_url) {
+    return (
+      <img
+        src={gig.venue_avatar_url}
+        alt={gig.venue_name ?? gig.title}
+        className={cn('w-full h-full object-cover', className)}
+      />
+    );
+  }
+  return (
+    <div
+      className={cn(
+        'w-full h-full bg-gradient-to-br from-[#00FFCC]/20 via-[#1E1E1E] to-[#121212] flex items-center justify-center',
+        className
+      )}
+    >
+      <span className="text-2xl font-black text-[#00FFCC]/60">
+        {(gig.venue_name ?? gig.title).charAt(0).toUpperCase()}
+      </span>
+    </div>
+  );
+}
+
+function GigCard({ gig }: { gig: ApiGig }) {
+  const urgency = gigUrgency(gig);
   return (
     <Card className="bg-[#1E1E1E] border-white/5 overflow-hidden hover:border-[#00FFCC]/20 transition-all group">
       <CardContent className="p-0">
         <div className="flex items-stretch">
           {/* Image */}
           <div className="w-24 sm:w-32 flex-shrink-0 relative overflow-hidden">
-            <img src={gig.image} alt={gig.venueName} className="w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-black/40" />
-            {gig.urgency && (
+            <GigImage gig={gig} />
+            {urgency && (
               <span
                 className={cn(
                   'absolute top-2 left-2 text-[9px] font-black px-1.5 py-0.5 rounded',
-                  URGENCY_CONFIG[gig.urgency].color
+                  URGENCY_CONFIG[urgency].color
                 )}
               >
-                {gig.urgency}
+                {URGENCY_CONFIG[urgency].label}
               </span>
             )}
           </div>
@@ -190,47 +138,49 @@ function GigCard({ gig, onApply }: { gig: Gig; onApply: (id: number) => void }) 
               <div className="flex items-start justify-between gap-2 mb-1">
                 <div>
                   <p className="text-sm font-black text-white group-hover:text-[#00FFCC] transition-colors leading-tight">
-                    {gig.venueName}
+                    {gig.title}
                   </p>
-                  <p className="text-xs text-[#00FFCC] font-bold">{gig.role}</p>
+                  <p className="text-xs text-[#00FFCC] font-bold">
+                    {gig.role_needed || 'Nightlife Talent'}
+                    {gig.venue_name ? ` · ${gig.venue_name}` : ''}
+                  </p>
                 </div>
                 <span className="text-lg font-black text-white flex-shrink-0">
-                  ${gig.rate}
+                  {gigRate(gig) !== null ? `$${Number(gigRate(gig)).toFixed(0)}` : '—'}
                   <span className="text-xs font-normal text-white/40">/hr</span>
                 </span>
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/40 mt-2">
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  {gig.time} – {gig.endTime}
-                </span>
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />
-                  {gig.neighborhood} · {gig.distance}
-                </span>
-                {gig.tipsIncluded && (
+                {formatTimeRange(gig.start_time, gig.end_time) && (
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {formatDate(gig.start_time)} · {formatTimeRange(gig.start_time, gig.end_time)}
+                  </span>
+                )}
+                {gig.venue_neighborhood && (
+                  <span className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    {gig.venue_neighborhood}
+                  </span>
+                )}
+                {gig.tips_included && (
                   <span className="flex items-center gap-1 text-green-400">
                     <DollarSign className="w-3 h-3" />
                     Tips included
                   </span>
                 )}
               </div>
-              {gig.genre && <p className="text-[11px] text-white/30 mt-1">{gig.genre}</p>}
             </div>
 
             <div className="flex items-center justify-end mt-3">
-              <Button
-                size="sm"
-                onClick={() => onApply(gig.id)}
-                className={cn(
-                  'font-bold text-xs transition-all',
-                  gig.applied
-                    ? 'bg-[#00FFCC]/10 text-[#00FFCC] border border-[#00FFCC]/30 hover:bg-[#00FFCC]/20'
-                    : 'bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90'
-                )}
-              >
-                {gig.applied ? '✓ Applied' : 'Apply Now'}
-              </Button>
+              <Link href={`/gigs/${gig.id}`}>
+                <Button
+                  size="sm"
+                  className="font-bold text-xs bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 transition-all"
+                >
+                  View & Apply
+                </Button>
+              </Link>
             </div>
           </div>
         </div>
@@ -242,56 +192,62 @@ function GigCard({ gig, onApply }: { gig: Gig; onApply: (id: number) => void }) 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BrowseGigsPage() {
-  const [gigs, setGigs] = useState<Gig[]>(MOCK_GIGS);
   const [search, setSearch] = useState('');
   const [tonightOnly, setTonightOnly] = useState(false);
-  const [payRange, setPayRange] = useState<number[]>([50, 250]);
+  const [payRange, setPayRange] = useState<number[]>(PAY_RANGE_DEFAULT);
   const [selectedNeighborhoods, setSelectedNeighborhoods] = useState<string[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(1);
 
-  const toggleNeighborhood = (n: string) =>
+  const filters: BrowseFilters = {
+    tonightOnly,
+    payRange,
+    neighborhoods: selectedNeighborhoods,
+    roles: selectedRoles,
+    page,
+  };
+  const queryString = gigsQueryString(filters);
+
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ['gigs', queryString],
+    queryFn: async () => {
+      const res = await fetch(`/api/gigs${queryString ? `?${queryString}` : ''}`);
+      if (!res.ok) throw new Error('Failed to load gigs');
+      return res.json() as Promise<GigListResponse>;
+    },
+    placeholderData: keepPreviousData,
+    refetchInterval: 60_000,
+  });
+
+  const gigs = useMemo(() => data?.gigs ?? [], [data]);
+  const filtered = useMemo(
+    () => gigs.filter((gig) => matchesClientFilters(gig, filters, search)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [gigs, search, selectedNeighborhoods, selectedRoles]
+  );
+  const hotGigs = filtered.filter((gig) => gigUrgency(gig) === 'HOT').slice(0, 4);
+
+  const resetToFirstPage = () => setPage(1);
+
+  const toggleNeighborhood = (n: string) => {
     setSelectedNeighborhoods((prev) =>
       prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]
     );
-
-  const toggleRole = (r: string) =>
-    setSelectedRoles((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
-
-  const toggleGenre = (g: string) =>
-    setSelectedGenres((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]));
-
-  const handleApply = (id: number) => {
-    setGigs((prev) => prev.map((g) => (g.id === id ? { ...g, applied: !g.applied } : g)));
+    resetToFirstPage();
   };
 
-  const filtered = gigs.filter((g) => {
-    if (
-      search &&
-      !g.venueName.toLowerCase().includes(search.toLowerCase()) &&
-      !g.role.toLowerCase().includes(search.toLowerCase())
-    )
-      return false;
-    if (g.rate < payRange[0] || g.rate > payRange[1]) return false;
-    if (selectedNeighborhoods.length && !selectedNeighborhoods.includes(g.neighborhood))
-      return false;
-    if (
-      selectedRoles.length &&
-      !selectedRoles.some((r) => g.role.toLowerCase().includes(r.toLowerCase()))
-    )
-      return false;
-    return true;
-  });
+  const toggleRole = (r: string) => {
+    setSelectedRoles((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
+    resetToFirstPage();
+  };
 
-  const hotGigs = MOCK_GIGS.filter((g) => g.urgency);
   const activeFilterCount =
     selectedNeighborhoods.length +
     selectedRoles.length +
-    selectedGenres.length +
     (tonightOnly ? 1 : 0) +
-    (payRange[0] !== 50 || payRange[1] !== 250 ? 1 : 0);
+    (payRange[0] !== PAY_RANGE_DEFAULT[0] || payRange[1] !== PAY_RANGE_DEFAULT[1] ? 1 : 0);
 
   return (
     <div className="min-h-screen bg-[#121212] text-white flex font-sans pt-14 md:pt-0">
@@ -302,12 +258,13 @@ export default function BrowseGigsPage() {
         <header className="h-16 flex items-center justify-between px-4 md:px-6 border-b border-white/5 bg-[#121212]/80 backdrop-blur-md sticky top-14 md:top-0 z-20">
           <div>
             <h1 className="text-lg font-bold">Browse Gigs</h1>
-            <p className="text-xs text-white/40">{filtered.length} available tonight</p>
+            <p className="text-xs text-white/40">
+              {isPending ? 'Loading…' : `${filtered.length} open gig${filtered.length === 1 ? '' : 's'}`}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <button className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
               <Bell className="w-4 h-4 text-white/60" />
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-[#00FFCC] rounded-full" />
             </button>
           </div>
         </header>
@@ -319,7 +276,7 @@ export default function BrowseGigsPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
               <input
                 type="text"
-                placeholder="Search venues, roles, neighborhoods…"
+                placeholder="Search gigs, venues, roles…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
@@ -410,7 +367,10 @@ export default function BrowseGigsPage() {
                   </div>
                   <Switch
                     checked={tonightOnly}
-                    onCheckedChange={setTonightOnly}
+                    onCheckedChange={(checked) => {
+                      setTonightOnly(checked);
+                      resetToFirstPage();
+                    }}
                     className="data-[state=checked]:bg-[#00FFCC]"
                   />
                 </div>
@@ -455,11 +415,14 @@ export default function BrowseGigsPage() {
                   </span>
                 </div>
                 <Slider
-                  min={20}
-                  max={400}
+                  min={PAY_RANGE_DEFAULT[0]}
+                  max={PAY_RANGE_DEFAULT[1]}
                   step={10}
                   value={payRange}
-                  onValueChange={setPayRange}
+                  onValueChange={(range) => {
+                    setPayRange(range);
+                    resetToFirstPage();
+                  }}
                   className="[&_.slider-thumb]:bg-[#00FFCC] [&_.slider-range]:bg-[#00FFCC]"
                 />
               </div>
@@ -487,29 +450,6 @@ export default function BrowseGigsPage() {
                 </div>
               </div>
 
-              {/* Genres */}
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-3">
-                  Genres
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {GENRES.map((g) => (
-                    <button
-                      key={g}
-                      onClick={() => toggleGenre(g)}
-                      className={cn(
-                        'px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors',
-                        selectedGenres.includes(g)
-                          ? 'bg-[#00FFCC]/10 text-[#00FFCC] border-[#00FFCC]/30'
-                          : 'bg-[#1E1E1E] text-white/50 border-white/10 hover:text-white'
-                      )}
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* Clear filters */}
               {activeFilterCount > 0 && (
                 <Button
@@ -518,9 +458,9 @@ export default function BrowseGigsPage() {
                   onClick={() => {
                     setSelectedNeighborhoods([]);
                     setSelectedRoles([]);
-                    setSelectedGenres([]);
                     setTonightOnly(false);
-                    setPayRange([50, 250]);
+                    setPayRange(PAY_RANGE_DEFAULT);
+                    resetToFirstPage();
                   }}
                   className="w-full text-white/40 hover:text-red-400 text-xs"
                 >
@@ -534,17 +474,26 @@ export default function BrowseGigsPage() {
           <div className="flex-1 overflow-y-auto p-6">
             {viewMode === 'list' ? (
               <>
-                {/* Sort bar */}
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-sm text-white/40">
-                    <span className="font-bold text-white">{filtered.length}</span> gigs found
-                  </p>
-                  <button className="flex items-center gap-1.5 text-sm text-white/50 hover:text-white transition-colors">
-                    Sort: Best Match <ChevronDown className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {filtered.length === 0 ? (
+                {isError ? (
+                  <div className="flex flex-col items-center justify-center py-24 text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mb-4">
+                      <AlertTriangle className="w-8 h-8 text-red-400/60" />
+                    </div>
+                    <p className="text-white/40 font-semibold">Couldn't load gigs</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => refetch()}
+                      className="mt-3 text-[#00FFCC]"
+                    >
+                      Try again
+                    </Button>
+                  </div>
+                ) : isPending ? (
+                  <div className="flex items-center justify-center py-24">
+                    <Loader2 className="w-6 h-6 text-[#00FFCC] animate-spin" />
+                  </div>
+                ) : filtered.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-24 text-center">
                     <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4">
                       <Search className="w-8 h-8 text-white/20" />
@@ -555,38 +504,70 @@ export default function BrowseGigsPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {filtered.map((gig) => (
-                      <GigCard key={gig.id} gig={gig} onApply={handleApply} />
-                    ))}
-                  </div>
+                  <>
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-sm text-white/40">
+                        <span className="font-bold text-white">{filtered.length}</span> gigs found
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      {filtered.map((gig) => (
+                        <GigCard key={gig.id} gig={gig} />
+                      ))}
+                    </div>
+                    {/* Pagination */}
+                    {(page > 1 || data?.hasMore) && (
+                      <div className="flex items-center justify-center gap-3 mt-6">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={page <= 1}
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                          className="text-white/60 disabled:opacity-30"
+                        >
+                          <ChevronLeft className="w-4 h-4 mr-1" /> Previous
+                        </Button>
+                        <span className="text-xs text-white/40 font-bold">Page {page}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={!data?.hasMore}
+                          onClick={() => setPage((p) => p + 1)}
+                          className="text-white/60 disabled:opacity-30"
+                        >
+                          Next <ChevronRight className="w-4 h-4 ml-1" />
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             ) : (
-              /* Map view placeholder */
+              /* Map view placeholder (post-alpha, Technical Backlog #1) */
               <div className="h-full min-h-[500px] rounded-2xl bg-[#1A1A1A] border border-white/5 flex flex-col items-center justify-center gap-4">
                 <Map className="w-12 h-12 text-white/10" />
                 <div className="text-center">
                   <p className="text-white/40 font-semibold">Map View</p>
-                  <p className="text-white/20 text-sm mt-1">
-                    Connect Google Maps to enable this view
-                  </p>
+                  <p className="text-white/20 text-sm mt-1">Coming soon — use List for now</p>
                 </div>
                 <div className="flex flex-wrap gap-3 mt-4 px-8">
                   {filtered.slice(0, 4).map((gig) => (
-                    <div
+                    <Link
                       key={gig.id}
-                      className="flex items-center gap-2 bg-[#1E1E1E] border border-white/10 px-3 py-2 rounded-xl"
+                      href={`/gigs/${gig.id}`}
+                      className="flex items-center gap-2 bg-[#1E1E1E] border border-white/10 px-3 py-2 rounded-xl hover:border-[#00FFCC]/30 transition-colors"
                     >
                       <div
                         className={cn(
                           'w-2 h-2 rounded-full',
-                          gig.urgency ? 'bg-red-400' : 'bg-[#00FFCC]'
+                          gigUrgency(gig) === 'HOT' ? 'bg-red-400' : 'bg-[#00FFCC]'
                         )}
                       />
-                      <span className="text-xs font-bold text-white">{gig.venueName}</span>
-                      <span className="text-xs text-white/40">${gig.rate}/hr</span>
-                    </div>
+                      <span className="text-xs font-bold text-white">
+                        {gig.venue_name ?? gig.title}
+                      </span>
+                      <span className="text-xs text-white/40">{formatRate(gig)}</span>
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -600,81 +581,57 @@ export default function BrowseGigsPage() {
                 <h3 className="text-sm font-bold">Hot Gigs Tonight</h3>
                 <Zap className="w-3.5 h-3.5 text-[#00FFCC] fill-current" />
               </div>
-              <span className="flex items-center gap-1 bg-red-500/10 border border-red-500/20 text-red-400 text-[9px] font-black px-2 py-0.5 rounded-full uppercase">
-                <span className="w-1.5 h-1.5 bg-red-400 rounded-full" />
-                Live
-              </span>
+              {hotGigs.length > 0 && (
+                <span className="flex items-center gap-1 bg-red-500/10 border border-red-500/20 text-red-400 text-[9px] font-black px-2 py-0.5 rounded-full uppercase">
+                  <span className="w-1.5 h-1.5 bg-red-400 rounded-full" />
+                  Live
+                </span>
+              )}
             </div>
 
-            <div className="space-y-3">
-              {hotGigs.map((gig) => (
-                <Card
-                  key={gig.id}
-                  className="bg-[#1A1A1A] border-white/5 hover:border-[#00FFCC]/20 transition-colors cursor-pointer group"
-                >
-                  <CardContent className="p-3">
-                    <div className="flex items-start gap-2.5">
-                      <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
-                        <img
-                          src={gig.image}
-                          alt={gig.venueName}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-1">
-                          <p className="text-xs font-bold leading-tight group-hover:text-[#00FFCC] transition-colors truncate">
-                            {gig.venueName}
-                          </p>
-                          {gig.urgency && (
-                            <span
-                              className={cn(
-                                'text-[9px] font-black px-1.5 py-0.5 rounded flex-shrink-0',
-                                URGENCY_CONFIG[gig.urgency].color
-                              )}
-                            >
-                              {gig.urgency}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-[#00FFCC] font-bold">{gig.role}</p>
-                        <div className="flex items-center justify-between mt-1.5">
-                          <span className="text-[11px] text-white/40 flex items-center gap-1">
-                            <Clock className="w-3 h-3" /> {gig.time}
-                          </span>
-                          <span className="text-xs font-black text-white">${gig.rate}/hr</span>
-                        </div>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => handleApply(gig.id)}
-                      className={cn(
-                        'w-full mt-2.5 font-bold text-xs h-7',
-                        gig.applied
-                          ? 'bg-[#00FFCC]/10 text-[#00FFCC] border border-[#00FFCC]/30'
-                          : 'bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90'
-                      )}
-                    >
-                      {gig.applied ? '✓ Applied' : 'Quick Apply'}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {/* Neighborhood map placeholder */}
-            <div className="mt-6">
-              <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-3">
-                Nearby Venues
+            {hotGigs.length === 0 ? (
+              <p className="text-xs text-white/30 leading-relaxed">
+                Nothing starting in the next 24 hours yet. Check back after venues post tonight's
+                lineups.
               </p>
-              <div className="aspect-square rounded-xl bg-[#1A1A1A] border border-white/5 flex items-center justify-center">
-                <div className="text-center">
-                  <Map className="w-8 h-8 text-white/10 mx-auto mb-2" />
-                  <p className="text-[11px] text-white/20">Map preview</p>
-                </div>
+            ) : (
+              <div className="space-y-3">
+                {hotGigs.map((gig) => (
+                  <Link key={gig.id} href={`/gigs/${gig.id}`} className="block">
+                    <Card className="bg-[#1A1A1A] border-white/5 hover:border-[#00FFCC]/20 transition-colors cursor-pointer group">
+                      <CardContent className="p-3">
+                        <div className="flex items-start gap-2.5">
+                          <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
+                            <GigImage gig={gig} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-1">
+                              <p className="text-xs font-bold leading-tight group-hover:text-[#00FFCC] transition-colors truncate">
+                                {gig.venue_name ?? gig.title}
+                              </p>
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded flex-shrink-0 bg-red-500 text-white">
+                                HOT
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-[#00FFCC] font-bold">
+                              {gig.role_needed || 'Nightlife Talent'}
+                            </p>
+                            <div className="flex items-center justify-between mt-1.5">
+                              <span className="text-[11px] text-white/40 flex items-center gap-1">
+                                <Clock className="w-3 h-3" /> {formatTimeRange(gig.start_time, null)}
+                              </span>
+                              <span className="text-xs font-black text-white">
+                                {formatRate(gig)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                ))}
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

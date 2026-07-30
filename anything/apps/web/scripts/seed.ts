@@ -79,14 +79,18 @@ async function main() {
     const nextWeek = new Date(Date.now() + 7 * 24 * 3600 * 1000);
     const nextWeekEnd = new Date(nextWeek.getTime() + 5 * 3600 * 1000);
 
+    const lastWeek = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const lastWeekEnd = new Date(lastWeek.getTime() + 5 * 3600 * 1000);
+
     await sql`
       INSERT INTO gigs (venue_id, title, role_needed, description, start_time, end_time, base_rate, tips_included, status)
       VALUES
         (${venueId}, 'Saturday Night Deep House Set', 'Headliner DJ', 'Drive the room from 10 PM until close.', ${tonightStart.toISOString()}, ${tonightEnd.toISOString()}, 450, true, 'PUBLISHED'),
         (${venueId}, 'VIP Mixologist — Weekend Residency', 'Mixologist', 'Craft cocktail program for the mezzanine bar.', ${nextWeek.toISOString()}, ${nextWeekEnd.toISOString()}, 55, true, 'PUBLISHED'),
-        (${venueId}, 'Warehouse Party Opener (TBD)', 'Opener DJ', 'Draft — details being finalized.', ${nextWeek.toISOString()}, ${nextWeekEnd.toISOString()}, 200, false, 'DRAFT')
+        (${venueId}, 'Warehouse Party Opener (TBD)', 'Opener DJ', 'Draft — details being finalized.', ${nextWeek.toISOString()}, ${nextWeekEnd.toISOString()}, 200, false, 'DRAFT'),
+        (${venueId}, 'Friday Rooftop Sunset Set', 'DJ', 'Filled last week — lifecycle demo.', ${lastWeek.toISOString()}, ${lastWeekEnd.toISOString()}, 180, false, 'FILLED')
     `;
-    console.log('✓ seeded 3 gigs');
+    console.log('✓ seeded 4 gigs (PUBLISHED ×2, DRAFT, FILLED)');
   } else {
     console.log(`• gigs already present (${gigCount[0].count})`);
   }
