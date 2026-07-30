@@ -34,7 +34,15 @@ function PageShell({ children }: { children: React.ReactNode }) {
         </div>
         {children}
         <p className="text-center text-xs text-white/20 mt-6">
-          By joining, you agree to our Terms of Service &amp; Privacy Policy.
+          By joining, you agree to our{' '}
+          <Link href="/legal/terms" className="text-white/40 hover:text-[#00FFCC] underline">
+            Terms of Service
+          </Link>{' '}
+          &amp;{' '}
+          <Link href="/legal/privacy" className="text-white/40 hover:text-[#00FFCC] underline">
+            Privacy Policy
+          </Link>
+          .
         </p>
       </div>
     </main>
@@ -146,11 +154,18 @@ function SignUpForm({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'TALENT' | 'VENUE'>('TALENT');
+  // 18+ attestation (TENANT_GUARDRAIL §4.2 G12). Recorded server-side after
+  // signup; the checkbox is only the collection point, never the enforcement.
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!ageConfirmed) {
+      setError('You must confirm you are 18 or older to join AfterDark.');
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -178,6 +193,15 @@ function SignUpForm({
         setError(msg);
         setLoading(false);
         return;
+      }
+
+      // Record the 18+ attestation now that a session exists (G12). Best-effort:
+      // a network blip here must not strand a user who already has an account —
+      // the record is re-asserted from Settings if it is ever missing.
+      try {
+        await fetch('/api/account/age-confirm', { method: 'POST' });
+      } catch (ageError) {
+        console.error('Age confirmation failed to record:', ageError);
       }
 
       if (typeof window !== 'undefined') {
@@ -294,6 +318,21 @@ function SignUpForm({
         />
       </label>
 
+      {/* 18+ gate (G12) */}
+      <label className="flex items-start gap-3 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          required
+          checked={ageConfirmed}
+          onChange={(e) => setAgeConfirmed(e.target.checked)}
+          className="mt-0.5 w-4 h-4 rounded accent-[#00FFCC] flex-shrink-0"
+        />
+        <span className="text-xs text-white/50 leading-relaxed">
+          I confirm I am <strong className="text-white/70">18 years or older</strong>. Some gigs
+          require you to be 21+, which is shown on each listing.
+        </span>
+      </label>
+
       {error && (
         <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">
           {error}
@@ -302,7 +341,7 @@ function SignUpForm({
 
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || !ageConfirmed}
         className="w-full bg-[#00FFCC] text-black font-bold py-3 rounded-xl text-sm hover:bg-[#00FFCC]/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
       >
         {loading ? (

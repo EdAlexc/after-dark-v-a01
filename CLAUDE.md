@@ -25,6 +25,8 @@ with high multi-user/multi-tenant concurrency and PII/transactional data protect
 | `anything/publisher/` | Deploy tooling: `@opennextjs/aws` build for AWS Lambda + S3 |
 | `CLAUDE.md` / `DEV_TIMELINE.MD` / `TENANT_GUARDRAIL.md` | This audit & planning set (2026-07-24) |
 | `TESTING.md` | Verification playbook: automated suites, manual E2E checklists, security probes, shared preview accounts (2026-07-30) |
+| `docs/ropa.md` · `docs/retention.md` | GDPR Art. 30 record of processing + retention schedule (P2; keep in sync with `/legal/privacy`) |
+| `docs/rls-cutover.md` | Runbook for switching the app to the least-privilege DB role (P2.4 remainder) |
 
 ## 2. Commands & environment
 
@@ -40,6 +42,7 @@ yarn test                   # vitest run (245 tests as of the 2FA-plugin migrati
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
 yarn db:preview-accounts    # shared talent/venue/party preview accounts (TESTING.md §2; idempotent)
+yarn db:verify-rls          # proves RLS isolation against a non-owner role (never run on prod)
 ```
 
 - **Required env**: `DATABASE_URL` (Neon Postgres) and `BETTER_AUTH_SECRET` (signs sessions
@@ -51,8 +54,11 @@ yarn db:preview-accounts    # shared talent/venue/party preview accounts (TESTIN
   (error tracking — no-op unset). See `apps/web/.env.example`; no real `.env` is committed.
 - **Migrations live in `apps/web/migrations/`** (P0). `0001_baseline.sql` reproduces §6.1;
   `0002_audit_logs.sql` adds the audit trail; `0003_gig_lifecycle.sql` widens gig status to
-  the full lifecycle (P1); `0004_rls.sql` ships dormant RLS policies (active once a non-owner
-  DB role is adopted — Backlog #25). The runner records applied files in `_migrations`.
+  the full lifecycle (P1); `0004_rls.sql` ships RLS policies (verified enforcing — see
+  `yarn db:verify-rls` — but inert until the connection role changes, Backlog #25);
+  `0005_two_factor_plugin.sql` adds the better-auth twoFactor schema; `0006_compliance_spine.sql`
+  adds age gating + least-privilege GRANTs (P2). The runner records applied files in
+  `_migrations`.
 - Web tests: Vitest (`vitest.config.mts`). Shared logic + every route has an edge-case suite
   under `__tests__/`. `yarn test` is wired and gated in CI (`.github/workflows/ci.yml`).
 - Platform files marked `DO NOT REWRITE` (`src/lib/auth.ts`, `src/app/api/auth/[...all]/route.ts`)
@@ -170,6 +176,9 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Global search "gigs or talent" (top bar) | p1–p10 | — | ❌ |
 | Venue↔external calendar & ticketing integrations (2.B) | — | — | ❌ (post-alpha candidate) |
 | Settings (profile, password, 2FA) | — | `dashboard/settings/*` + `/api/settings*` | ✅ real (2FA is hand-rolled; see §7) |
+| Legal surface: privacy, ToS, contact (footer, GDPR G1) | p1–p10 footer | `src/app/legal/*`, `src/app/contact` | ✅ real routes, versioned via `lib/legal.ts` (P2.1) |
+| Data export & account deletion (GDPR G4) | — | `dashboard/settings` → `/api/account/*` | ✅ self-serve, audited, audit-trail pseudonymized (P2.2) |
+| Age gating 18+ / per-gig 21+ (GDPR G12) | p3 toggle | signup + `gigs.age_requirement` | ✅ attested at signup; 21+ badge on detail (P2.5) |
 | PWA (installable, offline, service worker) | — | `public/` has favicon only | ❌ |
 | Talent create-gig page | — | — | ✅ removed 2026-07-30 (was off-PRD; Backlog #11) |
 
@@ -179,6 +188,8 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 PATCH owner status transition), `/api/venue/gigs` (GET own, all statuses), `/api/talent`
 (GET public directory), `/api/talent/profile` (GET/PUT), `/api/venue/profile` (GET/PUT),
 `/api/settings` (GET/PUT), `/api/settings/change-password` (POST),
+`/api/account/export` (GET, own data), `/api/account` (DELETE, own account),
+`/api/account/age-confirm` (POST, 18+ attestation),
 `/api/auth/two-factor/*` (better-auth twoFactor plugin: enable/disable/verify-totp/
 verify-backup-code — replaced the old `/api/settings/2fa`),
 `/api/__create/check-social-secrets` (dev only).
@@ -337,6 +348,10 @@ Verified findings (2026-07-24), ordered by severity — full remediation & test 
 1. **Privilege escalation**: `POST /api/user/role` accepts `ADMIN` from any signed-in user
    (`anything/apps/web/src/app/api/user/role/route.ts:23`). Restrict to `TALENT|VENUE`; admin
    is granted out-of-band only.
+2'. **AuthZ is now machine-checked** (P2.3): `src/app/api/utils/authz-matrix.ts` declares every
+   route × role × ownership and the generated suite fails CI if a route has no row. Start
+   there for any authZ question.
+
 2. **No RBAC / no route protection**: no `middleware.ts`; `/dashboard/*` renders without a
    session; APIs check session but never role (e.g. gigs POST). Add middleware auth gate +
    per-endpoint role checks (authZ matrix in TENANT_GUARDRAIL §6.1).

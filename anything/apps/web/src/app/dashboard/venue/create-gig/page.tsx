@@ -203,6 +203,7 @@ export default function CreateGigPage() {
           end_time: endTime,
           base_rate: Number(form.base_rate) || 0,
           tips_included: form.tips_included,
+          age_requirement: form.age_requirement ? 21 : 18,
           status: 'DRAFT',
         }),
       });
@@ -231,6 +232,7 @@ export default function CreateGigPage() {
           end_time: endTime,
           base_rate: Number(form.base_rate),
           tips_included: form.tips_included,
+          age_requirement: form.age_requirement ? 21 : 18,
           status: 'PUBLISHED',
         }),
       });

@@ -11,7 +11,8 @@
 		"test:watch": "vitest",
 		"db:migrate": "node scripts/migrate.mjs",
 		"db:seed": "tsx scripts/seed.ts",
-		"db:preview-accounts": "tsx scripts/create-preview-accounts.ts"
+		"db:preview-accounts": "tsx scripts/create-preview-accounts.ts",
+		"db:verify-rls": "node scripts/verify-rls.mjs"
 	},
 	"dependencies": {
 		"@base-ui/react": "^1.3.0",

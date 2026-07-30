@@ -36,19 +36,26 @@ beforeEach(() => {
   vi.clearAllMocks();
   getRateLimiter('change-password', { windowMs: 1, max: 1 }).reset();
   mocks.getSession.mockResolvedValue(SESSION);
-  mocks.sql.mockResolvedValue([]);
+  // requireSession verifies the account still exists, so the role lookup must
+  // return a row; `[]` now means "deleted account" → 401.
+  mocks.sql.mockImplementation(async (first: unknown) => {
+    const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
+    return text.includes('SELECT role FROM "user"') ? [{ role: 'TALENT' }] : [];
+  });
 });
 
 describe('GET/PUT /api/settings', () => {
-  it('GET 401 signed out; 404 when user row is missing', async () => {
+  it('GET 401 signed out, and 401 (not 404) when the account row is gone', async () => {
     mocks.getSession.mockResolvedValue(null);
     expect((await settingsGet(jsonRequest('http://t.local/api/settings', 'GET'), {})).status).toBe(
       401
     );
+    // A valid cookie for a deleted account is signed out by the guard before the
+    // route runs — it is an authentication failure, not a missing resource.
     mocks.getSession.mockResolvedValue(SESSION);
     mocks.sql.mockResolvedValue([]);
     expect((await settingsGet(jsonRequest('http://t.local/api/settings', 'GET'), {})).status).toBe(
-      404
+      401
     );
   });
 
@@ -56,7 +63,8 @@ describe('GET/PUT /api/settings', () => {
     mocks.sql.mockResolvedValue([{ id: 'u1', twoFactorEnabled: true }]);
     const res = await settingsGet(jsonRequest('http://t.local/api/settings', 'GET'), {});
     expect(res.status).toBe(200);
-    const select = executedSql()[0].text;
+    const select = executedSql().find((call) => call.text.includes('FROM "user"') &&
+      call.text.includes('recovery_email'))!.text;
     expect(select).toContain('"twoFactorEnabled"');
     expect(select).not.toContain('secret');
     expect(select).not.toContain('backupCodes');

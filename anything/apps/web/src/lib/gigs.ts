@@ -14,6 +14,8 @@ export interface ApiGig {
   end_time: string | null;
   base_rate: string | number | null;
   tips_included: boolean;
+  /** Minimum age to work the gig: 18 (platform floor) or 21 (G12). */
+  age_requirement?: number | null;
   status: 'DRAFT' | 'PUBLISHED' | 'FILLED' | 'COMPLETED' | 'CANCELLED';
   created_at: string;
   // Joined venue card fields (public listing / detail).

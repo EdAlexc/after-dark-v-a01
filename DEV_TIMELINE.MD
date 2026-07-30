@@ -8,10 +8,42 @@
 
 ## 1. Current status — YOU ARE HERE
 
-- **Date:** 2026-07-30 · **Branch:** `claude/p1-gigs-live` (worktree off `main`; PR #7 merged,
-  PR #8 open)
-- **Project stage:** **P0 and P1 fully complete — every carry-over closed. Remaining phases
-  re-sliced (§2.1); next is the new P2 (trust & compliance spine), then P3 applications.**
+- **Date:** 2026-07-30 · **Branch:** `claude/p2-compliance-spine` (worktree off `main`;
+  PRs #7–#9 merged)
+- **Project stage:** **P0, P1 and P2 complete. Next is P3 (applications).**
+- **P2 delivered this session** (373 tests green; browser- and database-verified, procedures in
+  [TESTING.md](TESTING.md)):
+  - **P2.1 Legal surface (G1/G3)**: `/legal/privacy`, `/legal/terms`, `/contact` — real,
+    versioned, dated, reachable logged-out; content matches what the code actually does
+    (including "payments are not live"). Version/date and contact addresses come from
+    `src/lib/legal.ts`. Every footer `href="#"` is gone. Cookie audit confirms **no
+    `Set-Cookie` on logged-out pages** — no consent banner is needed while that holds.
+  - **P2.2 Self-serve DSR (G4)**: `GET /api/account/export` (JSON download, rate-limited 5/h,
+    `no-store`, audited, credentials deliberately excluded and *named* in `meta.excluded`) and
+    `DELETE /api/account` (password re-auth **plus** typed `DELETE`, cascade, audit-trail
+    pseudonymization). Both read **one registry** — `api/utils/account-data.ts` — so export and
+    erasure cannot drift apart; later slices add their table there once.
+  - **P2.3 AuthZ matrix (§6.1)**: `api/utils/authz-matrix.ts` declares every route × actor ×
+    ownership; the generated suite contributes **112 tests** and **fails CI when a `route.ts`
+    has no row** (and when a row points at a deleted route). Writing it surfaced two wrong
+    assumptions in my own spec — `/api/session` 401s rather than returning null, and a rival's
+    *published* gig is public by design, so the isolation test now runs against a DRAFT.
+  - **P2.4 RLS**: GRANTs migration (`0006`, least-privilege, `audit_logs` INSERT/SELECT only,
+    no DDL) + **`yarn db:verify-rls`, which proved the 0004 policies actually enforce against
+    a real non-owner role — 10/10** (drafts invisible by direct id, cross-tenant UPDATE affects
+    0 rows, audit trail immutable). Nobody had ever tested them against an enforcing role.
+    **The production cutover is deliberately NOT done** — see the "honest status" note below.
+  - **P2.5 Age gate + governance (G12/G2/G7)**: 18+ attestation at signup recorded server-side
+    (`age_confirmed_at`, idempotent — first attestation wins); per-gig `age_requirement`
+    (18/21, DB CHECK + zod) now persisted by the create-gig wizard and surfaced as a **21+ ONLY**
+    badge on the detail page. `docs/ropa.md` and `docs/retention.md` written, including a
+    candid "known gaps" table.
+  - **Security bug found and fixed while verifying**: a **deleted account's session kept
+    working**. better-auth caches the session in the cookie for 7 days, so `getSession`
+    succeeded after erasure and the user could still call authenticated endpoints. `AuthGuard`
+    now confirms the user row exists on every authenticated request (one indexed lookup, and
+    it replaces the query `requireRole` already made). This also fixes stale sessions after a
+    database swap, and pre-wires account suspension for P9.
 - **P0/P1 close-out (second pass, same day):**
   - **2FA → better-auth twoFactor plugin (Backlog #17 ✅)**: migration `0005` (plugin
     `twoFactor` table + `user.twoFactorEnabled`, legacy hand-rolled enrollments cleared);
@@ -92,21 +124,22 @@
 
 ### Pick-up-here: next five tasks (in order)
 
-> The remaining phases were **re-sliced 2026-07-30** (§2.1 explains why and maps old → new).
-> Applications moved from P2 to **P3**; the new **P2** is the compliance + test spine, which
-> is legally blocking now that the deployed app accepts signups, and which makes every later
-> slice cheaper to secure.
+> P2 is complete; **P3 applications** is next. The one carried item is the RLS production
+> cutover (below), which is ops-gated rather than blocked on code.
 
-1. **P2.1** — Legal surface: real `/legal/privacy`, `/legal/terms`, `/contact` routes, footer
-   links wired, cookie audit (G1/G3). Half a day, and it unblocks any signup marketing.
-2. **P2.2** — Self-serve DSR: `GET /api/account/export` + `DELETE /api/account` (re-auth,
-   cascade, audit-log pseudonymization) with Settings UI (G4).
-3. **P2.3** — AuthZ matrix harness: declarative `role × endpoint × ownership` table +
-   generated suite; a route without a row fails CI (TENANT_GUARDRAIL §6.1).
-4. **P2.4** — RLS activation (Backlog #25): non-owner DB role, GRANTs, `withRlsContext` on
-   tenant routes, `DATABASE_URL` cutover, negative tests. Policies from `0004` already exist.
-5. **P2.5** — 18+ age gate at signup + per-gig 21+ flag surfaced (G12); `docs/ropa.md` and
-   `docs/retention.md` (G2/G7). Then **P3 applications** begins.
+1. **P3.1** — `applications` migration (unique `(gig_id, talent_id)`, proposed rate in integer
+   cents) + `POST /api/gigs/[id]/apply` (TALENT-only, PUBLISHED gigs only, rate-limited); flip
+   the gig detail page's disabled submit — the 5% estimator is already live.
+   **Add a matrix row in the same PR or CI will fail** (that is the point of P2.3).
+2. **P3.2** — Venue review: `GET /api/venue/applications` + shortlist/hire transitions reusing
+   the `gig-lifecycle.ts` matrix pattern; hire flips the gig to FILLED in one transaction.
+3. **P3.3** — Talent "My Applications" real; "✓ Applied" state on browse + detail; withdraw.
+4. **P3.4** — `notifications` table + bell + real sidebar badges (finishes Backlog #12); P5 and
+   P7 emit into it rather than rolling their own.
+5. **Carry-over (ops):** RLS production cutover — create `afterdark_app` on the production
+   branch, wire `withRlsContext` into the five routes listed in
+   [`docs/rls-cutover.md`](docs/rls-cutover.md), then flip `DATABASE_URL`. Also remember to add
+   `applications` to the DSR registry in `api/utils/account-data.ts` as part of P3.1.
 
 ---
 
@@ -190,34 +223,38 @@ high/medium (TENANT_GUARDRAIL §7 checklist).
 - ☑ Bonus from task-5 carry-overs: nonce CSP, Sentry w/ PII scrub, dormant RLS policies
   (twoFactor plugin migration → Backlog #17)
 
-### P2 — Trust & compliance spine (≈3–4 d) — ☐ not started · **do this first**
+### P2 — Trust & compliance spine (≈3–4 d) — ✅ **landed 2026-07-30** (373 tests green)
 
-> Nothing here is feature work, and that is the point: P2.1/P2.2/P2.5 are legal obligations
-> that went live when the deployed app started accepting signups, and P2.3/P2.4 make every
-> slice after this one cheaper to build and harder to get wrong. If time is short, descope in
-> this order: P2.5 docs → P2.4 → never P2.1/P2.2.
+- ☑ **P2.1 Legal surface (G1, G3).** `/legal/privacy`, `/legal/terms`, `/contact` — versioned,
+  dated, reachable logged-out; footer/signup links wired; cookie audit shows no `Set-Cookie` on
+  logged-out pages. Version + contacts centralised in `src/lib/legal.ts`.
+- ☑ **P2.2 Self-serve DSR (G4).** `GET /api/account/export` and `DELETE /api/account`
+  (password re-auth + typed confirmation), Settings → **Privacy & Data**. One registry
+  (`api/utils/account-data.ts`) backs both, so they cannot drift.
+- ☑ **P2.3 AuthZ matrix harness (§6.1).** Declarative table + generated suite (112 tests);
+  **a route without a row fails CI**, as does a row pointing at a deleted route.
+- ☑ **P2.4 RLS — verified, cutover pending.** GRANTs shipped (`0006`); `yarn db:verify-rls`
+  proves the 0004 policies enforce against a real non-owner role (10/10). Production still
+  connects as the owner: see the honest-status note below and
+  [`docs/rls-cutover.md`](docs/rls-cutover.md).
+- ☑ **P2.5 Age gate + governance docs (G12, G2, G7).** 18+ attestation recorded server-side;
+  per-gig 18/21 requirement persisted and surfaced; `docs/ropa.md`, `docs/retention.md`.
+- ☑ **Bonus (security bug):** deleted accounts could still authenticate for up to 7 days via
+  better-auth's session cookie cache. `AuthGuard` now verifies the account exists on every
+  authenticated request.
 
-- ☐ **P2.1 Legal surface (≈0.5 d, unblocks marketing).** Real `/legal/privacy`, `/legal/terms`,
-  `/contact` routes (versioned, dated, reachable logged-out); footer `#` links wired; cookie
-  audit proving only `better-auth` cookies exist pre-consent (G1, G3).
-- ☐ **P2.2 Self-serve DSR (≈1.5 d).** `GET /api/account/export` — streamed JSON of user +
-  profiles + gigs + applications (+ messages/shifts as those land), rate-limited, audited.
-  `DELETE /api/account` — password (and 2FA when enrolled) re-auth, cascade delete, audit-log
-  actor pseudonymization, Stripe-disconnect hook stubbed for P8. Settings UI for both (G4).
-- ☐ **P2.3 AuthZ matrix harness (≈1 d, force-multiplier).** One declarative table encoding
-  TENANT_GUARDRAIL §6.1, and a generated suite iterating `role × endpoint × (own id, other
-  tenant's id)` asserting 200/401/403 — heaviest on PARTY negative coverage. **A route with
-  no row fails CI**, so authZ cannot be forgotten in P3–P10.
-- ☐ **P2.4 RLS activation (≈0.5 d, Backlog #25).** Create the non-owner Postgres role, GRANT
-  table access, route tenant queries through `withRlsContext`, cut `DATABASE_URL` over, add
-  negative tests (venue A cannot read venue B under the enforcing role). The `0004` policies
-  already exist. From here, every new migration ships its policy in the same file.
-- ☐ **P2.5 Age gate + governance docs (≈0.5 d).** 18+ assertion at signup and the per-gig 21+
-  flag surfaced on the detail page (G12); `docs/ropa.md` + `docs/retention.md` (G2, G7).
+> **Honest status on P2.4.** Everything except the production cutover is done, and the cutover
+> is deliberately *not* bundled here. Neon's HTTP driver is stateless per query, so RLS context
+> must be set inside a transaction per statement (`withRlsContext`). Verification showed the
+> consequence concretely: connected as the least-privilege role **without** context, a venue
+> sees only `PUBLISHED` gigs — its own drafts silently vanish from the dashboard. Flipping
+> `DATABASE_URL` before wiring those five routes would therefore degrade the product without
+> an error. The wiring is safe to land first (it is a no-op while connected as owner), which is
+> exactly the order `docs/rls-cutover.md` prescribes.
 
-**Security gate:** G1/G3/G4/G12 verifiable per TENANT_GUARDRAIL §4.2; the export contains
-every PII table listed in §4.1; delete leaves no orphan rows and pseudonymizes (never deletes)
-the audit trail; RLS negative tests green.
+**Security gate:** ✅ G1/G3/G4/G12 verifiable per TENANT_GUARDRAIL §4.2; export covers every
+PII table in §4.1 and names its exclusions; delete cascades with no orphans and pseudonymizes
+(never deletes) the audit trail; RLS negative tests green under an enforcing role.
 
 ### P3 — Applications (≈3–4 d) — ☐ not started · *depends: P2.3*
 - ☐ **P3.1** `applications` table (unique `(gig_id, talent_id)`, proposed rate in integer
@@ -407,13 +444,18 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     cheap (~16 path references across the 3 docs + CI); a full flatten to the repo root would
     remove the need for Vercel's Root Directory setting but forces the mobile-vs-PWA decision
     in #4 — revisit after P7 when that decision is actually made.
-25. **RLS activation** (policies shipped dormant 2026-07-30 in `0004_rls.sql`) — **scheduled
-    as P2.4**, deliberately early: activating on 4 tenant tables is far cheaper than
-    retrofitting across the 9 that P3–P8 will add, and afterwards every migration ships its
-    policy in the same file. Create a dedicated **non-owner** Postgres role on Neon, GRANT it
-    table access, point `DATABASE_URL` at it, and route tenant-table queries through
-    `api/utils/rls.ts#withRlsContext`. Until then the policies are inert (owners bypass
-    non-forced RLS). Verify per TESTING.md §7.
-26. **Multi-value browse filters**: `GET /api/gigs`/`/api/talent` accept a single
+25. **RLS activation** — **verified 2026-07-30, production cutover carried.** Policies
+    (`0004`) and least-privilege GRANTs (`0006`) ship, and `yarn db:verify-rls` proves they
+    enforce against a real non-owner role (10/10: drafts invisible by direct id, cross-tenant
+    UPDATE affects 0 rows, `audit_logs` immutable, no DDL). **Remaining:** create the role on
+    production, wire `withRlsContext` into the five routes that read/write RLS-governed tables,
+    then flip `DATABASE_URL` — in that order, because the driver is stateless per query and an
+    unwired cutover silently hides a venue's own drafts. Full runbook:
+    [`docs/rls-cutover.md`](docs/rls-cutover.md).
+26. **Legal copy needs counsel review.** The privacy policy and ToS shipped in P2 describe
+    what the code actually does and satisfy G1 for alpha, but have not been reviewed by a
+    lawyer. Required before general availability, along with executed DPAs (G10) and a DPIA
+    (G13). Tracked in `docs/ropa.md` §5.
+27. **Multi-value browse filters**: `GET /api/gigs`/`/api/talent` accept a single
     neighborhood/role; the UI's multi-select refines client-side within the fetched page
     (fine at alpha volumes). Add array params + `= ANY($n)` when gig volume makes it matter.

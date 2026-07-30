@@ -151,6 +151,12 @@ export default function GigDetailPage() {
                   <Zap className="w-3 h-3 fill-current" /> Hot — starts soon
                 </span>
               )}
+              {/* Age requirement (G12) — only worth showing when above the 18 floor. */}
+              {Number(gig.age_requirement) === 21 && (
+                <span className="text-[11px] font-black px-2.5 py-1 rounded-full border border-orange-400/30 bg-orange-400/10 text-orange-300 uppercase">
+                  21+ only
+                </span>
+              )}
               {data?.isOwner && (
                 <span className="text-[11px] font-bold px-2.5 py-1 rounded-full border border-[#00FFCC]/30 bg-[#00FFCC]/10 text-[#00FFCC]">
                   Your listing
@@ -227,6 +233,11 @@ export default function GigDetailPage() {
               {gig.tips_included && (
                 <p className="mt-4 flex items-center gap-2 text-sm text-green-400 font-semibold">
                   <DollarSign className="w-4 h-4" /> Cash tips included on top of the base rate
+                </p>
+              )}
+              {Number(gig.age_requirement) === 21 && (
+                <p className="mt-3 flex items-center gap-2 text-sm text-orange-300 font-semibold">
+                  <ShieldCheck className="w-4 h-4" /> You must be 21 or older to work this gig
                 </p>
               )}
             </CardContent>
