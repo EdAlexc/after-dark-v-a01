@@ -67,7 +67,16 @@ function sessionFor(actor: Actor) {
  * whether the fetched resource belongs to the caller or to another tenant —
  * that single switch is what makes the cross-tenant column meaningful.
  */
+const SHIFT_ID = '9c1d2e3f-4a5b-4c6d-8e7f-0123456789ab';
+const CONVERSATION_ID = '7e6d5c4b-3a2b-4c1d-9e8f-fedcba987654';
+
 function wireSql(actor: Actor, ownerId: string, gigStatus = 'PUBLISHED') {
+  // "Own" rows put the caller on the side their role acts from; the
+  // cross-tenant case (ownerId = OTHER_ID) puts strangers on both sides.
+  const own = ownerId === SELF_ID;
+  const talentSide = own && (actor === 'TALENT' || actor === 'ADMIN') ? SELF_ID : 'talent-else';
+  const venueSide = own && (actor === 'VENUE' || actor === 'ADMIN') ? SELF_ID : 'venue-else';
+
   mocks.sql.mockImplementation(async (first: unknown, ..._rest: unknown[]) => {
     const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
 
@@ -75,6 +84,109 @@ function wireSql(actor: Actor, ownerId: string, gigStatus = 'PUBLISHED') {
       // anon never reaches this lookup; a signed-in actor always has a row.
       return actor === 'anon' ? [] : [{ role: actor }];
     }
+    // conversations.create counterpart lookup — always the opposite side.
+    if (text.includes('SELECT id, role FROM "user"')) {
+      return [{ id: OTHER_ID, role: actor === 'VENUE' ? 'TALENT' : 'VENUE' }];
+    }
+    // accept-rate: conversation joined with the proposal message.
+    if (text.includes('JOIN messages m')) {
+      return own
+        ? [
+            {
+              id: CONVERSATION_ID,
+              gig_id: GIG_ID,
+              venue_user_id: actor === 'VENUE' || actor === 'ADMIN' ? SELF_ID : OTHER_ID,
+              counterpart_user_id: actor === 'VENUE' || actor === 'ADMIN' ? OTHER_ID : SELF_ID,
+              message_id: 'b1a2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
+              sender_id: OTHER_ID, // the counterpart proposed; caller accepts
+              kind: 'RATE_PROPOSAL',
+              rate_cents: 15000,
+            },
+          ]
+        : [];
+    }
+    if (text.includes('FROM conversations')) {
+      if (text.includes('WHERE') && text.includes('venue_user_id')) {
+        // Participant-scoped lookups: empty when the caller is not a member.
+        return own
+          ? [
+              {
+                id: CONVERSATION_ID,
+                venue_user_id: actor === 'VENUE' || actor === 'ADMIN' ? SELF_ID : OTHER_ID,
+                counterpart_user_id:
+                  actor === 'VENUE' || actor === 'ADMIN' ? OTHER_ID : SELF_ID,
+                gig_id: GIG_ID,
+              },
+            ]
+          : [];
+      }
+      return [];
+    }
+    if (text.includes('INSERT INTO conversations')) {
+      return [{ id: CONVERSATION_ID, gig_id: GIG_ID, kind: 'GIG', created_at: 'now' }];
+    }
+    if (text.includes('INSERT INTO messages')) {
+      return [{ id: 'm-1', sender_id: SELF_ID, content: 'x', kind: 'TEXT', created_at: 'now' }];
+    }
+    if (text.includes('UPDATE messages')) return [];
+    if (text.includes('FROM messages')) return [];
+
+    if (text.includes('FROM applications a')) {
+      // Caller-scoped lookups (`tp.user_id = <session>`, e.g. the gigs.detail
+      // applicant carve-out) find nothing cross-tenant: a stranger talent has
+      // no application. Id-keyed loads (applications.update) still return the
+      // row — their routes decide via the venue/talent sides on it.
+      if (!own && text.includes('tp.user_id =')) return [];
+      return [
+        {
+          id: 'app-1',
+          gig_id: GIG_ID,
+          talent_id: 'tp-1',
+          status: 'PENDING',
+          proposed_rate_cents: 12000,
+          gig_title: 'Matrix Gig',
+          gig_status: gigStatus,
+          gig_base_rate: '100',
+          gig_start_time: null,
+          venue_user_id: venueSide,
+          talent_user_id: talentSide,
+        },
+      ];
+    }
+    if (text.includes('INSERT INTO applications')) return [{ id: 'app-1', status: 'PENDING' }];
+    if (text.includes('UPDATE applications')) return [{ id: 'app-1' }];
+
+    if (text.includes('FROM shift_transitions')) return [];
+    if (text.includes('INSERT INTO shift_transitions')) return [];
+    if (text.includes('FROM shifts s')) {
+      return [
+        {
+          id: SHIFT_ID,
+          gig_id: GIG_ID,
+          status: 'SCHEDULED',
+          agreed_rate_cents: 15000,
+          check_in_at: null,
+          check_out_at: null,
+          call_time: null,
+          gig_title: 'Matrix Gig',
+          venue_user_id: venueSide,
+          talent_user_id: talentSide,
+        },
+      ];
+    }
+    if (text.includes('UPDATE shifts')) return [{ id: SHIFT_ID, status: 'CHECKED_IN' }];
+    if (text.includes('FROM availabilities') || text.includes('INSERT INTO availabilities')) {
+      return [];
+    }
+    if (text.includes('FROM payouts') || text.includes('UPDATE payouts p')) return [];
+    if (text.includes('INSERT INTO payouts')) return [];
+    if (text.includes('stripe_accounts')) return [];
+    if (text.includes('FROM notifications') || text.includes('UPDATE notifications')) return [];
+    if (text.includes('INSERT INTO notifications')) return [];
+    if (text.includes('INSERT INTO reports')) {
+      return [{ id: 1, status: 'OPEN', severity: 'MEDIUM', created_at: 'now' }];
+    }
+
     if (text.includes('FROM gigs g')) {
       return [
         {
@@ -101,10 +213,22 @@ function wireSql(actor: Actor, ownerId: string, gigStatus = 'PUBLISHED') {
     if (text.includes('FROM gigs')) return [];
     return [];
   });
+  // Neon's transaction API: array of already-pending queries → array of results.
+  (mocks.sql as unknown as { transaction: unknown }).transaction = async (
+    queries: Promise<unknown>[]
+  ) => Promise.all(queries);
 }
 
-/** Valid request bodies, so validation never masks the authZ decision. */
-const REQUEST_BODY: Record<string, unknown> = {
+/** 1×1 transparent PNG — a real decodable image for the media pipeline. */
+const TINY_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+/**
+ * Valid request bodies, so validation never masks the authZ decision. A value
+ * may be a function of the actor for routes whose legal payload depends on
+ * who is calling (application transitions differ per side).
+ */
+const REQUEST_BODY: Record<string, unknown | ((actor: Actor) => unknown)> = {
   'gigs.create': {
     title: 'Matrix Test Gig',
     role_needed: 'DJ',
@@ -123,12 +247,34 @@ const REQUEST_BODY: Record<string, unknown> = {
   },
   'user.role.set': { role: 'TALENT' },
   'account.delete': { password: 'old-password-1', confirm: 'DELETE' },
+  // P3–P8 surfaces
+  'gigs.apply': { proposed_rate_cents: 15000, cover_message: 'matrix apply' },
+  'applications.update': (actor: Actor) =>
+    actor === 'TALENT' ? { status: 'WITHDRAWN' } : { status: 'SHORTLISTED' },
+  'notifications.read': {},
+  'media.upload': { dataUrl: TINY_PNG, purpose: 'avatar' },
+  'conversations.create': { counterpart_user_id: OTHER_ID },
+  'messages.send': { content: 'matrix hello' },
+  'conversations.accept-rate': { message_id: 'b1a2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d' },
+  'reports.create': { entity_type: 'conversation', entity_id: 'x-1', reason: 'matrix report' },
+  'availability.put': { date: '2026-08-15', slots: { PRIME_TIME: 'AVAILABLE' } },
+  'shifts.transition': { to: 'CHECKED_IN', idempotency_key: 'matrix-idem-0001' },
+  'stripe.connect.start': {},
+  'payouts.release': {},
 };
 
-function buildRequest(row: MatrixRow): Request {
-  const url = `http://matrix.local/api/${row.route.replace('/route.ts', '')}`;
+/** Query strings for GET routes whose schema requires one. */
+const REQUEST_QUERY: Record<string, string> = {
+  'availability.get': '?month=2026-08',
+};
+
+function buildRequest(row: MatrixRow, actor: Actor): Request {
+  const url =
+    `http://matrix.local/api/${row.route.replace('/route.ts', '')}` +
+    (REQUEST_QUERY[row.id] ?? '');
   if (row.method === 'GET') return new Request(url);
-  const body = REQUEST_BODY[row.id];
+  const entry = REQUEST_BODY[row.id];
+  const body = typeof entry === 'function' ? (entry as (a: Actor) => unknown)(actor) : entry;
   return new Request(url, {
     method: row.method,
     headers: { 'Content-Type': 'application/json' },
@@ -141,6 +287,7 @@ function outcomeOf(status: number): Outcome | 'OTHER' {
   if (status === 401) return 'UNAUTHENTICATED';
   if (status === 403) return 'FORBIDDEN';
   if (status === 404) return 'NOT_FOUND';
+  if (status === 503) return 'UNAVAILABLE';
   return 'OTHER';
 }
 
@@ -199,6 +346,14 @@ describe('authZ matrix — coverage gate', () => {
   });
 });
 
+/** The [id] segment appropriate to the route under test. */
+function idParamFor(row: MatrixRow): string {
+  if (row.route.startsWith('shifts/')) return SHIFT_ID;
+  if (row.route.startsWith('conversations/')) return CONVERSATION_ID;
+  if (row.route.startsWith('applications/')) return 'a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d';
+  return GIG_ID;
+}
+
 // ─── 2. Behavioral matrix ─────────────────────────────────────────────────────
 
 const behavioral = AUTHZ_MATRIX.filter((row) => !row.platform);
@@ -213,6 +368,14 @@ describe('authZ matrix — enforced behavior', () => {
       'account-export',
       'account-delete',
       'role-set',
+      'applications-create',
+      'applications-review',
+      'conversations-create',
+      'messages-send',
+      'reports-create',
+      'media-upload',
+      'shifts-transition',
+      'stripe-connect',
     ]) {
       getRateLimiter(name, { windowMs: 1, max: 1000 }).reset();
     }
@@ -234,8 +397,8 @@ describe('authZ matrix — enforced behavior', () => {
           const handler = handlers[row.method];
           expect(handler, `${row.route} exports no ${row.method}`).toBeTypeOf('function');
 
-          const res = await handler(buildRequest(row), {
-            params: Promise.resolve({ id: GIG_ID }),
+          const res = await handler(buildRequest(row, actor), {
+            params: Promise.resolve({ id: idParamFor(row) }),
           });
           expect(
             outcomeOf(res.status),
@@ -252,8 +415,8 @@ describe('authZ matrix — enforced behavior', () => {
             const handlers = (await import(
               `../../${row.route.replace('/route.ts', '')}/route`
             )) as Record<string, (req: Request, ctx: unknown) => Promise<Response>>;
-            const res = await handlers[row.method](buildRequest(row), {
-              params: Promise.resolve({ id: GIG_ID }),
+            const res = await handlers[row.method](buildRequest(row, actor), {
+              params: Promise.resolve({ id: idParamFor(row) }),
             });
             expect(
               outcomeOf(res.status),

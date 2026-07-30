@@ -1,568 +1,402 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Bell,
-  Download,
-  Music,
-  Save,
-  Zap,
-  AlertTriangle,
-} from 'lucide-react';
+/**
+ * Talent availability calendar (P6, wireframe p7) — real month grid over
+ * /api/availability with the PRD's three slots per day, booked-shift overlay
+ * (conflicts), a per-day slot editor, and the Available Tonight boost toggle.
+ */
+
+import React, { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { CalendarDays, ChevronLeft, ChevronRight, Loader2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import { NotificationsBell } from '@/components/NotificationsBell';
 import { cn } from '@/lib/utils';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+const SLOTS = [
+  { key: 'EARLY_EVENING', label: 'Early Evening', hours: '6–10 PM' },
+  { key: 'PRIME_TIME', label: 'Prime Time', hours: '10 PM–2 AM' },
+  { key: 'AFTER_HOURS', label: 'After Hours', hours: '2–6 AM' },
+] as const;
+type SlotKey = (typeof SLOTS)[number]['key'];
+type SlotStatus = 'AVAILABLE' | 'BLOCKED';
 
-type SlotStatus = 'AVAILABLE' | 'BOOKED' | 'BLOCKED';
-type TimeSlot = 'EARLY_EVENING' | 'PRIME_TIME' | 'AFTER_HOURS';
-
-interface DayData {
-  slots: Record<TimeSlot, SlotStatus>;
-  bookedVenue?: string;
-  notes?: string;
+interface AvailabilityRow {
+  date: string;
+  time_slot: SlotKey;
+  status: 'AVAILABLE' | 'BOOKED' | 'BLOCKED';
+  notes: string | null;
+}
+interface ShiftRow {
+  id: string;
+  call_time: string | null;
+  status: string;
+  gig_title: string;
+  venue_name: string | null;
 }
 
-interface CalendarState {
-  [dayKey: string]: DayData;
+function monthKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+function dayKey(date: Date): string {
+  return `${monthKey(date)}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-const SLOT_LABELS: Record<TimeSlot, { label: string; hours: string }> = {
-  EARLY_EVENING: { label: 'Early Evening', hours: '6:00 PM – 10:00 PM' },
-  PRIME_TIME: { label: 'Prime Time', hours: '10:00 PM – 2:00 AM' },
-  AFTER_HOURS: { label: 'After Hours', hours: '2:00 AM – 6:00 AM' },
-};
+export default function TalentSchedulePage() {
+  const qc = useQueryClient();
+  const [cursor, setCursor] = useState(() => new Date());
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [editorSlots, setEditorSlots] = useState<Partial<Record<SlotKey, SlotStatus>>>({});
+  const [notes, setNotes] = useState('');
 
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const month = monthKey(cursor);
 
-// Day-of-week for 1st of month (Zeller's algorithm, no Date())
-function firstDayOfMonth(year: number, month: number): number {
-  // month is 0-indexed
-  const m = month === 0 ? 13 : month === 1 ? 14 : month + 1;
-  const y = month < 2 ? year - 1 : year;
-  const k = y % 100;
-  const j = Math.floor(y / 100);
-  const h =
-    (1 + Math.floor((13 * (m + 1)) / 5) + k + Math.floor(k / 4) + Math.floor(j / 4) - 2 * j) % 7;
-  // h: 0=Sat,1=Sun,2=Mon,...,6=Fri -> convert to Sun=0
-  return (h + 6) % 7;
-}
+  const { data, isPending } = useQuery({
+    queryKey: ['availability', month],
+    queryFn: async () => {
+      const res = await fetch(`/api/availability?month=${month}`);
+      if (!res.ok) throw new Error('Failed to load availability');
+      return res.json() as Promise<{ slots: AvailabilityRow[]; shifts: ShiftRow[] }>;
+    },
+  });
 
-// Days in month (no Date())
-function daysInMonth(year: number, month: number): number {
-  const days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  if (month === 1) {
-    const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-    return isLeap ? 29 : 28;
-  }
-  return days[month];
-}
+  const { data: profileData } = useQuery({
+    queryKey: ['talent-profile'],
+    queryFn: async () => {
+      const res = await fetch('/api/talent/profile');
+      if (!res.ok) throw new Error('Failed to load profile');
+      return res.json() as Promise<{ profile: { available_tonight?: boolean } | null }>;
+    },
+  });
 
-function buildKey(year: number, month: number, day: number) {
-  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
+  const byDay = useMemo(() => {
+    const map = new Map<string, AvailabilityRow[]>();
+    for (const row of data?.slots ?? []) {
+      // Neon returns DATE as YYYY-MM-DD; normalize defensively.
+      const key = String(row.date).slice(0, 10);
+      map.set(key, [...(map.get(key) ?? []), row]);
+    }
+    return map;
+  }, [data]);
 
-// ─── Initial calendar data ────────────────────────────────────────────────────
+  const shiftsByDay = useMemo(() => {
+    const map = new Map<string, ShiftRow[]>();
+    for (const shift of data?.shifts ?? []) {
+      if (!shift.call_time) continue;
+      const key = dayKey(new Date(shift.call_time));
+      map.set(key, [...(map.get(key) ?? []), shift]);
+    }
+    return map;
+  }, [data]);
 
-const INITIAL_DATA: CalendarState = {
-  '2026-07-17': {
-    slots: { EARLY_EVENING: 'AVAILABLE', PRIME_TIME: 'BOOKED', AFTER_HOURS: 'AVAILABLE' },
-    bookedVenue: 'Nebula NYC',
-    notes: 'Confirmed. Sound check at 9PM.',
-  },
-  '2026-07-18': {
-    slots: { EARLY_EVENING: 'AVAILABLE', PRIME_TIME: 'BOOKED', AFTER_HOURS: 'AVAILABLE' },
-    bookedVenue: 'The Standard',
-    notes: '',
-  },
-  '2026-07-19': {
-    slots: { EARLY_EVENING: 'BLOCKED', PRIME_TIME: 'BOOKED', AFTER_HOURS: 'BOOKED' },
-    bookedVenue: 'Output BK',
-    notes: 'Full night — both sets.',
-  },
-  '2026-07-22': {
-    slots: { EARLY_EVENING: 'AVAILABLE', PRIME_TIME: 'AVAILABLE', AFTER_HOURS: 'BLOCKED' },
-    notes: 'Unavailable after 2AM — personal.',
-  },
-  '2026-07-24': {
-    slots: { EARLY_EVENING: 'AVAILABLE', PRIME_TIME: 'BOOKED', AFTER_HOURS: 'AVAILABLE' },
-    bookedVenue: 'PHD Rooftop',
-  },
-  '2026-07-25': {
-    slots: { EARLY_EVENING: 'BOOKED', PRIME_TIME: 'BOOKED', AFTER_HOURS: 'BLOCKED' },
-    bookedVenue: 'Limelight',
-    notes: 'Conflict — double check with venue.',
-  },
-  '2026-07-26': {
-    slots: { EARLY_EVENING: 'AVAILABLE', PRIME_TIME: 'AVAILABLE', AFTER_HOURS: 'AVAILABLE' },
-    notes: 'Open to gigs!',
-  },
-  '2026-07-31': {
-    slots: { EARLY_EVENING: 'BLOCKED', PRIME_TIME: 'BLOCKED', AFTER_HOURS: 'BLOCKED' },
-    notes: 'Vacation.',
-  },
-};
+  const saveDay = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/availability', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: selectedDay, slots: editorSlots, notes }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? 'Could not save');
+      }
+    },
+    onSuccess: () => {
+      toast.success('Availability saved — synced with your profile');
+      void qc.invalidateQueries({ queryKey: ['availability', month] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+  const toggleTonight = useMutation({
+    mutationFn: async (value: boolean) => {
+      const res = await fetch('/api/talent/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ available_tonight: value }),
+      });
+      if (!res.ok) throw new Error('Could not update');
+      return value;
+    },
+    onSuccess: (value) => {
+      toast.success(value ? 'Boost on — venues see you first tonight' : 'Boost off');
+      void qc.invalidateQueries({ queryKey: ['talent-profile'] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
-function getDayStatus(
-  data: DayData | undefined
-): 'BOOKED' | 'BLOCKED' | 'AVAILABLE' | 'CONFLICT' | null {
-  if (!data) return null;
-  const vals = Object.values(data.slots);
-  const hasBooked = vals.includes('BOOKED');
-  const hasBlocked = vals.includes('BLOCKED');
-  const hasAvailable = vals.includes('AVAILABLE');
-  if (hasBooked && hasBlocked) return 'CONFLICT';
-  if (hasBooked) return 'BOOKED';
-  if (hasBlocked && !hasAvailable) return 'BLOCKED';
-  if (hasAvailable) return 'AVAILABLE';
-  return null;
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-export default function SchedulePage() {
-  const [year, setYear] = useState(2026);
-  const [month, setMonth] = useState(6); // 0-indexed: July
-  const [selected, setSelected] = useState<number | null>(17);
-  const [calData, setCalData] = useState<CalendarState>(INITIAL_DATA);
-  const [availableTonight, setAvailableTonight] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  // Fixed "today" to avoid hydration issues
-  const TODAY = { year: 2026, month: 6, day: 17 };
-
-  // ── Calendar grid cells (no new Date()) ──
-  const cells = useMemo<(number | null)[]>(() => {
-    const firstDay = firstDayOfMonth(year, month);
-    const totalDays = daysInMonth(year, month);
-    const result: (number | null)[] = [
-      ...Array(firstDay).fill(null),
-      ...Array.from({ length: totalDays }, (_, i) => i + 1),
-    ];
-    while (result.length % 7 !== 0) result.push(null);
-    return result;
-  }, [year, month]);
-
-  // ── Selected day editor state ──
-  const selectedKey = selected !== null ? buildKey(year, month, selected) : null;
-  const selectedData: DayData =
-    selectedKey && calData[selectedKey]
-      ? calData[selectedKey]
-      : {
-          slots: { EARLY_EVENING: 'AVAILABLE', PRIME_TIME: 'AVAILABLE', AFTER_HOURS: 'AVAILABLE' },
-          notes: '',
-        };
-
-  const updateSlot = (slot: TimeSlot, status: SlotStatus) => {
-    if (!selectedKey) return;
-    setCalData((prev) => ({
-      ...prev,
-      [selectedKey]: {
-        ...selectedData,
-        slots: { ...selectedData.slots, [slot]: status },
-      },
-    }));
+  const openEditor = (key: string) => {
+    setSelectedDay(key);
+    const existing = byDay.get(key) ?? [];
+    const next: Partial<Record<SlotKey, SlotStatus>> = {};
+    for (const row of existing) {
+      if (row.status === 'AVAILABLE' || row.status === 'BLOCKED') {
+        next[row.time_slot] = row.status;
+      }
+    }
+    setEditorSlots(next);
+    setNotes(existing.find((row) => row.notes)?.notes ?? '');
   };
 
-  const updateNotes = (notes: string) => {
-    if (!selectedKey) return;
-    setCalData((prev) => ({
-      ...prev,
-      [selectedKey]: { ...selectedData, notes },
-    }));
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setSaving(false);
-  };
-
-  const prevMonth = () => {
-    if (month === 0) {
-      setYear((y) => y - 1);
-      setMonth(11);
-    } else setMonth((m) => m - 1);
-    setSelected(null);
-  };
-  const nextMonth = () => {
-    if (month === 11) {
-      setYear((y) => y + 1);
-      setMonth(0);
-    } else setMonth((m) => m + 1);
-    setSelected(null);
-  };
+  // Calendar grid math
+  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const daysInMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+  const leadingBlanks = first.getDay();
+  const todayKeyValue = dayKey(new Date());
 
   return (
     <div className="min-h-screen bg-[#121212] text-white flex font-sans pt-14 md:pt-0">
       <DashboardSidebar role="talent" />
 
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
         <header className="h-16 flex items-center justify-between px-4 md:px-6 border-b border-white/5 bg-[#121212]/80 backdrop-blur-md sticky top-14 md:top-0 z-20">
           <div>
-            <h1 className="text-lg font-bold">Availability Calendar</h1>
-            <p className="text-xs text-white/40">Manage your schedule and time slots</p>
+            <h1 className="text-lg font-bold">Availability</h1>
+            <p className="text-xs text-white/40">Changes sync instantly with your profile</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-[#1E1E1E] border border-white/10 rounded-xl px-3 py-2">
-              <span className="text-xs text-white/50 font-medium hidden sm:block">
-                Available Tonight
-              </span>
-              <Switch
-                checked={availableTonight}
-                onCheckedChange={setAvailableTonight}
-                className="data-[state=checked]:bg-[#00FFCC]"
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-white/10 text-white/50 hover:text-white text-xs flex items-center gap-1.5"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:block">Export</span>
-            </Button>
-            <button className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
-              <Bell className="w-4 h-4 text-white/60" />
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-[#00FFCC] rounded-full" />
-            </button>
-          </div>
+          <NotificationsBell role="talent" />
         </header>
 
-        {/* Main layout */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* ── Calendar ───────────────────────────────── */}
-          <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-5">
-            {/* Month navigation */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={prevMonth}
-                  className="w-8 h-8 rounded-lg bg-[#1E1E1E] border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
-                >
-                  <ChevronLeft className="w-4 h-4 text-white/60" />
-                </button>
-                <h2 className="text-lg font-black">
-                  {MONTH_NAMES[month]} {year}
-                </h2>
-                <button
-                  onClick={nextMonth}
-                  className="w-8 h-8 rounded-lg bg-[#1E1E1E] border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
-                >
-                  <ChevronRight className="w-4 h-4 text-white/60" />
-                </button>
-              </div>
-              <button
-                onClick={() => {
-                  setYear(TODAY.year);
-                  setMonth(TODAY.month);
-                  setSelected(TODAY.day);
-                }}
-                className="text-xs font-bold text-[#00FFCC] hover:underline"
-              >
-                Today
-              </button>
-            </div>
+        <main className="flex-1 overflow-y-auto p-6">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 max-w-6xl">
+            {/* ── Calendar ── */}
+            <div className="xl:col-span-2 space-y-4">
+              {/* Available tonight boost */}
+              <Card className="bg-[#1E1E1E] border-[#00FFCC]/15">
+                <CardContent className="p-4 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#00FFCC]/10 flex items-center justify-center">
+                      <Zap className="w-4 h-4 text-[#00FFCC] fill-current" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold">Available Tonight</p>
+                      <p className="text-[11px] text-white/40">
+                        Boosts you to the top of venue browse until you turn it off
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={profileData?.profile?.available_tonight ?? false}
+                    onCheckedChange={(value) => toggleTonight.mutate(value)}
+                    className="data-[state=checked]:bg-[#00FFCC]"
+                  />
+                </CardContent>
+              </Card>
 
-            {/* Day labels */}
-            <div className="grid grid-cols-7 gap-1">
-              {DAY_LABELS.map((d) => (
-                <div
-                  key={d}
-                  className="text-center text-[11px] font-bold text-white/30 py-1.5 uppercase tracking-wider"
-                >
-                  {d}
-                </div>
-              ))}
-            </div>
+              <Card className="bg-[#1E1E1E] border-white/5">
+                <CardContent className="p-4">
+                  {/* Month nav */}
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-sm font-black">
+                      {cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                    </p>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() =>
+                          setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))
+                        }
+                        className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"
+                      >
+                        <ChevronLeft className="w-4 h-4 text-white/60" />
+                      </button>
+                      <button
+                        onClick={() =>
+                          setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))
+                        }
+                        className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"
+                      >
+                        <ChevronRight className="w-4 h-4 text-white/60" />
+                      </button>
+                    </div>
+                  </div>
 
-            {/* Calendar grid */}
-            <div className="grid grid-cols-7 gap-1.5">
-              {cells.map((day, idx) => {
-                if (day === null) {
-                  return <div key={`empty-${idx}`} className="aspect-[1/1.15] rounded-xl" />;
-                }
-                const key = buildKey(year, month, day);
-                const data = calData[key];
-                const status = getDayStatus(data);
-                const isToday = year === TODAY.year && month === TODAY.month && day === TODAY.day;
-                const isSelected = selected === day;
-
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setSelected(day)}
-                    className={cn(
-                      'aspect-[1/1.15] rounded-xl p-2 flex flex-col items-start transition-all border text-left overflow-hidden relative',
-                      isSelected
-                        ? 'border-[#00FFCC]/50 bg-[#00FFCC]/5 ring-1 ring-[#00FFCC]/20'
-                        : status === 'CONFLICT'
-                          ? 'border-red-500/30 bg-red-500/5 hover:border-red-500/50'
-                          : 'border-white/5 bg-[#1A1A1A] hover:border-white/15'
-                    )}
-                  >
-                    {/* Day number */}
-                    <span className="mb-1.5">
-                      {isToday ? (
-                        <span className="flex items-center justify-center w-5 h-5 bg-[#00FFCC] text-black rounded-full text-[10px] font-black">
-                          {day}
-                        </span>
-                      ) : (
-                        <span
-                          className={cn(
-                            'text-xs font-black leading-none',
-                            isSelected ? 'text-white' : 'text-white/50'
-                          )}
-                        >
-                          {day}
-                        </span>
-                      )}
-                    </span>
-
-                    {/* Slot bar indicators */}
-                    {data && (
-                      <div className="flex gap-0.5 w-full">
-                        {(['EARLY_EVENING', 'PRIME_TIME', 'AFTER_HOURS'] as TimeSlot[]).map(
-                          (slot) => {
-                            const s = data.slots[slot];
-                            return (
-                              <div
-                                key={slot}
-                                className={cn(
-                                  'h-1 flex-1 rounded-full',
-                                  s === 'BOOKED'
-                                    ? 'bg-[#00FFCC]'
-                                    : s === 'BLOCKED'
-                                      ? 'bg-white/25'
-                                      : 'bg-white/8'
-                                )}
-                              />
-                            );
-                          }
-                        )}
+                  {isPending ? (
+                    <div className="flex items-center justify-center py-16">
+                      <Loader2 className="w-6 h-6 text-[#00FFCC] animate-spin" />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold uppercase text-white/30 mb-1">
+                        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                          <span key={i}>{d}</span>
+                        ))}
                       </div>
-                    )}
+                      <div className="grid grid-cols-7 gap-1">
+                        {Array.from({ length: leadingBlanks }).map((_, i) => (
+                          <div key={`blank-${i}`} />
+                        ))}
+                        {Array.from({ length: daysInMonth }).map((_, i) => {
+                          const day = i + 1;
+                          const key = `${month}-${String(day).padStart(2, '0')}`;
+                          const slots = byDay.get(key) ?? [];
+                          const shifts = shiftsByDay.get(key) ?? [];
+                          const hasAvailable = slots.some((s) => s.status === 'AVAILABLE');
+                          const hasBlocked = slots.some((s) => s.status === 'BLOCKED');
+                          const hasShift = shifts.length > 0;
+                          // A shift on a BLOCKED day is a conflict worth flagging.
+                          const conflict = hasShift && hasBlocked;
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => openEditor(key)}
+                              className={cn(
+                                'aspect-square rounded-lg border text-xs font-bold flex flex-col items-center justify-center gap-0.5 transition-colors',
+                                selectedDay === key
+                                  ? 'border-[#00FFCC] bg-[#00FFCC]/10 text-[#00FFCC]'
+                                  : key === todayKeyValue
+                                    ? 'border-white/20 bg-white/5 text-white'
+                                    : 'border-white/5 text-white/60 hover:border-white/20',
+                                conflict && 'border-orange-400/50'
+                              )}
+                            >
+                              {day}
+                              <span className="flex gap-0.5">
+                                {hasShift && (
+                                  <span
+                                    className={cn(
+                                      'w-1.5 h-1.5 rounded-full',
+                                      conflict ? 'bg-orange-400' : 'bg-[#00FFCC]'
+                                    )}
+                                  />
+                                )}
+                                {hasAvailable && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                                )}
+                                {hasBlocked && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-400/70" />
+                                )}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex flex-wrap gap-4 mt-4 text-[10px] text-white/40">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-green-400" /> Available
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-red-400/70" /> Blocked
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-[#00FFCC]" /> Booked shift
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-orange-400" /> Conflict
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
 
-                    {/* Booked venue name */}
-                    {data?.bookedVenue && (
-                      <div className="mt-1 w-full">
-                        <div className="flex items-center gap-0.5">
-                          <Music className="w-2.5 h-2.5 text-[#00FFCC] flex-shrink-0" />
-                          <p className="text-[9px] font-bold text-[#00FFCC] truncate leading-tight">
-                            {data.bookedVenue}
+            {/* ── Slot editor rail ── */}
+            <div className="space-y-4">
+              <Card className="bg-[#1E1E1E] border-white/5">
+                <CardContent className="p-4">
+                  {!selectedDay ? (
+                    <div className="text-center py-10">
+                      <CalendarDays className="w-8 h-8 text-white/10 mx-auto mb-2" />
+                      <p className="text-xs text-white/30">Pick a day to edit its slots</p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm font-black mb-3">
+                        {new Date(`${selectedDay}T12:00:00`).toLocaleDateString(undefined, {
+                          weekday: 'long',
+                          month: 'long',
+                          day: 'numeric',
+                        })}
+                      </p>
+
+                      {(shiftsByDay.get(selectedDay) ?? []).map((shift) => (
+                        <div
+                          key={shift.id}
+                          className="mb-3 rounded-lg bg-[#00FFCC]/5 border border-[#00FFCC]/20 px-3 py-2"
+                        >
+                          <p className="text-xs font-bold text-[#00FFCC]">
+                            Booked: {shift.gig_title}
+                          </p>
+                          <p className="text-[11px] text-white/40">
+                            {shift.venue_name} ·{' '}
+                            {shift.call_time
+                              ? new Date(shift.call_time).toLocaleTimeString(undefined, {
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                })
+                              : ''}
                           </p>
                         </div>
-                      </div>
-                    )}
+                      ))}
 
-                    {/* Conflict icon */}
-                    {status === 'CONFLICT' && (
-                      <AlertTriangle className="absolute bottom-1.5 right-1.5 w-3 h-3 text-red-400" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Legend */}
-            <div className="flex flex-wrap items-center gap-5 pt-3 border-t border-white/5">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-white/30">
-                Legend:
-              </p>
-              {[
-                { color: 'bg-white/8 border border-white/15', label: 'Open' },
-                { color: 'bg-[#00FFCC]', label: 'Booked' },
-                { color: 'bg-white/25', label: 'Blocked' },
-                { color: 'bg-red-500/60', label: 'Conflict' },
-              ].map((item) => (
-                <div key={item.label} className="flex items-center gap-1.5">
-                  <div className={cn('w-3 h-3 rounded-sm', item.color)} />
-                  <span className="text-xs text-white/40">{item.label}</span>
-                </div>
-              ))}
-              <div className="flex items-center gap-1.5">
-                <div className="flex gap-0.5">
-                  <div className="w-2.5 h-2.5 rounded-sm bg-white/8 border border-white/15" />
-                  <div className="w-2.5 h-2.5 rounded-sm bg-[#00FFCC]" />
-                  <div className="w-2.5 h-2.5 rounded-sm bg-white/25" />
-                </div>
-                <span className="text-xs text-white/40">Slot bars: Early / Prime / After</span>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Slot Editor ───────────────────────────── */}
-          <div className="w-72 xl:w-80 flex-shrink-0 border-l border-white/5 bg-[#0D0D0D] flex flex-col overflow-y-auto">
-            {/* Header */}
-            <div className="p-5 border-b border-white/5">
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="text-sm font-black text-white">Slot Editor</h3>
-                <Zap className="w-3.5 h-3.5 text-[#00FFCC] fill-current" />
-              </div>
-              <p className="text-xs text-white/40">
-                {selected !== null
-                  ? `${MONTH_NAMES[month]} ${selected}, ${year}`
-                  : 'Select a day to edit slots'}
-              </p>
-            </div>
-
-            {selected !== null ? (
-              <div className="flex-1 p-5 space-y-5">
-                {/* Time Slots */}
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-3">
-                    Time Slots
-                  </p>
-                  {(Object.keys(SLOT_LABELS) as TimeSlot[]).map((slot) => {
-                    const { label, hours } = SLOT_LABELS[slot];
-                    const status = selectedData.slots[slot];
-                    const isBooked = status === 'BOOKED';
-
-                    return (
-                      <div
-                        key={slot}
-                        className={cn(
-                          'rounded-xl border p-3.5 transition-colors',
-                          isBooked
-                            ? 'bg-[#00FFCC]/5 border-[#00FFCC]/20'
-                            : status === 'BLOCKED'
-                              ? 'bg-white/[0.03] border-white/8'
-                              : 'bg-[#1A1A1A] border-white/8'
-                        )}
-                      >
-                        <div className="flex items-center justify-between mb-2.5">
-                          <div>
-                            <p
-                              className={cn(
-                                'text-xs font-bold',
-                                isBooked ? 'text-[#00FFCC]' : 'text-white/80'
-                              )}
+                      <div className="space-y-2">
+                        {SLOTS.map((slot) => {
+                          const current = editorSlots[slot.key];
+                          return (
+                            <div
+                              key={slot.key}
+                              className="flex items-center justify-between rounded-xl bg-[#121212] border border-white/5 px-3 py-2.5"
                             >
-                              {label}
-                            </p>
-                            <p className="text-[10px] text-white/30">{hours}</p>
-                          </div>
-                          {isBooked && selectedData.bookedVenue && (
-                            <div className="flex items-center gap-1">
-                              <Music className="w-3 h-3 text-[#00FFCC]" />
-                              <span className="text-[10px] font-bold text-[#00FFCC] truncate max-w-[80px]">
-                                {selectedData.bookedVenue}
-                              </span>
+                              <div>
+                                <p className="text-xs font-bold text-white">{slot.label}</p>
+                                <p className="text-[10px] text-white/35">{slot.hours}</p>
+                              </div>
+                              <div className="flex gap-1">
+                                {(['AVAILABLE', 'BLOCKED'] as const).map((status) => (
+                                  <button
+                                    key={status}
+                                    onClick={() =>
+                                      setEditorSlots((prev) => ({
+                                        ...prev,
+                                        [slot.key]:
+                                          prev[slot.key] === status ? undefined : status,
+                                      }))
+                                    }
+                                    className={cn(
+                                      'px-2 py-1 rounded-lg text-[10px] font-black border transition-colors',
+                                      current === status
+                                        ? status === 'AVAILABLE'
+                                          ? 'bg-green-400/15 text-green-400 border-green-400/30'
+                                          : 'bg-red-500/15 text-red-400 border-red-500/30'
+                                        : 'bg-white/5 text-white/40 border-white/10 hover:text-white'
+                                    )}
+                                  >
+                                    {status === 'AVAILABLE' ? 'Free' : 'Block'}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
-                          )}
-                        </div>
-
-                        {/* Status buttons */}
-                        <div className="flex gap-1.5">
-                          {(['AVAILABLE', 'BOOKED', 'BLOCKED'] as SlotStatus[]).map((s) => (
-                            <button
-                              key={s}
-                              onClick={() => updateSlot(slot, s)}
-                              className={cn(
-                                'flex-1 py-1 rounded-lg text-[10px] font-black transition-colors border',
-                                status === s
-                                  ? s === 'BOOKED'
-                                    ? 'bg-[#00FFCC] text-black border-[#00FFCC]'
-                                    : s === 'BLOCKED'
-                                      ? 'bg-white/20 text-white border-white/30'
-                                      : 'bg-white/10 text-white border-white/20'
-                                  : 'bg-transparent text-white/30 border-white/10 hover:text-white/60'
-                              )}
-                            >
-                              {s === 'AVAILABLE' ? 'Open' : s === 'BOOKED' ? 'Booked' : 'Block'}
-                            </button>
-                          ))}
-                        </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
 
-                {/* Notes */}
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-2">
-                    Internal Notes
-                  </p>
-                  <textarea
-                    rows={4}
-                    placeholder="Add a note for this day…"
-                    value={selectedData.notes ?? ''}
-                    onChange={(e) => updateNotes(e.target.value)}
-                    className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-[#00FFCC]/30 resize-none transition-colors"
-                  />
-                </div>
+                      <textarea
+                        rows={2}
+                        maxLength={500}
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Internal notes (only you see these)"
+                        className="w-full mt-3 bg-[#121212] border border-white/10 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#00FFCC]/50 resize-none"
+                      />
 
-                {/* Day summary */}
-                <div className="p-3 rounded-xl bg-[#1A1A1A] border border-white/5 space-y-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-2">
-                    Day Summary
-                  </p>
-                  {(Object.keys(SLOT_LABELS) as TimeSlot[]).map((slot) => {
-                    const s = selectedData.slots[slot];
-                    return (
-                      <div key={slot} className="flex items-center justify-between text-xs">
-                        <span className="text-white/40">{SLOT_LABELS[slot].label}</span>
-                        <span
-                          className={cn(
-                            'font-bold',
-                            s === 'BOOKED'
-                              ? 'text-[#00FFCC]'
-                              : s === 'BLOCKED'
-                                ? 'text-white/30'
-                                : 'text-green-400'
-                          )}
-                        >
-                          {s === 'BOOKED' ? '● Booked' : s === 'BLOCKED' ? '✕ Blocked' : '○ Open'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Save */}
-                <Button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="w-full bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-black flex items-center gap-2"
-                >
-                  <Save className="w-4 h-4" />
-                  {saving ? 'Saving…' : 'Save Changes'}
-                </Button>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-3">
-                  <Zap className="w-6 h-6 text-white/20" />
-                </div>
-                <p className="text-sm font-bold text-white/30">Pick a day</p>
-                <p className="text-xs text-white/20 mt-1">
-                  Click any date to manage your availability slots
-                </p>
-              </div>
-            )}
+                      <Button
+                        disabled={saveDay.isPending}
+                        onClick={() => saveDay.mutate()}
+                        className="w-full mt-3 bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold text-sm"
+                      >
+                        {saveDay.isPending ? 'Saving…' : 'Save day'}
+                      </Button>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </div>
-        </div>
+        </main>
       </div>
     </div>
   );

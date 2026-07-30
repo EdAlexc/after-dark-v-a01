@@ -24,6 +24,10 @@ export interface ApiGig {
   address?: string | null;
   venue_avatar_url?: string | null;
   venue_rating?: string | number | null;
+  // Application aggregates (venue's own-gigs endpoint only, P3).
+  applicant_count?: number;
+  pending_count?: number;
+  shortlisted_count?: number;
 }
 
 export interface GigListResponse {

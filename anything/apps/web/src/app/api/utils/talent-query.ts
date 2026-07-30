@@ -23,7 +23,7 @@ export function buildTalentListQuery(filters: TalentListQuery): BuiltQuery {
   let text = `
     SELECT id, stage_name, pronouns, neighborhood, bio, primary_role,
            genres_vibes, hourly_rate_min, hourly_rate_max, avatar_url,
-           profile_completion_pct, created_at
+           profile_completion_pct, available_tonight, created_at
     FROM talent_profiles
     WHERE stage_name IS NOT NULL AND stage_name <> ''
   `;
@@ -52,8 +52,9 @@ export function buildTalentListQuery(filters: TalentListQuery): BuiltQuery {
     index++;
   }
 
-  // Most complete profiles first — the closest thing to "quality" pre-reviews.
-  text += ` ORDER BY profile_completion_pct DESC NULLS LAST, created_at DESC`;
+  // Available-tonight boost first (P6), then most complete profiles — the
+  // closest thing to "quality" pre-reviews.
+  text += ` ORDER BY available_tonight DESC, profile_completion_pct DESC NULLS LAST, created_at DESC`;
 
   const offset = (filters.page - 1) * TALENT_PAGE_SIZE;
   text += ` LIMIT $${index} OFFSET $${index + 1}`;

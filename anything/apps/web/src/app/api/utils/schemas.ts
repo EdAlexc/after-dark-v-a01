@@ -156,6 +156,8 @@ export const TalentProfileUpdateSchema = z.object({
   social_links: socialLinks.optional(),
   avatar_url: mediaString.optional(),
   portfolio_images: z.array(mediaString).max(5).optional(), // headshot + 4 shots (p9)
+  /** Available Tonight boost (P6) — public flag, floats the profile in browse. */
+  available_tonight: z.boolean().optional(),
 });
 
 export const VenueProfileUpdateSchema = z.object({
@@ -196,6 +198,107 @@ export const ChangePasswordSchema = z
 
 // 2FA enrollment/verification bodies are validated by the better-auth
 // twoFactor plugin's own endpoints (Backlog #17) — no app schema needed.
+
+// ─── Applications (P3) ────────────────────────────────────────────────────────
+
+/** Money is integer cents (§11); $10k/hr cap keeps math and UI sane. */
+const rateCents = z.number().int().min(0).max(1_000_000);
+
+export const ApplicationCreateSchema = z.object({
+  /** null/omitted = accept the gig's base rate. */
+  proposed_rate_cents: rateCents.nullish(),
+  cover_message: shortText(2000).optional().default(''),
+});
+
+export const ApplicationStatusUpdateSchema = z.object({
+  status: z.enum(['SHORTLISTED', 'HIRED', 'REJECTED', 'WITHDRAWN']),
+});
+
+export const ApplicationIdSchema = z.string().uuid();
+
+// ─── Notifications (P3.4) ─────────────────────────────────────────────────────
+
+export const NotificationsReadSchema = z.object({
+  /** Omitted = mark everything read. */
+  ids: z.array(z.number().int().positive()).max(100).optional(),
+});
+
+// ─── Messaging (P5) ───────────────────────────────────────────────────────────
+
+export const ConversationCreateSchema = z
+  .object({
+    /** The user to talk to. Optional when gig_id is given — the server
+     *  resolves the gig's venue, so venue user ids never ride the client. */
+    counterpart_user_id: z.string().min(1).max(64).optional(),
+    gig_id: z.string().uuid().nullish(),
+  })
+  .refine((body) => body.counterpart_user_id || body.gig_id, {
+    message: 'counterpart_user_id or gig_id is required',
+  });
+
+export const MessageCreateSchema = z
+  .object({
+    content: shortText(4000).optional().default(''),
+    kind: z.enum(['TEXT', 'RATE_PROPOSAL']).optional().default('TEXT'),
+    rate_cents: rateCents.nullish(),
+    attachment_url: z.string().max(2000).nullish(),
+  })
+  .superRefine((message, ctx) => {
+    if (message.kind === 'RATE_PROPOSAL' && message.rate_cents == null) {
+      ctx.addIssue({ code: 'custom', path: ['rate_cents'], message: 'required for a proposal' });
+    }
+    if (message.kind === 'TEXT' && message.content.length === 0 && !message.attachment_url) {
+      ctx.addIssue({ code: 'custom', path: ['content'], message: 'message is empty' });
+    }
+  });
+
+export const AcceptRateSchema = z.object({
+  message_id: z.string().uuid(),
+});
+
+export const ReportCreateSchema = z.object({
+  entity_type: z.enum(['conversation', 'user', 'gig']),
+  entity_id: shortText(64).min(1),
+  reason: shortText(2000).min(3),
+  severity: z.enum(['LOW', 'MEDIUM', 'HIGH']).optional().default('MEDIUM'),
+});
+
+// ─── Availability (P6) ────────────────────────────────────────────────────────
+
+export const TIME_SLOTS = ['EARLY_EVENING', 'PRIME_TIME', 'AFTER_HOURS'] as const;
+
+export const AvailabilityQuerySchema = z.object({
+  /** Calendar month, e.g. 2026-08. */
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'must be YYYY-MM'),
+});
+
+export const AvailabilityPutSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
+  /** Absent slots are cleared for that day (partialRecord: zod v4's plain
+   *  record with enum keys would demand all three every time). */
+  slots: z.partialRecord(z.enum(TIME_SLOTS), z.enum(['AVAILABLE', 'BLOCKED'])),
+  notes: shortText(500).optional().default(''),
+});
+
+// ─── Shifts (P7) ──────────────────────────────────────────────────────────────
+
+export const ShiftTransitionSchema = z.object({
+  to: z.enum(['IN_TRANSIT', 'CHECKED_IN', 'CHECKED_OUT']),
+  /** Client-generated; backed by a DB unique constraint (§6.3). */
+  idempotency_key: z.string().min(8).max(64),
+});
+
+export const ShiftIdSchema = z.string().uuid();
+
+// ─── Media uploads (P4) ───────────────────────────────────────────────────────
+
+export const UploadSchema = z.object({
+  /** data URL: data:image/…;base64,… (or application/pdf for tech riders). */
+  dataUrl: z.string().max(8_000_000),
+  purpose: z.enum(['avatar', 'portfolio', 'gallery', 'attachment']).optional().default('avatar'),
+});
 
 // ─── Account / data-subject requests (G4) ─────────────────────────────────────
 

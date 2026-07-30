@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -66,53 +66,28 @@ const GIG_ACTIONS: Record<
   CANCELLED: [],
 };
 
-// ─── Sample data: live ops (real model lands in P5) ──────────────────────────
+// ─── Live ops: real shifts (P7) ──────────────────────────────────────────────
 
-interface LiveTalent {
-  id: number;
-  name: string;
-  role: string;
-  callTime: string;
-  status: 'ON_SITE' | 'CHECKED_IN' | 'AWAITING';
-  hoursWorked?: number;
-  rate: string;
+interface LiveShift {
+  id: string;
+  status: 'SCHEDULED' | 'IN_TRANSIT' | 'CHECKED_IN' | 'CHECKED_OUT' | 'PAID';
+  call_time: string | null;
+  check_in_at: string | null;
+  check_out_at: string | null;
+  agreed_rate_cents: number;
+  shift_pay_cents: number | null;
+  gig_title: string;
+  stage_name: string | null;
+  primary_role: string | null;
 }
 
-const SAMPLE_LIVE_TALENT: LiveTalent[] = [
+const LIVE_STATUS_MAP: Record<LiveShift['status'], { label: string; color: string; dot: string }> =
   {
-    id: 1,
-    name: 'DJ Kira Voss',
-    role: 'DJ / Producer',
-    callTime: '10:00 PM',
-    status: 'CHECKED_IN',
-    hoursWorked: 2.5,
-    rate: '$180/hr',
-  },
-  {
-    id: 2,
-    name: 'James R.',
-    role: 'Security Lead',
-    callTime: '9:00 PM',
-    status: 'CHECKED_IN',
-    hoursWorked: 3,
-    rate: '$45/hr',
-  },
-  {
-    id: 3,
-    name: 'Sophia Cruz',
-    role: 'Mixologist',
-    callTime: '8:00 PM',
-    status: 'ON_SITE',
-    hoursWorked: 4,
-    rate: '$65/hr',
-  },
-];
-
-const LIVE_STATUS_MAP: Record<LiveTalent['status'], { label: string; color: string; dot: string }> =
-  {
+    SCHEDULED: { label: 'Scheduled', color: 'text-white/40', dot: 'bg-white/20' },
+    IN_TRANSIT: { label: 'In Transit', color: 'text-[#00FFCC]', dot: 'bg-[#00FFCC]' },
     CHECKED_IN: { label: 'Working', color: 'text-green-400', dot: 'bg-green-400' },
-    ON_SITE: { label: 'On Site', color: 'text-[#00FFCC]', dot: 'bg-[#00FFCC]' },
-    AWAITING: { label: 'Awaiting', color: 'text-white/40', dot: 'bg-white/20' },
+    CHECKED_OUT: { label: 'Checked Out', color: 'text-white/50', dot: 'bg-white/30' },
+    PAID: { label: 'Paid', color: 'text-[#00FFCC]', dot: 'bg-[#00FFCC]' },
   };
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -160,7 +135,6 @@ function StatCard({
 
 export default function VenueDashboard() {
   const qc = useQueryClient();
-  const [checkedOutIds, setCheckedOutIds] = useState<number[]>([]);
 
   const { data, isPending, isError } = useQuery({
     queryKey: ['venue-gigs'],
@@ -171,6 +145,42 @@ export default function VenueDashboard() {
     },
   });
   const gigs = useMemo(() => data?.gigs ?? [], [data]);
+
+  // Live ops (P7): real shifts + the payouts-pending aggregate (P8).
+  const { data: shiftsData } = useQuery({
+    queryKey: ['venue-shifts'],
+    queryFn: async () => {
+      const res = await fetch('/api/venue/shifts');
+      if (!res.ok) throw new Error('Failed to load shifts');
+      return res.json() as Promise<{
+        shifts: LiveShift[];
+        payoutsPendingCents: number;
+        payoutsPendingCount: number;
+      }>;
+    },
+    refetchInterval: 15_000,
+  });
+  const shifts = shiftsData?.shifts ?? [];
+
+  const shiftTransition = useMutation({
+    mutationFn: async ({ id, to }: { id: string; to: 'CHECKED_IN' | 'CHECKED_OUT' }) => {
+      const res = await fetch(`/api/shifts/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, idempotency_key: crypto.randomUUID() }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? 'Shift update failed');
+      }
+      return to;
+    },
+    onSuccess: (to) => {
+      toast.success(to === 'CHECKED_IN' ? 'Checked in' : 'Checked out — payout queued');
+      void qc.invalidateQueries({ queryKey: ['venue-shifts'] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   const transition = useMutation({
     mutationFn: async ({ id, to }: { id: string; to: GigStatus }) => {
@@ -192,10 +202,6 @@ export default function VenueDashboard() {
     },
     onError: (error: Error) => toast.error(error.message),
   });
-
-  const handleCheckout = (id: number) => {
-    setCheckedOutIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
 
   // Real, derivable stats (P1.3). Payouts (P5) and time-to-hire (P2) unlock later.
   const published = gigs.filter((g) => g.status === 'PUBLISHED').length;
@@ -261,10 +267,18 @@ export default function VenueDashboard() {
             />
             <StatCard
               label="Payouts Pending"
-              value="—"
-              change="unlocks with payments"
+              value={
+                shiftsData
+                  ? `$${((shiftsData.payoutsPendingCents ?? 0) / 100).toFixed(0)}`
+                  : '…'
+              }
+              change={
+                shiftsData && shiftsData.payoutsPendingCount > 0
+                  ? `${shiftsData.payoutsPendingCount} awaiting release`
+                  : 'no pending payouts'
+              }
               icon={<DollarSign className="w-5 h-5" />}
-              muted
+              muted={!shiftsData || shiftsData.payoutsPendingCount === 0}
             />
             <StatCard
               label="Avg. Time to Hire"
@@ -367,13 +381,28 @@ export default function VenueDashboard() {
                                 </div>
                               </div>
 
-                              {/* Applicants (real counts arrive with P2) */}
-                              <div className="text-center sm:mx-auto">
-                                <div className="flex items-center gap-1 text-sm font-bold text-white/30">
-                                  <Users className="w-3.5 h-3.5 text-white/20 sm:hidden md:block" />
-                                  —
+                              {/* Applicants (real counts, P3) */}
+                              <Link
+                                href="/dashboard/venue/applicants"
+                                className="text-center sm:mx-auto"
+                              >
+                                <div
+                                  className={cn(
+                                    'flex items-center gap-1 text-sm font-bold',
+                                    (gig.applicant_count ?? 0) > 0
+                                      ? 'text-white hover:text-[#00FFCC] transition-colors'
+                                      : 'text-white/30'
+                                  )}
+                                >
+                                  <Users className="w-3.5 h-3.5 sm:hidden md:block opacity-60" />
+                                  {gig.applicant_count ?? 0}
+                                  {(gig.pending_count ?? 0) > 0 && (
+                                    <span className="text-[10px] font-black text-yellow-400/80">
+                                      {gig.pending_count} new
+                                    </span>
+                                  )}
                                 </div>
-                              </div>
+                              </Link>
 
                               {/* Status Badge */}
                               <span
@@ -476,36 +505,59 @@ export default function VenueDashboard() {
               </div>
             </div>
 
-            {/* RIGHT – Live Operations (sample until P5 live-ops slice) */}
+            {/* RIGHT – Live Operations (real shifts, P7) */}
             <div className="space-y-6">
               {/* Live Tonight */}
               <section>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold">Live Tonight</h2>
-                    <span className="flex items-center gap-1.5 bg-white/5 text-white/40 border border-white/10 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
-                      Sample
-                    </span>
+                    <h2 className="text-lg font-bold">Active Operations</h2>
+                    {shifts.some((s) => s.status === 'CHECKED_IN') && (
+                      <span className="flex items-center gap-1.5 bg-green-400/10 text-green-400 border border-green-400/20 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                        Live
+                      </span>
+                    )}
                   </div>
                   <Zap className="w-4 h-4 text-[#00FFCC] fill-current" />
                 </div>
                 <p className="text-[11px] text-white/30 -mt-2 mb-3">
-                  Preview of live check-in/out — real shift tracking arrives with the live-ops
-                  release.
+                  Shifts created when you hire an applicant. Check talent in and out here — checkout
+                  computes the payout ledger entry.
                 </p>
 
                 <div className="space-y-3">
-                  {SAMPLE_LIVE_TALENT.map((talent) => {
-                    const statusInfo = LIVE_STATUS_MAP[talent.status];
-                    const isCheckedOut = checkedOutIds.includes(talent.id);
+                  {shifts.length === 0 && (
+                    <Card className="bg-[#1E1E1E] border-white/5 border-dashed">
+                      <CardContent className="p-6 text-center">
+                        <UserCheck className="w-6 h-6 text-white/20 mx-auto mb-2" />
+                        <p className="text-sm text-white/40">No shifts yet.</p>
+                        <p className="text-xs text-white/25 mt-1">
+                          Hire an applicant to schedule their shift.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {shifts.map((shift) => {
+                    const statusInfo = LIVE_STATUS_MAP[shift.status];
+                    const done = shift.status === 'CHECKED_OUT' || shift.status === 'PAID';
+                    const name = shift.stage_name ?? 'Talent';
+                    const rateLabel = `$${(shift.agreed_rate_cents / 100).toFixed(0)}/hr`;
+                    const callLabel = shift.call_time
+                      ? new Date(shift.call_time).toLocaleString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })
+                      : 'TBD';
 
                     return (
                       <Card
-                        key={talent.id}
+                        key={shift.id}
                         className={cn(
                           'border transition-colors',
-                          isCheckedOut
-                            ? 'bg-[#1A1A1A] border-white/5 opacity-60'
+                          done
+                            ? 'bg-[#1A1A1A] border-white/5 opacity-70'
                             : 'bg-[#1E1E1E] border-white/5 hover:border-white/10'
                         )}
                       >
@@ -515,13 +567,15 @@ export default function VenueDashboard() {
                               {/* Avatar */}
                               <div className="w-9 h-9 rounded-full bg-[#00FFCC]/10 border border-[#00FFCC]/20 flex items-center justify-center flex-shrink-0">
                                 <span className="text-[#00FFCC] text-xs font-black">
-                                  {talent.name.split(' ')[0][0]}
-                                  {talent.name.split(' ')[1]?.[0] ?? ''}
+                                  {name.split(' ')[0][0]}
+                                  {name.split(' ')[1]?.[0] ?? ''}
                                 </span>
                               </div>
                               <div>
-                                <p className="text-sm font-bold leading-tight">{talent.name}</p>
-                                <p className="text-xs text-white/40">{talent.role}</p>
+                                <p className="text-sm font-bold leading-tight">{name}</p>
+                                <p className="text-xs text-white/40">
+                                  {shift.primary_role ?? 'Talent'} · {shift.gig_title}
+                                </p>
                               </div>
                             </div>
                             <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -529,7 +583,7 @@ export default function VenueDashboard() {
                                 className={cn(
                                   'w-1.5 h-1.5 rounded-full',
                                   statusInfo.dot,
-                                  talent.status === 'CHECKED_IN' && 'pulse-dot'
+                                  shift.status === 'CHECKED_IN' && 'pulse-dot'
                                 )}
                               />
                               <span className={cn('text-[11px] font-bold', statusInfo.color)}>
@@ -541,38 +595,52 @@ export default function VenueDashboard() {
                           <div className="flex items-center justify-between text-xs text-white/40 mb-3">
                             <span className="flex items-center gap-1">
                               <Clock className="w-3 h-3" />
-                              Call: {talent.callTime}
+                              Call: {callLabel}
                             </span>
-                            {talent.hoursWorked !== undefined && (
+                            {shift.shift_pay_cents !== null ? (
                               <span className="text-white/60 font-semibold">
-                                {talent.hoursWorked}h worked
+                                Pay: ${(shift.shift_pay_cents / 100).toFixed(2)}
                               </span>
+                            ) : (
+                              <span className="font-bold text-[#00FFCC]">{rateLabel}</span>
                             )}
-                            <span className="font-bold text-[#00FFCC]">{talent.rate}</span>
                           </div>
 
-                          <div className="flex gap-2">
+                          {(shift.status === 'SCHEDULED' || shift.status === 'IN_TRANSIT') && (
                             <Button
                               size="sm"
-                              onClick={() => handleCheckout(talent.id)}
-                              className={cn(
-                                'flex-1 text-xs font-bold transition-all',
-                                isCheckedOut
-                                  ? 'bg-white/5 text-white/40 hover:bg-white/10 border border-white/10'
-                                  : 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/20'
-                              )}
+                              disabled={shiftTransition.isPending}
+                              onClick={() =>
+                                shiftTransition.mutate({ id: shift.id, to: 'CHECKED_IN' })
+                              }
+                              className="w-full text-xs font-bold bg-[#00FFCC]/15 text-[#00FFCC] hover:bg-[#00FFCC]/25 border border-[#00FFCC]/20"
                             >
-                              {isCheckedOut ? (
-                                <>
-                                  <CheckCircle2 className="w-3 h-3 mr-1" /> Checked Out
-                                </>
-                              ) : (
-                                <>
-                                  <LogOut className="w-3 h-3 mr-1" /> Check Out
-                                </>
-                              )}
+                              <UserCheck className="w-3 h-3 mr-1" /> Check In
                             </Button>
-                          </div>
+                          )}
+                          {shift.status === 'CHECKED_IN' && (
+                            <Button
+                              size="sm"
+                              disabled={shiftTransition.isPending}
+                              onClick={() =>
+                                shiftTransition.mutate({ id: shift.id, to: 'CHECKED_OUT' })
+                              }
+                              className="w-full text-xs font-bold bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/20"
+                            >
+                              <LogOut className="w-3 h-3 mr-1" /> Check Out
+                            </Button>
+                          )}
+                          {shift.status === 'CHECKED_OUT' && (
+                            <p className="text-[11px] text-white/40 flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3 h-3 text-[#00FFCC]" />
+                              Payout held in escrow — releases 24h after checkout.
+                            </p>
+                          )}
+                          {shift.status === 'PAID' && (
+                            <p className="text-[11px] text-[#00FFCC] flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3 h-3" /> Payout released.
+                            </p>
+                          )}
                         </CardContent>
                       </Card>
                     );

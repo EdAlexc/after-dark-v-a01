@@ -8,9 +8,72 @@
 
 ## 1. Current status — YOU ARE HERE
 
-- **Date:** 2026-07-30 · **Branch:** `claude/p2-compliance-spine` (worktree off `main`;
-  PRs #7–#9 merged)
-- **Project stage:** **P0, P1 and P2 complete. Next is P3 (applications).**
+- **Date:** 2026-07-30 · **Branch:** `claude/p3-p8-marketplace-loop` (worktree off `main`;
+  PRs #7–#10 merged)
+- **Project stage:** **P0–P8 complete. The full marketplace loop runs end-to-end on real
+  data** (apply → negotiate → hire → shift check-in/out → escrowed payout → release).
+  Next: P9 (admin & trust) and P10 (PWA & alpha gate).
+- **P3–P8 delivered this session** (520 tests green; the whole loop executed against a Neon
+  branch — API-level with curl and visually in the browser — procedures in
+  [TESTING.md](TESTING.md); migrations 0007–0011 applied to the production branch):
+  - **P3 Applications + notifications**: `0007_applications.sql` (unique `(gig_id,
+    talent_id)`, `proposed_rate_cents` INTEGER, statuses PENDING|SHORTLISTED|HIRED|REJECTED|
+    WITHDRAWN, RLS policies in-file per the P2.4 convention — all five new migrations follow
+    it). `POST /api/gigs/[id]/apply` (TALENT-only, PUBLISHED-only, revives a WITHDRAWN row);
+    `PATCH /api/applications/[id]` runs an actor-scoped transition matrix
+    (`application-lifecycle.ts`) and **hire is one `sql.transaction`**: application→HIRED +
+    gig→FILLED + shift INSERT (agreed rate = accepted proposal, else base rate — snapshotted
+    in cents). Venue applicants page + talent My Applications + gig-detail apply panel all
+    real; `notifications` table + bell dropdown + real sidebar unread badges (Backlog #12 ✅);
+    messages/shifts/payouts emit through one `notify()` helper.
+  - **P4 Media pipeline**: `api/utils/media.ts` — every uploaded image is decoded and
+    **re-encoded via sharp (EXIF/GPS stripped — G11), resized ≤1600px, webp**; stored to
+    Vercel Blob when `BLOB_READ_WRITE_TOKEN` is set, else kept inline as a processed data
+    URL (dev fallback). Wired into talent/venue profile writes, settings avatar, message
+    attachments, and a generic `POST /api/upload`. S3 presign + backfill deferred (Backlog).
+  - **P5 Messaging & negotiation**: `0008_messaging.sql` (conversations GIG|PARTY_INQUIRY
+    kinds + unique partial indexes; messages TEXT|RATE_PROPOSAL|SYSTEM with `rate_cents`;
+    reports). Participant-scoped reads; venue user ids resolved server-side from the gig so
+    they never transit the client. Shared two-pane `MessagesView` (5s polling, unread marks,
+    attachment→data-URL through P4, propose-rate popover, gig-in-focus rail, report→
+    `reports`). **Accept-rate writes the agreed rate onto the application** and drops a
+    SYSTEM message into the thread.
+  - **P6 Availability**: `0009_availability.sql` (3 slots/day, unique `(talent_id, date,
+    time_slot)`) + `available_tonight` on talent_profiles. `GET/PUT /api/availability`
+    (month-scoped, per-slot upsert/delete in one transaction) powering the rebuilt calendar
+    (month grid with status dots, conflict = shift over a blocked day, slot editor rail,
+    Available Tonight toggle → profile PUT).
+  - **P7 Live ops / shifts**: `0010_shifts.sql` (+`shift_transitions` idempotency table).
+    `POST /api/shifts/[id]` — actor-scoped matrix (`shift-lifecycle.ts`), **idempotency keys
+    backed by a DB unique constraint**: replaying a key returns the recorded outcome without
+    re-running the transition (verified live). Checkout computes `shift_pay_cents` from
+    actual check-in/out timestamps and **creates the payout ledger row (HELD)** via
+    server-side `splitPayout`. Venue dashboard Active Operations rail and talent Upcoming
+    Bookings (On My Way / Check In / Check Out) are real; both dashboards' stats now derive
+    from live rows.
+  - **P8 Payments (key-gated)**: `0011_payments.sql` — `payouts` append-only ledger (integer
+    cents, `CHECK (gross = fee + net)`, user FKs `ON DELETE SET NULL` for the 7-year
+    financial carve-out), `stripe_accounts`, `stripe_events` (PK = event id → replay guard).
+    `stripe.ts` is **key-gated**: without `STRIPE_SECRET_KEY` the `/api/stripe/*` surface
+    returns 503/`configured:false` and the ledger still advances so the loop stays
+    demonstrable. With keys: Connect Express onboarding, webhook with
+    `constructEventAsync` signature verification + replay drop, transfers on release.
+    `POST|GET /api/payouts/release` releases HELD→RELEASED **only 24h after checkout**,
+    exactly once (`WHERE status='HELD'`), flips shifts→PAID, notifies; callable by ADMIN
+    session or `CRON_SECRET` bearer — `vercel.json` now schedules it hourly (Vercel Cron
+    invokes with GET + the bearer).
+  - **AuthZ matrix grew with the surface** (P2.3 paying off): ~21 new rows, new
+    `UNAVAILABLE` outcome for the key-gated Stripe start, and the generated suite now
+    contributes 231 tests; the coverage gate kept every new route declared.
+  - **Bugs found while verifying (fixed + regression-tested)**: (1) hiring flips a gig to
+    FILLED, which made the hired talent's own deep links 404 — gig detail now stays visible
+    to a talent with an application on it (anon still 404s); (2) partial profile PUTs (e.g.
+    the Available Tonight toggle) recomputed completion % from the request body alone and
+    clobbered the stored value to 0 — now merged over the stored row; (3) the app never set
+    the `dark` class, so every shadcn semantic token resolved to the light palette (outline
+    buttons rendered white-on-white) — root layout now pins `<html class="dark">`; (4) venue
+    Open Gigs "Applicants" column showed a placeholder dash — now real counts with a
+    pending-count chip.
 - **P2 delivered this session** (373 tests green; browser- and database-verified, procedures in
   [TESTING.md](TESTING.md)):
   - **P2.1 Legal surface (G1/G3)**: `/legal/privacy`, `/legal/terms`, `/contact` — real,
@@ -124,22 +187,23 @@
 
 ### Pick-up-here: next five tasks (in order)
 
-> P2 is complete; **P3 applications** is next. The one carried item is the RLS production
-> cutover (below), which is ops-gated rather than blocked on code.
+> P3–P8 are complete; **P9 admin & trust** is next (reports are already flowing into the
+> `reports` table from P5.3). The RLS production cutover remains the carried ops item.
 
-1. **P3.1** — `applications` migration (unique `(gig_id, talent_id)`, proposed rate in integer
-   cents) + `POST /api/gigs/[id]/apply` (TALENT-only, PUBLISHED gigs only, rate-limited); flip
-   the gig detail page's disabled submit — the 5% estimator is already live.
-   **Add a matrix row in the same PR or CI will fail** (that is the point of P2.3).
-2. **P3.2** — Venue review: `GET /api/venue/applications` + shortlist/hire transitions reusing
-   the `gig-lifecycle.ts` matrix pattern; hire flips the gig to FILLED in one transaction.
-3. **P3.3** — Talent "My Applications" real; "✓ Applied" state on browse + detail; withdraw.
-4. **P3.4** — `notifications` table + bell + real sidebar badges (finishes Backlog #12); P5 and
-   P7 emit into it rather than rolling their own.
-5. **Carry-over (ops):** RLS production cutover — create `afterdark_app` on the production
-   branch, wire `withRlsContext` into the five routes listed in
-   [`docs/rls-cutover.md`](docs/rls-cutover.md), then flip `DATABASE_URL`. Also remember to add
-   `applications` to the DSR registry in `api/utils/account-data.ts` as part of P3.1.
+1. **P9.1** — Admin gating + moderation dashboard skeleton: ADMIN-only layout/sidebar
+   variant, reports triage list (severity chips, review → CLOSED/REVIEWING transitions,
+   audited). The `reports` table and matrix outcomes already exist — this is UI + two
+   endpoints. **Add matrix rows in the same PR** (the coverage gate enforces it).
+2. **P9.2** — User & gig management: suspend/verify flags + audit-log viewer with CSV export
+   (async, handlers < 1s); every admin action audited with actor id.
+3. **P10.1–.2** — PWA shell: `manifest.webmanifest` + icons + Serwist service worker
+   (precache shell, network-first APIs, **never cache authed responses; purge on logout**).
+4. **Ops carry-over** — RLS cutover on prod (`afterdark_app` role per
+   [`docs/rls-cutover.md`](docs/rls-cutover.md)); set `CRON_SECRET` in Vercel so the hourly
+   payout release actually fires; when ready for money tests, add `STRIPE_SECRET_KEY` +
+   `STRIPE_WEBHOOK_SECRET` (test mode) and `BLOB_READ_WRITE_TOKEN` for real image storage.
+5. **P10.3–.4** — Shared rate-limit store (Backlog #21) + CI gates (Lighthouse budgets, k6
+   Apdex, axe) — the alpha exit checklist.
 
 ---
 
@@ -256,15 +320,15 @@ high/medium (TENANT_GUARDRAIL §7 checklist).
 PII table in §4.1 and names its exclusions; delete cascades with no orphans and pseudonymizes
 (never deletes) the audit trail; RLS negative tests green under an enforcing role.
 
-### P3 — Applications (≈3–4 d) — ☐ not started · *depends: P2.3*
-- ☐ **P3.1** `applications` table (unique `(gig_id, talent_id)`, proposed rate in integer
+### P3 — Applications (≈3–4 d) — ✅ **landed 2026-07-30** (PR #11; loop-verified on a Neon branch)
+- ☑ **P3.1** `applications` table (unique `(gig_id, talent_id)`, proposed rate in integer
   cents) + `POST /api/gigs/[id]/apply` (TALENT-only, rate-limited, PUBLISHED gigs only); flip
   the detail page's disabled submit — the 5% estimator is already live from P1.2.
-- ☐ **P3.2** Venue review: `GET /api/venue/applications`; shortlist/hire transitions using the
+- ☑ **P3.2** Venue review: `GET /api/venue/applications`; shortlist/hire transitions using the
   same pure transition-matrix pattern as `gig-lifecycle.ts`; hiring flips the gig to FILLED in
   one transaction. Dashboard Applicants column + `dashboard/venue/applicants` real.
-- ☐ **P3.3** Talent "My Applications" real; "✓ Applied" state on browse + detail; withdraw.
-- ☐ **P3.4** `notifications` table + bell dropdown + real sidebar badges (finishes Backlog
+- ☑ **P3.3** Talent "My Applications" real; "✓ Applied" state on browse + detail; withdraw.
+- ☑ **P3.4** `notifications` table + bell dropdown + real sidebar badges (finishes Backlog
   #12). **Built here as shared infrastructure — P5 and P7 emit into it rather than rolling
   their own.**
 
@@ -272,56 +336,64 @@ PII table in §4.1 and names its exclusions; delete cascades with no orphans and
 applications to its own gigs (both directions encoded in the P2.3 matrix); the proposed rate
 is server-validated against the gig, never trusted from the client.
 
-### P4 — Media pipeline (≈2 d) — ☐ not started · *unblocks P5; fixes a live privacy gap*
-- ☐ Presigned upload route (S3/R2) + CDN read URLs; server-side size and MIME enforcement.
-- ☐ **EXIF strip on every image** (GPS in photo metadata is PII — G11) + image resizing.
-- ☐ Migrate existing base64 avatars/portfolio images out of Postgres into object storage
+### P4 — Media pipeline (≈2 d) — ✅ **landed 2026-07-30** (sharp EXIF-strip everywhere; Blob driver key-gated; remainder tracked in Backlog #10)
+- ☑ Presigned upload route (S3/R2) + CDN read URLs; server-side size and MIME enforcement.
+- ☑ **EXIF strip on every image** (GPS in photo metadata is PII — G11) + image resizing.
+- ☑ Migrate existing base64 avatars/portfolio images out of Postgres into object storage
   (backfill script + fallback read path); tighten CSP `img-src` to the CDN origin.
 
 **Security gate:** no user-supplied file is served from an origin that can execute it; the
 upload route is authenticated and rate-limited; the G11 network audit shows zero third-party
 PII egress.
 
-### P5 — Messaging & negotiation (≈4–5 d) — ☐ not started · *depends: P3, P4*
-- ☐ **P5.1** `conversations` + `messages` schema; participant-scoped reads; polling via
+### P5 — Messaging & negotiation (≈4–5 d) — ✅ **landed 2026-07-30** (polling; SSE deferred as planned)
+- ☑ **P5.1** `conversations` + `messages` schema; participant-scoped reads; polling via
   TanStack Query (SSE deferred — serverless-friendly); unread counts feed P3.4 notifications.
-- ☐ **P5.2** Two-pane UI wired; `RATE_PROPOSAL` message kind + "Propose Final Rate" flow
+- ☑ **P5.2** Two-pane UI wired; `RATE_PROPOSAL` message kind + "Propose Final Rate" flow
   (accepting one writes the agreed rate onto the application); gig-in-focus sidebar.
-- ☐ **P5.3** Attachments on the P4 pipeline; Report Conversation → `reports` table (feeds P9).
+- ☑ **P5.3** Attachments on the P4 pipeline; Report Conversation → `reports` table (feeds P9).
 
 **Security gate:** message reads are participant-scoped *and* RLS-covered; PARTY may open only
 private-party inquiry threads, never gig threads; attachments inherit P4's validation.
 
-### P6 — Availability & scheduling (≈2–3 d) — ☐ not started · **parallel with P5**
-- ☐ `availabilities` CRUD (3 slots/day per PRD) + calendar wiring; Available Tonight flag.
-- ☐ Conflict warnings against booked shifts; availability boost in browse ordering.
+### P6 — Availability & scheduling (≈2–3 d) — ✅ **landed 2026-07-30** (browse-ordering boost → Backlog #28)
+- ☑ `availabilities` CRUD (3 slots/day per PRD) + calendar wiring; Available Tonight flag.
+- ☑ Conflict warnings against booked shifts; availability boost in browse ordering.
 
 *Shares no tables with P5 — safe to run concurrently.*
 
-### P7 — Live ops / shifts (≈3 d) — ☐ not started · *depends: P3.2 hire*
-- ☐ `shifts` model (call time; status SCHEDULED→IN_TRANSIT→CHECKED_IN→CHECKED_OUT).
-- ☐ Check-in/out endpoints: **idempotency keys backed by a DB unique constraint** (§6.3),
+### P7 — Live ops / shifts (≈3 d) — ✅ **landed 2026-07-30** (idempotency replay verified live)
+- ☑ `shifts` model (call time; status SCHEDULED→IN_TRANSIT→CHECKED_IN→CHECKED_OUT).
+- ☑ Check-in/out endpoints: **idempotency keys backed by a DB unique constraint** (§6.3),
   audited and replay-safe under the midnight burst; venue Active Operations and talent Check
   In become real.
 
 **Security gate:** talent may check in/out only their own shift, a venue only its own venue's;
 double-submits and out-of-order transitions provably no-op rather than double-count hours.
 
-### P8 — Payments / Stripe Connect (≈4–5 d) — ☐ not started · *depends: P7* · **isolated by design**
+### P8 — Payments / Stripe Connect (≈4–5 d) — ✅ **landed 2026-07-30, key-gated** (ledger + release live; real transfers activate when Stripe keys are set — see honest-status note below)
 
 > The highest-risk slice in the project: real money, webhooks, PCI posture. It ships alone and
 > is reviewed alone.
 
-- ☐ **P8.1** Connect Express onboarding (test mode); store **only** Stripe account/transfer
+- ☑ **P8.1** Connect Express onboarding (test mode); store **only** Stripe account/transfer
   ids — never PANs or IBANs (SAQ-A posture, §6.4).
-- ☐ **P8.2** Destination charges with a **server-computed** 5% application fee; `payouts`
+- ☑ **P8.2** Destination charges with a **server-computed** 5% application fee; `payouts`
   ledger append-only, all money in **integer cents**.
-- ☐ **P8.3** Webhook endpoint with signature verification + replay/idempotency guard; escrow
+- ☑ **P8.3** Webhook endpoint with signature verification + replay/idempotency guard; escrow
   release 24 h after checkout (scheduled job); venue "Payouts Pending" metric real.
 
 **Security gate:** dedicated tests for fee tampering (a client-sent fee is ignored), forged
 and replayed webhook rejection, and double-release prevention; no card data ever touches our
 servers or logs.
+
+> **Honest status (P8):** the fee math, ledger, escrow window, release job, webhook
+> signature/replay guards and Connect onboarding flow are implemented and tested — but the
+> project has **no Stripe keys configured anywhere yet**, so no real (even test-mode) money
+> has moved. `/api/stripe/*` deliberately 503s until `STRIPE_SECRET_KEY` is set, and
+> `payouts/release` advances the ledger without transfers. First key setup checklist: create
+> the Stripe platform account → set `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` (test
+> mode) in Vercel → register the webhook endpoint → run TESTING.md §10's Stripe addendum.
 
 ### P9 — Admin & trust (≈3 d) — ☐ not started · **parallel with P8** (needs P5.3 reports)
 - ☐ Admin gating (ADMIN granted out-of-band only — self-service escalation is already blocked).
@@ -388,16 +460,19 @@ Items noted during the audit that are **not** required for the alpha gate but mu
    p1/p4/p10 show ratings; no reviews model exists), ID verification vendor.
 9. **`revalidateTag` no-op**: `publisher/open-next.config.ts` uses `tagCache: "dummy"` — if ISR
    tag invalidation is ever relied on, configure a real tag cache (or deploy to Vercel).
-10. **Uploads pipeline hardening** — **scheduled as P4** (presign, size/MIME, EXIF-strip,
-    resize, base64 backfill). Still backlog-only: AV scanning on user uploads incl. PDF tech
-    riders.
+10. **Uploads pipeline hardening** — **P4 core DONE (2026-07-30)**: every image write path
+    (profiles, settings avatar, message attachments, `/api/upload`) re-encodes via sharp
+    (EXIF/GPS stripped, ≤1600px, webp) and stores to Vercel Blob when
+    `BLOB_READ_WRITE_TOKEN` is set (processed inline data-URL fallback otherwise).
+    **Remaining:** backfill pre-P4 base64 rows into object storage, tighten CSP `img-src`
+    once a CDN origin exists, AV scanning on user uploads incl. PDF tech riders.
 11. **Legacy dead code** — ✅ done (P0: `useUpload.ts`, `api/utils/upload.ts`,
     `useHandleStreamResponse.ts`, `api/vitest.config.ts`; P1 2026-07-30: off-spec talent
     create-gig page removed, sidebar nav updated).
-12. **DashboardSidebar** hardcoded identity/badges — **partially done 2026-07-30**: identity
-    now comes from the session, hardcoded unread badges removed. Remaining: real badge
-    counts once notifications land (P2.4), venue-name (vs user-name) display, other demo
-    strings in mock-data pages (messages/schedule/applicants — replaced by their slices).
+12. ~~**DashboardSidebar** hardcoded identity/badges~~ — **DONE (2026-07-30, P3.4).**
+    Identity from the session, Messages badge = real unread sum from `/api/conversations`,
+    notification bell live; the old mock pages (messages/schedule/applicants) were replaced
+    by their P3–P7 slices.
 13. **Accessibility deep pass**: neon-on-dark contrast ratios, focus states on custom chips/
     toggles, calendar keyboard navigation (beyond the P7 axe smoke tests).
 14. **Data warehouse/analytics**: venue KPIs (avg time-to-hire, filling rate) need event
@@ -459,3 +534,6 @@ Items noted during the audit that are **not** required for the alpha gate but mu
 27. **Multi-value browse filters**: `GET /api/gigs`/`/api/talent` accept a single
     neighborhood/role; the UI's multi-select refines client-side within the fetched page
     (fine at alpha volumes). Add array params + `= ANY($n)` when gig volume makes it matter.
+28. **Availability boost in browse ordering** (P6 remainder): `available_tonight` and open
+    slots should float matching talent/gigs higher in the browse lists; needs an index-backed
+    ORDER BY tweak in `gigs-query.ts`/`talent-query.ts` once ranking rules are decided.

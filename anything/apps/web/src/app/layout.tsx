@@ -19,7 +19,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
 	return (
-		<html lang="en">
+		// AfterDark is dark-only (PRD §5): without the `dark` class, shadcn's
+		// semantic tokens (bg-background, border-input, …) resolve to the light
+		// palette and outline/ghost variants render white-on-white.
+		<html lang="en" className="dark">
 			<head>
 				<link
 					rel="stylesheet"

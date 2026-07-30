@@ -16,11 +16,16 @@ export const GET = withRoute('venue.gigs', async () => {
   if (venueRows.length === 0) return Response.json({ gigs: [] });
 
   const gigs = await sql`
-    SELECT id, title, role_needed, description, start_time, end_time,
-           base_rate, tips_included, status, created_at
-    FROM gigs
-    WHERE venue_id = ${venueRows[0].id}
-    ORDER BY created_at DESC
+    SELECT g.id, g.title, g.role_needed, g.description, g.start_time, g.end_time,
+           g.base_rate, g.tips_included, g.age_requirement, g.status, g.created_at,
+           COUNT(a.id) FILTER (WHERE a.status <> 'WITHDRAWN')::int AS applicant_count,
+           COUNT(a.id) FILTER (WHERE a.status = 'SHORTLISTED')::int AS shortlisted_count,
+           COUNT(a.id) FILTER (WHERE a.status = 'PENDING')::int AS pending_count
+    FROM gigs g
+    LEFT JOIN applications a ON a.gig_id = g.id
+    WHERE g.venue_id = ${venueRows[0].id}
+    GROUP BY g.id
+    ORDER BY g.created_at DESC
     LIMIT 100
   `;
   return Response.json({ gigs });

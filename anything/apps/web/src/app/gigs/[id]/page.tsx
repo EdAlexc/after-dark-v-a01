@@ -1,16 +1,17 @@
 'use client';
 
 /**
- * Public gig detail + application panel (wireframe p4, P1.2).
- * Payout hero, about, venue card, and the 5% marketplace-fee estimator.
- * Submitting applications lands in P2 — the estimator is live, the submit
- * button says so honestly. Map view is deferred (Technical Backlog #1).
+ * Public gig detail + application panel (wireframe p4, P1.2 + P3 live
+ * applications). Payout hero, about, venue card, the 5% fee estimator, real
+ * Submit/Withdraw, and "Inquire" opening a P5 conversation. Map view is
+ * deferred (Technical Backlog #1).
  */
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useParams, useRouter } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   Clock,
@@ -44,9 +45,16 @@ interface GigDetail extends ApiGig {
   venue_gigs_hosted?: number;
 }
 
+interface MyApplication {
+  id: string;
+  status: 'PENDING' | 'SHORTLISTED' | 'HIRED' | 'REJECTED' | 'WITHDRAWN';
+  proposed_rate_cents: number | null;
+}
+
 interface GigDetailResponse {
   gig: GigDetail;
   isOwner: boolean;
+  myApplication: MyApplication | null;
 }
 
 const STATUS_BADGES: Record<string, { label: string; className: string }> = {
@@ -59,7 +67,10 @@ const STATUS_BADGES: Record<string, { label: string; className: string }> = {
 
 export default function GigDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const qc = useQueryClient();
   const gigId = params?.id;
+  const [coverMessage, setCoverMessage] = useState('');
 
   const { data, isPending, isError } = useQuery({
     queryKey: ['gig', gigId],
@@ -85,6 +96,82 @@ export default function GigDetailPage() {
 
   const hours = gig ? gigHours(gig.start_time, gig.end_time) : null;
   const estimate = feeBreakdown(effectiveRate, hours ?? 1);
+
+  const apply = useMutation({
+    mutationFn: async () => {
+      const parsed = Number(proposedRate);
+      const proposedCents =
+        proposedRate.trim() !== '' && Number.isFinite(parsed) && parsed > 0
+          ? Math.round(parsed * 100)
+          : null;
+      const res = await fetch(`/api/gigs/${gigId}/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposed_rate_cents: proposedCents, cover_message: coverMessage }),
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (res.status === 401) throw new Error('signin');
+      if (res.status === 403) throw new Error('Only talent accounts can apply');
+      if (!res.ok) throw new Error(body?.error ?? 'Could not submit application');
+      return body;
+    },
+    onSuccess: () => {
+      toast.success('Application submitted!');
+      void qc.invalidateQueries({ queryKey: ['gig', gigId] });
+    },
+    onError: (error: Error) => {
+      if (error.message === 'signin') {
+        router.push(`/account/signin?callbackUrl=${encodeURIComponent(`/gigs/${gigId}`)}`);
+        return;
+      }
+      toast.error(error.message);
+    },
+  });
+
+  const withdraw = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/applications/${data?.myApplication?.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'WITHDRAWN' }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? 'Could not withdraw');
+      }
+    },
+    onSuccess: () => {
+      toast.success('Application withdrawn');
+      void qc.invalidateQueries({ queryKey: ['gig', gigId] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const inquire = useMutation({
+    mutationFn: async () => {
+      // The server resolves the venue side from the gig anchor, so venue
+      // user ids never travel through the client.
+      const res = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gig_id: gigId }),
+      });
+      if (res.status === 401) throw new Error('signin');
+      const body = (await res.json().catch(() => null)) as
+        | { conversation?: { id: string }; error?: string }
+        | null;
+      if (!res.ok) throw new Error(body?.error ?? 'Could not open conversation');
+      return body?.conversation?.id;
+    },
+    onSuccess: () => router.push('/dashboard/talent/messages'),
+    onError: (error: Error) => {
+      if (error.message === 'signin') {
+        router.push(`/account/signin?callbackUrl=${encodeURIComponent(`/gigs/${gigId}`)}`);
+        return;
+      }
+      toast.error(error.message);
+    },
+  });
 
   if (isPending) {
     return (
@@ -299,64 +386,132 @@ export default function GigDetailPage() {
           </Card>
         </div>
 
-        {/* ── Application panel ── */}
+        {/* ── Application panel (P3 live) ── */}
         <div className="space-y-4">
           <Card className="bg-[#1E1E1E] border-white/5 lg:sticky lg:top-20">
             <CardContent className="p-6 space-y-5">
               <h2 className="text-lg font-bold">Apply for this gig</h2>
 
-              {/* Proposed rate */}
-              <div>
-                <label className="text-xs font-bold uppercase tracking-widest text-white/40 block mb-2">
-                  Your proposed rate ($/hr)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  inputMode="decimal"
-                  placeholder={baseRate !== null ? String(baseRate) : 'e.g. 150'}
-                  value={proposedRate}
-                  onChange={(e) => setProposedRate(e.target.value)}
-                  className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all"
-                />
-                <p className="text-[11px] text-white/30 mt-1.5">
-                  Leave blank to accept the venue's base rate.
-                </p>
-              </div>
+              {data?.myApplication && data.myApplication.status !== 'WITHDRAWN' ? (
+                /* Already applied — show state + withdraw */
+                <div className="space-y-4">
+                  <div
+                    className={cn(
+                      'rounded-xl border p-4 text-sm font-bold flex items-center gap-2',
+                      data.myApplication.status === 'HIRED'
+                        ? 'bg-[#00FFCC]/10 border-[#00FFCC]/30 text-[#00FFCC]'
+                        : data.myApplication.status === 'REJECTED'
+                          ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                          : 'bg-green-400/10 border-green-400/20 text-green-400'
+                    )}
+                  >
+                    ✓{' '}
+                    {data.myApplication.status === 'PENDING'
+                      ? 'Application submitted'
+                      : data.myApplication.status === 'SHORTLISTED'
+                        ? 'You are shortlisted!'
+                        : data.myApplication.status === 'HIRED'
+                          ? 'You are hired for this gig 🎉'
+                          : 'Application not selected'}
+                  </div>
+                  {data.myApplication.proposed_rate_cents !== null && (
+                    <p className="text-xs text-white/40">
+                      Your proposed rate: $
+                      {(data.myApplication.proposed_rate_cents / 100).toFixed(2)}/hr
+                    </p>
+                  )}
+                  {(data.myApplication.status === 'PENDING' ||
+                    data.myApplication.status === 'SHORTLISTED') && (
+                    <Button
+                      variant="outline"
+                      disabled={withdraw.isPending}
+                      onClick={() => withdraw.mutate()}
+                      className="w-full border-white/10 text-white/50 hover:text-red-400 hover:border-red-500/30 text-xs"
+                    >
+                      Withdraw application
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {/* Proposed rate */}
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-widest text-white/40 block mb-2">
+                      Your proposed rate ($/hr)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="decimal"
+                      placeholder={baseRate !== null ? String(baseRate) : 'e.g. 150'}
+                      value={proposedRate}
+                      onChange={(e) => setProposedRate(e.target.value)}
+                      className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all"
+                    />
+                    <p className="text-[11px] text-white/30 mt-1.5">
+                      Leave blank to accept the venue's base rate.
+                    </p>
+                  </div>
 
-              {/* Fee estimator */}
-              <div className="rounded-xl bg-[#121212] border border-white/5 p-4 space-y-2 text-sm">
-                <div className="flex items-center justify-between text-white/50">
-                  <span>
-                    {hours !== null
-                      ? `Estimated total (${hours.toFixed(1)}h)`
-                      : 'Estimated total (per hour)'}
-                  </span>
-                  <span className="font-bold text-white">${estimate.gross.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between text-white/50">
-                  <span>Marketplace fee (5%)</span>
-                  <span className="font-bold text-red-400">−${estimate.fee.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                  <span className="font-bold text-white/70">Your estimated net</span>
-                  <span className="text-lg font-black text-[#00FFCC]">
-                    ${estimate.net.toFixed(2)}
-                  </span>
-                </div>
-              </div>
+                  {/* Cover message */}
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-widest text-white/40 block mb-2">
+                      Cover message
+                    </label>
+                    <textarea
+                      rows={3}
+                      maxLength={2000}
+                      placeholder="Why you're the right fit for this night…"
+                      value={coverMessage}
+                      onChange={(e) => setCoverMessage(e.target.value)}
+                      className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all resize-none"
+                    />
+                  </div>
+
+                  {/* Fee estimator */}
+                  <div className="rounded-xl bg-[#121212] border border-white/5 p-4 space-y-2 text-sm">
+                    <div className="flex items-center justify-between text-white/50">
+                      <span>
+                        {hours !== null
+                          ? `Estimated total (${hours.toFixed(1)}h)`
+                          : 'Estimated total (per hour)'}
+                      </span>
+                      <span className="font-bold text-white">${estimate.gross.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-white/50">
+                      <span>Marketplace fee (5%)</span>
+                      <span className="font-bold text-red-400">−${estimate.fee.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                      <span className="font-bold text-white/70">Your estimated net</span>
+                      <span className="text-lg font-black text-[#00FFCC]">
+                        ${estimate.net.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <Button
+                    disabled={apply.isPending || gig.status !== 'PUBLISHED'}
+                    onClick={() => apply.mutate()}
+                    className="w-full bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold disabled:opacity-40"
+                  >
+                    {apply.isPending
+                      ? 'Submitting…'
+                      : gig.status !== 'PUBLISHED'
+                        ? 'This gig is no longer open'
+                        : 'Submit Application'}
+                  </Button>
+                </>
+              )}
 
               <Button
-                disabled
-                className="w-full bg-[#00FFCC]/20 text-[#00FFCC]/50 font-bold cursor-not-allowed"
-                title="Applications open in the next release"
+                variant="outline"
+                disabled={inquire.isPending}
+                onClick={() => inquire.mutate()}
+                className="w-full border-white/10 text-white/70 hover:text-white hover:bg-white/5 text-sm"
               >
-                Submit Application — coming soon
+                {inquire.isPending ? 'Opening…' : 'Inquire about this gig'}
               </Button>
-              <p className="text-[11px] text-white/30 text-center -mt-2">
-                Applications are almost here. Until then, venues list contact details in the gig
-                description.
-              </p>
 
               {/* Escrow note */}
               <div className="flex items-start gap-3 rounded-xl bg-[#00FFCC]/5 border border-[#00FFCC]/15 p-4">

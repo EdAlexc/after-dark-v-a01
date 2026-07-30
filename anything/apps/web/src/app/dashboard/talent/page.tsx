@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   DollarSign,
   Briefcase,
@@ -10,51 +12,59 @@ import {
   ArrowRight,
   Clock,
   MapPin,
-  XCircle,
   Bell,
   ChevronRight,
   Zap,
-  TrendingUp,
   LogIn,
+  LogOut,
+  Navigation,
+  CheckCircle2,
+  TrendingUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { cn } from '@/lib/utils';
+import { type ApiGig, formatDate, formatRate, formatTimeRange } from '@/lib/gigs';
 
-// ─── Mock Data ───────────────────────────────────────────────────────────────
+// ─── Types from the real APIs (P3/P7) ────────────────────────────────────────
 
-const STATS = [
-  {
-    label: 'Total Earnings',
-    value: '$14,220',
-    change: '+12% this month',
-    positive: true,
-    icon: <DollarSign className="w-5 h-5" />,
-  },
-  {
-    label: 'Active Applications',
-    value: '7',
-    change: '3 awaiting reply',
-    positive: true,
-    icon: <Briefcase className="w-5 h-5" />,
-  },
-  {
-    label: 'Upcoming Gigs',
-    value: '4',
-    change: 'Next: Tonight 10PM',
-    positive: true,
-    icon: <CalendarCheck className="w-5 h-5" />,
-  },
-  {
-    label: 'Profile Completion',
-    value: '78%',
-    change: '2 sections missing',
-    positive: false,
-    icon: <User className="w-5 h-5" />,
-  },
-];
+interface TalentShift {
+  id: string;
+  status: 'SCHEDULED' | 'IN_TRANSIT' | 'CHECKED_IN' | 'CHECKED_OUT' | 'PAID';
+  call_time: string | null;
+  check_in_at: string | null;
+  check_out_at: string | null;
+  agreed_rate_cents: number;
+  shift_pay_cents: number | null;
+  gig_title: string;
+  gig_id: string;
+  start_time: string | null;
+  end_time: string | null;
+  venue_name: string | null;
+  venue_neighborhood: string | null;
+  payout_status: 'PENDING' | 'HELD' | 'RELEASED' | 'FAILED' | null;
+  payout_net_cents: number | null;
+}
+
+interface TalentApplication {
+  id: string;
+  gig_id: string;
+  status: 'PENDING' | 'SHORTLISTED' | 'HIRED' | 'REJECTED' | 'WITHDRAWN';
+  proposed_rate_cents: number | null;
+  gig_title: string;
+  start_time: string | null;
+  end_time: string | null;
+  base_rate: string | number | null;
+  venue_name: string | null;
+  venue_neighborhood: string | null;
+}
+
+interface TalentProfile {
+  stage_name: string | null;
+  profile_completion_pct: number | null;
+}
 
 const APPLICATION_STATUS_MAP: Record<string, { label: string; color: string }> = {
   PENDING: { label: 'Pending', color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20' },
@@ -64,119 +74,16 @@ const APPLICATION_STATUS_MAP: Record<string, { label: string; color: string }> =
   },
   HIRED: { label: 'Hired', color: 'text-green-400 bg-green-400/10 border-green-400/20' },
   REJECTED: { label: 'Rejected', color: 'text-red-400 bg-red-400/10 border-red-400/20' },
+  WITHDRAWN: { label: 'Withdrawn', color: 'text-white/40 bg-white/5 border-white/10' },
 };
 
-const ACTIVE_APPLICATIONS = [
-  {
-    id: 1,
-    gigTitle: 'Closing Set – Nebula NYC',
-    venue: 'Nebula NYC',
-    neighborhood: 'Midtown',
-    date: 'Sat, Jul 19',
-    time: '2AM – 6AM',
-    proposedRate: '$180/hr',
-    status: 'SHORTLISTED',
-  },
-  {
-    id: 2,
-    gigTitle: 'House Night – The Standard',
-    venue: 'The Standard',
-    neighborhood: 'Meatpacking',
-    date: 'Fri, Jul 18',
-    time: '10PM – 3AM',
-    proposedRate: '$150/hr',
-    status: 'PENDING',
-  },
-  {
-    id: 3,
-    gigTitle: 'Rooftop Sunset Set',
-    venue: '230 Fifth',
-    neighborhood: 'Flatiron',
-    date: 'Thu, Jul 17',
-    time: '6PM – 10PM',
-    proposedRate: '$120/hr',
-    status: 'HIRED',
-  },
-  {
-    id: 4,
-    gigTitle: 'Private Event – Brooklyn',
-    venue: 'Output BK',
-    neighborhood: 'Williamsburg',
-    date: 'Wed, Jul 16',
-    time: '10PM – 4AM',
-    proposedRate: '$200/hr',
-    status: 'REJECTED',
-  },
-];
-
-const UPCOMING_GIGS = [
-  {
-    id: 1,
-    title: 'Prime Time DJ Set',
-    venue: 'Nebula NYC',
-    neighborhood: 'Midtown',
-    date: 'Tonight',
-    time: '10:00 PM',
-    endTime: '2:00 AM',
-    rate: '$180/hr',
-    canCheckIn: true,
-    image: 'https://raw.createusercontent.com/67c177f0-1e58-41db-8e21-40fab26107c5/',
-  },
-  {
-    id: 2,
-    title: 'Rooftop Sunset Set',
-    venue: '230 Fifth',
-    neighborhood: 'Flatiron',
-    date: 'Thu Jul 17',
-    time: '6:00 PM',
-    endTime: '10:00 PM',
-    rate: '$120/hr',
-    canCheckIn: false,
-    image: 'https://raw.createusercontent.com/1fdc9fa2-03ef-4a17-9d5f-8d0f8468f505/',
-  },
-  {
-    id: 3,
-    title: 'House Night Main Stage',
-    venue: 'The Standard',
-    neighborhood: 'Meatpacking',
-    date: 'Fri Jul 18',
-    time: '10:00 PM',
-    endTime: '3:00 AM',
-    rate: '$150/hr',
-    canCheckIn: false,
-    image: 'https://raw.createusercontent.com/ef893642-e48b-430c-a4f2-ce5f25f143ad/',
-  },
-];
-
-const HOT_GIGS_TONIGHT = [
-  {
-    id: 1,
-    title: 'Emergency DJ Fill',
-    venue: 'PHD Rooftop',
-    neighborhood: 'Downtown',
-    time: '11PM',
-    rate: '$220/hr',
-    urgency: 'HOT',
-  },
-  {
-    id: 2,
-    title: 'Afrobeats Night',
-    venue: 'Limelight',
-    neighborhood: 'Chelsea',
-    time: '9PM',
-    rate: '$140/hr',
-    urgency: 'URGENT',
-  },
-  {
-    id: 3,
-    title: 'VIP Lounge Set',
-    venue: 'Butter Group',
-    neighborhood: 'Meatpacking',
-    time: '8PM',
-    rate: '$100/hr',
-    urgency: 'NEW',
-  },
-];
+const SHIFT_STATUS_MAP: Record<TalentShift['status'], { label: string; color: string }> = {
+  SCHEDULED: { label: 'Scheduled', color: 'text-white/40' },
+  IN_TRANSIT: { label: 'In Transit', color: 'text-[#00FFCC]' },
+  CHECKED_IN: { label: 'Checked In', color: 'text-green-400' },
+  CHECKED_OUT: { label: 'Checked Out', color: 'text-white/50' },
+  PAID: { label: 'Paid', color: 'text-[#00FFCC]' },
+};
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -202,11 +109,11 @@ function StatCard({
           </div>
           <span
             className={cn(
-              'text-xs font-semibold flex items-center gap-1',
-              positive ? 'text-green-400' : 'text-yellow-400'
+              'text-xs font-semibold flex items-center gap-1 text-right',
+              positive ? 'text-green-400' : 'text-white/40'
             )}
           >
-            <TrendingUp className="w-3 h-3" />
+            {positive && <TrendingUp className="w-3 h-3" />}
             {change}
           </span>
         </div>
@@ -217,16 +124,115 @@ function StatCard({
   );
 }
 
+const dollars = (cents: number) =>
+  `$${(cents / 100).toLocaleString(undefined, {
+    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function TalentDashboard() {
-  const [checkedIn, setCheckedIn] = useState<number[]>([]);
+  const qc = useQueryClient();
 
-  const handleCheckIn = (gigId: number) => {
-    setCheckedIn((prev) =>
-      prev.includes(gigId) ? prev.filter((id) => id !== gigId) : [...prev, gigId]
-    );
-  };
+  const { data: profileData } = useQuery({
+    queryKey: ['talent-profile'],
+    queryFn: async () => {
+      const res = await fetch('/api/talent/profile');
+      if (!res.ok) throw new Error('Failed to load profile');
+      return res.json() as Promise<{ profile: TalentProfile | null }>;
+    },
+  });
+  const profile = profileData?.profile ?? null;
+  const completion = profile?.profile_completion_pct ?? 0;
+
+  const { data: shiftsData } = useQuery({
+    queryKey: ['talent-shifts'],
+    queryFn: async () => {
+      const res = await fetch('/api/talent/shifts');
+      if (!res.ok) throw new Error('Failed to load shifts');
+      return res.json() as Promise<{ shifts: TalentShift[] }>;
+    },
+    refetchInterval: 15_000,
+  });
+  const shifts = shiftsData?.shifts ?? [];
+
+  const { data: appsData } = useQuery({
+    queryKey: ['talent-applications'],
+    queryFn: async () => {
+      const res = await fetch('/api/talent/applications');
+      if (!res.ok) throw new Error('Failed to load applications');
+      return res.json() as Promise<{ applications: TalentApplication[] }>;
+    },
+  });
+  const applications = appsData?.applications ?? [];
+
+  const { data: gigsData } = useQuery({
+    queryKey: ['gigs', 'dashboard-hot'],
+    queryFn: async () => {
+      const res = await fetch('/api/gigs');
+      if (!res.ok) throw new Error('Failed to load gigs');
+      return res.json() as Promise<{ gigs: ApiGig[] }>;
+    },
+  });
+  const hotGigs = (gigsData?.gigs ?? []).slice(0, 3);
+
+  const shiftTransition = useMutation({
+    mutationFn: async ({
+      id,
+      to,
+    }: {
+      id: string;
+      to: 'IN_TRANSIT' | 'CHECKED_IN' | 'CHECKED_OUT';
+    }) => {
+      const res = await fetch(`/api/shifts/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, idempotency_key: crypto.randomUUID() }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? 'Shift update failed');
+      }
+      return to;
+    },
+    onSuccess: (to) => {
+      toast.success(
+        to === 'IN_TRANSIT'
+          ? 'Marked in transit'
+          : to === 'CHECKED_IN'
+            ? 'Checked in — have a great night'
+            : 'Checked out — payout is in escrow'
+      );
+      void qc.invalidateQueries({ queryKey: ['talent-shifts'] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  // Derived, real stats (wireframe p8): earnings from the payout ledger,
+  // application + booking counts from live rows.
+  const releasedCents = shifts
+    .filter((s) => s.payout_status === 'RELEASED')
+    .reduce((sum, s) => sum + (s.payout_net_cents ?? 0), 0);
+  const heldCents = shifts
+    .filter((s) => s.payout_status === 'HELD')
+    .reduce((sum, s) => sum + (s.payout_net_cents ?? 0), 0);
+  const activeApps = applications.filter(
+    (a) => a.status === 'PENDING' || a.status === 'SHORTLISTED'
+  );
+  const upcoming = shifts.filter(
+    (s) => s.status === 'SCHEDULED' || s.status === 'IN_TRANSIT' || s.status === 'CHECKED_IN'
+  );
+  const recentApplications = applications.slice(0, 4);
+  const visibleShifts = shifts.slice(0, 4);
+
+  const displayName = profile?.stage_name || 'there';
+  const todayLabel = new Date().toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 
   return (
     <div className="min-h-screen bg-[#121212] text-white flex font-sans pt-14 md:pt-0">
@@ -237,14 +243,17 @@ export default function TalentDashboard() {
         {/* Top bar */}
         <header className="h-16 flex items-center justify-between px-4 md:px-6 border-b border-white/5 bg-[#121212]/80 backdrop-blur-md sticky top-14 md:top-0 z-10">
           <div>
-            <h1 className="text-lg font-bold">Good evening, Marcus 👋</h1>
-            <p className="text-xs text-white/40">Sunday, Jul 13, 2026</p>
+            <h1 className="text-lg font-bold">Good evening, {displayName} 👋</h1>
+            <p className="text-xs text-white/40">{todayLabel}</p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
+            <Link
+              href="/dashboard/talent/browse"
+              className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5"
+              aria-label="Browse gigs"
+            >
               <Bell className="w-4 h-4 text-white/60" />
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-[#00FFCC] rounded-full" />
-            </button>
+            </Link>
             <div className="w-9 h-9 rounded-xl bg-[#00FFCC]/20 border border-[#00FFCC]/30 flex items-center justify-center">
               <Zap className="w-4 h-4 text-[#00FFCC]" />
             </div>
@@ -254,39 +263,68 @@ export default function TalentDashboard() {
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-6 space-y-8">
           {/* Profile Completion Banner */}
-          <div className="bg-[#1E1E1E] border border-[#00FFCC]/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex-1">
-              <p className="text-sm font-bold text-[#00FFCC] mb-2">
-                Complete your profile to unlock more gigs
-              </p>
-              <Progress value={78} className="h-1.5 bg-white/10" />
-              <p className="text-xs text-white/40 mt-1.5">
-                78% complete — Add SoundCloud & media gallery to finish
-              </p>
+          {completion < 100 && (
+            <div className="bg-[#1E1E1E] border border-[#00FFCC]/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex-1">
+                <p className="text-sm font-bold text-[#00FFCC] mb-2">
+                  Complete your profile to unlock more gigs
+                </p>
+                <Progress value={completion} className="h-1.5 bg-white/10" />
+                <p className="text-xs text-white/40 mt-1.5">
+                  {completion}% complete — filled-out profiles get shortlisted more often
+                </p>
+              </div>
+              <Link href="/dashboard/talent/profile">
+                <Button
+                  size="sm"
+                  className="bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold flex-shrink-0"
+                >
+                  Finish Profile
+                </Button>
+              </Link>
             </div>
-            <Button
-              size="sm"
-              className="bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold flex-shrink-0"
-            >
-              Finish Profile
-            </Button>
-          </div>
+          )}
 
           {/* Stats Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {STATS.map((stat) => (
-              <StatCard key={stat.label} {...stat} />
-            ))}
+            <StatCard
+              label="Total Earnings"
+              value={dollars(releasedCents)}
+              change={heldCents > 0 ? `${dollars(heldCents)} in escrow` : 'released payouts'}
+              positive={releasedCents > 0}
+              icon={<DollarSign className="w-5 h-5" />}
+            />
+            <StatCard
+              label="Active Applications"
+              value={String(activeApps.length)}
+              change={`${applications.length} total`}
+              positive={activeApps.length > 0}
+              icon={<Briefcase className="w-5 h-5" />}
+            />
+            <StatCard
+              label="Upcoming Gigs"
+              value={String(upcoming.length)}
+              change={upcoming.length > 0 ? 'from hired applications' : 'apply to get booked'}
+              positive={upcoming.length > 0}
+              icon={<CalendarCheck className="w-5 h-5" />}
+            />
+            <StatCard
+              label="Profile Completion"
+              value={`${completion}%`}
+              change={completion >= 100 ? 'all set' : 'finish to rank higher'}
+              positive={completion >= 100}
+              icon={<User className="w-5 h-5" />}
+            />
           </div>
 
-          {/* Main Grid: Applications + Upcoming | Hot Gigs */}
+          {/* Main Grid: Bookings + Applications | Hot Gigs */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
             {/* Left column (2/3) */}
             <div className="xl:col-span-2 space-y-6">
-              {/* Upcoming Gigs */}
+              {/* Upcoming Bookings (real shifts, P7) */}
               <section>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold">Upcoming Gigs</h2>
+                  <h2 className="text-lg font-bold">Upcoming Bookings</h2>
                   <Link
                     href="/dashboard/talent/schedule"
                     className="text-xs text-[#00FFCC] font-semibold flex items-center gap-1 hover:underline"
@@ -295,86 +333,109 @@ export default function TalentDashboard() {
                   </Link>
                 </div>
                 <div className="space-y-3">
-                  {UPCOMING_GIGS.map((gig) => {
-                    const isCheckedIn = checkedIn.includes(gig.id);
+                  {visibleShifts.length === 0 && (
+                    <Card className="bg-[#1E1E1E] border-white/5 border-dashed">
+                      <CardContent className="p-6 text-center">
+                        <CalendarCheck className="w-6 h-6 text-white/20 mx-auto mb-2" />
+                        <p className="text-sm text-white/40">No bookings yet.</p>
+                        <p className="text-xs text-white/25 mt-1">
+                          When a venue hires you, your shift appears here with live check-in.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {visibleShifts.map((shift) => {
+                    const statusInfo = SHIFT_STATUS_MAP[shift.status];
+                    const when = shift.call_time ?? shift.start_time;
                     return (
                       <Card
-                        key={gig.id}
+                        key={shift.id}
                         className="bg-[#1E1E1E] border-white/5 overflow-hidden group hover:border-white/10 transition-colors"
                       >
-                        <CardContent className="p-0">
-                          <div className="flex items-stretch">
-                            {/* Image */}
-                            <div className="w-20 sm:w-28 flex-shrink-0 relative overflow-hidden">
-                              <img
-                                src={gig.image}
-                                alt={gig.title}
-                                className="w-full h-full object-cover"
-                              />
-                              <div className="absolute inset-0 bg-black/30" />
+                        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <Link
+                                href={`/gigs/${shift.gig_id}`}
+                                className="text-sm font-bold group-hover:text-[#00FFCC] transition-colors"
+                              >
+                                {shift.gig_title}
+                              </Link>
+                              <span className={cn('text-[11px] font-bold', statusInfo.color)}>
+                                {statusInfo.label}
+                              </span>
                             </div>
-                            {/* Info */}
-                            <div className="flex-1 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                              <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                  {gig.date === 'Tonight' && (
-                                    <span className="text-[10px] font-black uppercase bg-[#00FFCC] text-black px-2 py-0.5 rounded-full">
-                                      Tonight
-                                    </span>
-                                  )}
-                                  <p className="text-sm font-bold group-hover:text-[#00FFCC] transition-colors">
-                                    {gig.title}
-                                  </p>
-                                </div>
-                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/40">
-                                  <span className="flex items-center gap-1">
-                                    <MapPin className="w-3 h-3" />
-                                    {gig.venue}, {gig.neighborhood}
-                                  </span>
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="w-3 h-3" />
-                                    {gig.time} – {gig.endTime}
-                                  </span>
-                                  <span className="flex items-center gap-1 text-white/70 font-semibold">
-                                    <DollarSign className="w-3 h-3 text-[#00FFCC]" />
-                                    {gig.rate}
-                                  </span>
-                                </div>
-                              </div>
-                              {gig.canCheckIn && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleCheckIn(gig.id)}
-                                  className={cn(
-                                    'flex-shrink-0 font-bold text-xs transition-all',
-                                    isCheckedIn
-                                      ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
-                                      : 'bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90'
-                                  )}
-                                >
-                                  {isCheckedIn ? (
-                                    <>
-                                      <XCircle className="w-3.5 h-3.5 mr-1" />
-                                      Check Out
-                                    </>
-                                  ) : (
-                                    <>
-                                      <LogIn className="w-3.5 h-3.5 mr-1" />
-                                      Check In
-                                    </>
-                                  )}
-                                </Button>
-                              )}
-                              {!gig.canCheckIn && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="flex-shrink-0 text-white/30 hover:text-white/50 text-xs"
-                                >
-                                  {gig.date}
-                                </Button>
-                              )}
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/40">
+                              <span className="flex items-center gap-1">
+                                <MapPin className="w-3 h-3" />
+                                {shift.venue_name ?? 'Venue'}
+                                {shift.venue_neighborhood ? `, ${shift.venue_neighborhood}` : ''}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {when
+                                  ? new Date(when).toLocaleString(undefined, {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: 'numeric',
+                                      minute: '2-digit',
+                                    })
+                                  : 'TBD'}
+                              </span>
+                              <span className="flex items-center gap-1 text-white/70 font-semibold">
+                                <DollarSign className="w-3 h-3 text-[#00FFCC]" />
+                                {shift.shift_pay_cents !== null
+                                  ? `${dollars(shift.shift_pay_cents)} earned`
+                                  : `$${(shift.agreed_rate_cents / 100).toFixed(0)}/hr`}
+                              </span>
                             </div>
+                          </div>
+                          <div className="flex gap-2 flex-shrink-0">
+                            {shift.status === 'SCHEDULED' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={shiftTransition.isPending}
+                                onClick={() =>
+                                  shiftTransition.mutate({ id: shift.id, to: 'IN_TRANSIT' })
+                                }
+                                className="border-white/10 hover:bg-white/5 text-xs font-bold"
+                              >
+                                <Navigation className="w-3.5 h-3.5 mr-1" /> On My Way
+                              </Button>
+                            )}
+                            {(shift.status === 'SCHEDULED' || shift.status === 'IN_TRANSIT') && (
+                              <Button
+                                size="sm"
+                                disabled={shiftTransition.isPending}
+                                onClick={() =>
+                                  shiftTransition.mutate({ id: shift.id, to: 'CHECKED_IN' })
+                                }
+                                className="bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold text-xs"
+                              >
+                                <LogIn className="w-3.5 h-3.5 mr-1" /> Check In
+                              </Button>
+                            )}
+                            {shift.status === 'CHECKED_IN' && (
+                              <Button
+                                size="sm"
+                                disabled={shiftTransition.isPending}
+                                onClick={() =>
+                                  shiftTransition.mutate({ id: shift.id, to: 'CHECKED_OUT' })
+                                }
+                                className="bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 font-bold text-xs"
+                              >
+                                <LogOut className="w-3.5 h-3.5 mr-1" /> Check Out
+                              </Button>
+                            )}
+                            {(shift.status === 'CHECKED_OUT' || shift.status === 'PAID') && (
+                              <span className="text-[11px] text-white/40 flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-[#00FFCC]" />
+                                {shift.status === 'PAID' || shift.payout_status === 'RELEASED'
+                                  ? 'Payout released'
+                                  : 'Payout in escrow (24h)'}
+                              </span>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
@@ -383,55 +444,76 @@ export default function TalentDashboard() {
                 </div>
               </section>
 
-              {/* Active Applications */}
+              {/* Active Applications (real, P3) */}
               <section>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold">Active Applications</h2>
-                  <span className="text-xs text-white/40 font-medium">
-                    {ACTIVE_APPLICATIONS.length} total
-                  </span>
+                  <h2 className="text-lg font-bold">My Applications</h2>
+                  <Link
+                    href="/dashboard/talent/applicants"
+                    className="text-xs text-[#00FFCC] font-semibold flex items-center gap-1 hover:underline"
+                  >
+                    Manage All <ChevronRight className="w-3 h-3" />
+                  </Link>
                 </div>
                 <Card className="bg-[#1E1E1E] border-white/5 overflow-hidden">
-                  <div className="divide-y divide-white/5">
-                    {ACTIVE_APPLICATIONS.map((app) => {
-                      const statusInfo = APPLICATION_STATUS_MAP[app.status];
-                      return (
-                        <div
-                          key={app.id}
-                          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 hover:bg-white/[0.02] transition-colors"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-white truncate mb-1">
-                              {app.gigTitle}
-                            </p>
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/40">
-                              <span className="flex items-center gap-1">
-                                <MapPin className="w-3 h-3" />
-                                {app.venue}
+                  {recentApplications.length === 0 ? (
+                    <CardContent className="p-6 text-center">
+                      <Briefcase className="w-6 h-6 text-white/20 mx-auto mb-2" />
+                      <p className="text-sm text-white/40">No applications yet.</p>
+                      <Link
+                        href="/dashboard/talent/browse"
+                        className="text-xs text-[#00FFCC] font-semibold hover:underline"
+                      >
+                        Browse open gigs →
+                      </Link>
+                    </CardContent>
+                  ) : (
+                    <div className="divide-y divide-white/5">
+                      {recentApplications.map((app) => {
+                        const statusInfo =
+                          APPLICATION_STATUS_MAP[app.status] ?? APPLICATION_STATUS_MAP.PENDING;
+                        return (
+                          <Link
+                            key={app.id}
+                            href={`/gigs/${app.gig_id}`}
+                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 hover:bg-white/[0.02] transition-colors"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-white truncate mb-1">
+                                {app.gig_title}
+                              </p>
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/40">
+                                <span className="flex items-center gap-1">
+                                  <MapPin className="w-3 h-3" />
+                                  {app.venue_name ?? 'Venue'}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {formatDate(app.start_time)} ·{' '}
+                                  {formatTimeRange(app.start_time, app.end_time)}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <span className="text-sm font-bold text-white/70">
+                                {app.proposed_rate_cents !== null
+                                  ? `$${(app.proposed_rate_cents / 100).toFixed(0)}/hr`
+                                  : formatRate({ base_rate: app.base_rate ?? 0, tips_included: false })}
                               </span>
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                {app.date} · {app.time}
+                              <span
+                                className={cn(
+                                  'text-[11px] font-bold px-2.5 py-1 rounded-full border',
+                                  statusInfo.color
+                                )}
+                              >
+                                {statusInfo.label}
                               </span>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            <span className="text-sm font-bold text-white/70">
-                              {app.proposedRate}
-                            </span>
-                            <span
-                              className={cn(
-                                'text-[11px] font-bold px-2.5 py-1 rounded-full border',
-                                statusInfo.color
-                              )}
-                            >
-                              {statusInfo.label}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
                 </Card>
               </section>
             </div>
@@ -450,7 +532,7 @@ export default function TalentDashboard() {
                   <Link href="/dashboard/talent/schedule">
                     <Button
                       variant="outline"
-                      className="w-full border-white/10 hover:bg-white/5 justify-between font-semibold"
+                      className="w-full bg-transparent text-white border-white/10 hover:bg-white/5 hover:text-white justify-between font-semibold"
                     >
                       Manage Availability <ArrowRight className="w-4 h-4" />
                     </Button>
@@ -458,59 +540,52 @@ export default function TalentDashboard() {
                   <Link href="/dashboard/talent/messages">
                     <Button
                       variant="outline"
-                      className="w-full border-white/10 hover:bg-white/5 justify-between font-semibold"
+                      className="w-full bg-transparent text-white border-white/10 hover:bg-white/5 hover:text-white justify-between font-semibold"
                     >
-                      Messages
-                      <span className="bg-[#00FFCC] text-black text-[10px] font-black rounded-full w-4 h-4 flex items-center justify-center">
-                        3
-                      </span>
+                      Messages <ArrowRight className="w-4 h-4" />
                     </Button>
                   </Link>
                 </div>
               </section>
 
-              {/* Hot Gigs Tonight */}
+              {/* Hot Gigs Tonight (real listings) */}
               <section>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold">Hot Tonight</h2>
                   <Zap className="w-4 h-4 text-[#00FFCC] fill-current" />
                 </div>
                 <div className="space-y-3">
-                  {HOT_GIGS_TONIGHT.map((gig) => (
-                    <Card
-                      key={gig.id}
-                      className="bg-[#1E1E1E] border-white/5 hover:border-[#00FFCC]/20 transition-colors group cursor-pointer"
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <p className="text-sm font-bold group-hover:text-[#00FFCC] transition-colors leading-tight">
-                            {gig.title}
+                  {hotGigs.length === 0 && (
+                    <p className="text-xs text-white/30">No open gigs right now — check back soon.</p>
+                  )}
+                  {hotGigs.map((gig) => (
+                    <Link key={gig.id} href={`/gigs/${gig.id}`} className="block">
+                      <Card className="bg-[#1E1E1E] border-white/5 hover:border-[#00FFCC]/20 transition-colors group cursor-pointer">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between mb-2">
+                            <p className="text-sm font-bold group-hover:text-[#00FFCC] transition-colors leading-tight">
+                              {gig.title}
+                            </p>
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ml-2 bg-[#00FFCC] text-black">
+                              OPEN
+                            </span>
+                          </div>
+                          <p className="text-xs text-white/40 mb-3">
+                            {gig.venue_name ?? 'Venue'}
+                            {gig.venue_neighborhood ? ` · ${gig.venue_neighborhood}` : ''}
                           </p>
-                          <span
-                            className={cn(
-                              'text-[10px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ml-2',
-                              gig.urgency === 'HOT'
-                                ? 'bg-red-500 text-white'
-                                : gig.urgency === 'URGENT'
-                                  ? 'bg-orange-500 text-white'
-                                  : 'bg-[#00FFCC] text-black'
-                            )}
-                          >
-                            {gig.urgency}
-                          </span>
-                        </div>
-                        <p className="text-xs text-white/40 mb-3">
-                          {gig.venue} · {gig.neighborhood}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <span className="flex items-center gap-1 text-xs text-white/60">
-                            <Clock className="w-3 h-3" />
-                            {gig.time}
-                          </span>
-                          <span className="text-sm font-black text-[#00FFCC]">{gig.rate}</span>
-                        </div>
-                      </CardContent>
-                    </Card>
+                          <div className="flex items-center justify-between">
+                            <span className="flex items-center gap-1 text-xs text-white/60">
+                              <Clock className="w-3 h-3" />
+                              {formatDate(gig.start_time)}
+                            </span>
+                            <span className="text-sm font-black text-[#00FFCC]">
+                              {formatRate(gig)}
+                            </span>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </Link>
                   ))}
                 </div>
                 <Link href="/dashboard/talent/browse">
@@ -523,35 +598,25 @@ export default function TalentDashboard() {
                 </Link>
               </section>
 
-              {/* Earnings mini chart placeholder */}
+              {/* Earnings summary (real payout ledger, P8) */}
               <section>
-                <h2 className="text-lg font-bold mb-4">This Month</h2>
+                <h2 className="text-lg font-bold mb-4">Earnings</h2>
                 <Card className="bg-[#1E1E1E] border-white/5">
-                  <CardContent className="p-4">
-                    <div className="flex items-end justify-between gap-1 h-20">
-                      {[40, 70, 55, 80, 65, 90, 100, 75, 85, 60, 95, 78].map((h, i) => (
-                        <div
-                          key={i}
-                          className="flex-1 bg-[#00FFCC]/20 rounded-sm relative overflow-hidden"
-                          style={{ height: `${h}%` }}
-                        >
-                          <div
-                            className="absolute bottom-0 left-0 right-0 bg-[#00FFCC]"
-                            style={{ height: i === 11 ? '100%' : '40%' }}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-xs text-white/40">Total Earned</p>
-                        <p className="text-lg font-black text-white">$14,220</p>
+                        <p className="text-xs text-white/40">Released to you</p>
+                        <p className="text-lg font-black text-white">{dollars(releasedCents)}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-white/40">After 5% Fee</p>
-                        <p className="text-sm font-bold text-[#00FFCC]">$13,509</p>
+                        <p className="text-xs text-white/40">Held in escrow</p>
+                        <p className="text-sm font-bold text-[#00FFCC]">{dollars(heldCents)}</p>
                       </div>
                     </div>
+                    <p className="text-[11px] text-white/30 border-t border-white/5 pt-3">
+                      Net of the 5% marketplace fee. Escrowed payouts release 24 hours after
+                      checkout.
+                    </p>
                   </CardContent>
                 </Card>
               </section>
