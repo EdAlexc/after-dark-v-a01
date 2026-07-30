@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PostGigButton } from '@/components/PostGigButton';
+import { FeaturedTonight } from '@/components/FeaturedTonight';
 import {
   Music,
   Wine,
@@ -11,40 +12,8 @@ import {
   Calendar,
   CreditCard,
   ArrowRight,
-  Clock,
   Menu,
 } from 'lucide-react';
-
-// Mock data for Featured Gigs
-const FEATURED_GIGS = [
-  {
-    id: 1,
-    title: 'Techno Set - Nebula NYC',
-    role: 'DJ / Producer',
-    rate: '$150/hr',
-    startTime: '11:00 PM',
-    neighborhood: 'Midtown',
-    image: 'https://raw.createusercontent.com/67c177f0-1e58-41db-8e21-40fab26107c5/',
-  },
-  {
-    id: 2,
-    title: 'Vip Lounge Mixology',
-    role: 'Mixologist',
-    rate: '$65/hr + Tips',
-    startTime: '8:00 PM',
-    neighborhood: 'Meatpacking',
-    image: 'https://raw.createusercontent.com/1fdc9fa2-03ef-4a17-9d5f-8d0f8468f505/',
-  },
-  {
-    id: 3,
-    title: 'Grand Opening Security',
-    role: 'Security',
-    rate: '$45/hr',
-    startTime: '9:30 PM',
-    neighborhood: 'Chelsea',
-    image: 'https://raw.createusercontent.com/ef893642-e48b-430c-a4f2-ce5f25f143ad/',
-  },
-];
 
 export default function LandingPage() {
   return (
@@ -133,59 +102,14 @@ export default function LandingPage() {
             <p className="text-white/60">The most urgent opportunities in the city right now.</p>
           </div>
           <Link
-            href="#"
+            href="/dashboard/talent/browse"
             className="hidden md:flex items-center gap-2 text-[#00FFCC] font-semibold hover:underline"
           >
             See All Listings <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {FEATURED_GIGS.map((gig) => (
-            <Card
-              key={gig.id}
-              className="bg-[#1E1E1E] border-white/5 overflow-hidden group cursor-pointer hover:border-[#00FFCC]/30 transition-all"
-            >
-              <div className="aspect-[4/3] relative overflow-hidden">
-                <img
-                  src={gig.image}
-                  alt={gig.title}
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                />
-                <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold border border-white/10">
-                  {gig.neighborhood}
-                </div>
-                <div className="absolute bottom-4 right-4 bg-[#00FFCC] text-black px-3 py-1 rounded-full text-xs font-black uppercase">
-                  Featured
-                </div>
-              </div>
-              <CardContent className="p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-xl font-bold group-hover:text-[#00FFCC] transition-colors line-clamp-1">
-                    {gig.title}
-                  </h3>
-                </div>
-                <div className="space-y-3 mb-6">
-                  <div className="flex items-center gap-2 text-white/60 text-sm">
-                    <Music className="w-4 h-4 text-[#00FFCC]" />
-                    <span>{gig.role}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-white/60 text-sm">
-                    <Clock className="w-4 h-4 text-[#00FFCC]" />
-                    <span>Starts {gig.startTime}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-white/60 text-sm">
-                    <CreditCard className="w-4 h-4 text-[#00FFCC]" />
-                    <span className="font-bold text-white">{gig.rate}</span>
-                  </div>
-                </div>
-                <Button className="w-full bg-white/5 hover:bg-white/10 border border-white/10">
-                  View Details
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <FeaturedTonight />
       </section>
 
       {/* Workflow Diagram Section */}

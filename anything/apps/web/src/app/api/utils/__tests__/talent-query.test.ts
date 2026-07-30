@@ -1,0 +1,62 @@
+import { describe, expect, it } from 'vitest';
+import { TALENT_PAGE_SIZE, buildTalentListQuery } from '../talent-query';
+import { TalentListQuerySchema } from '../schemas';
+
+const EMPTY = TalentListQuerySchema.parse({});
+
+describe('buildTalentListQuery', () => {
+  it('only lists profiles with a stage name (unpublished-profile guard)', () => {
+    const { text } = buildTalentListQuery(EMPTY);
+    expect(text).toContain("stage_name IS NOT NULL AND stage_name <> ''");
+  });
+
+  it('selects only public-profile columns — no auth linkage', () => {
+    const { text } = buildTalentListQuery(EMPTY);
+    expect(text).not.toContain('user_id');
+    expect(text).not.toContain('email');
+    expect(text).not.toMatch(/"user"/);
+    expect(text).not.toContain('totp');
+  });
+
+  it('numbers placeholders sequentially for every filter combination', () => {
+    const { text, values } = buildTalentListQuery(
+      TalentListQuerySchema.parse({
+        neighborhood: 'Bushwick',
+        role: 'DJ',
+        minRate: '50',
+        maxRate: '300',
+        page: '2',
+      })
+    );
+    expect(values).toEqual(['%Bushwick%', '%DJ%', 50, 300, TALENT_PAGE_SIZE + 1, TALENT_PAGE_SIZE]);
+    expect(text).toContain('LOWER(neighborhood) LIKE LOWER($1)');
+    expect(text).toContain('LOWER(primary_role) LIKE LOWER($2)');
+    expect(text).toContain('hourly_rate_max >= $3');
+    expect(text).toContain('hourly_rate_min <= $4');
+    expect(text).toContain('LIMIT $5 OFFSET $6');
+  });
+
+  it('never interpolates user input into SQL text (SQLi regression)', () => {
+    const payloads = ["'; DROP TABLE talent_profiles; --", "%' OR '1'='1", '$1; DELETE FROM gigs'];
+    for (const payload of payloads) {
+      const { text, values } = buildTalentListQuery(
+        TalentListQuerySchema.parse({ neighborhood: payload.slice(0, 80) })
+      );
+      expect(text).not.toContain(payload);
+      expect(values).toContain(`%${payload.slice(0, 80)}%`);
+      expect(text.trim().startsWith('SELECT')).toBe(true);
+      expect(text).not.toContain(';');
+    }
+  });
+
+  it('treats rate filters as band overlap and excludes rate-less profiles when filtering', () => {
+    const { text } = buildTalentListQuery(TalentListQuerySchema.parse({ minRate: '100' }));
+    expect(text).toContain('hourly_rate_max IS NOT NULL');
+    const without = buildTalentListQuery(EMPTY);
+    expect(without.text).not.toContain('hourly_rate_max IS NOT NULL');
+  });
+
+  it('rejects minRate > maxRate at the schema layer', () => {
+    expect(TalentListQuerySchema.safeParse({ minRate: '300', maxRate: '10' }).success).toBe(false);
+  });
+});

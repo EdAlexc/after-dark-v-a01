@@ -84,7 +84,12 @@ describe('GET /api/gigs (public listing)', () => {
     mocks.getSession.mockResolvedValue(null);
     const res = await GET(new Request('http://test.local/api/gigs'), {});
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ gigs: [] });
+    await expect(res.json()).resolves.toEqual({
+      gigs: [],
+      page: 1,
+      pageSize: 12,
+      hasMore: false,
+    });
   });
 });
 

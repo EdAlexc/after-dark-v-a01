@@ -3,7 +3,7 @@ import { authGuard } from '@/app/api/utils/auth-guard';
 import { auditLogger } from '@/app/api/utils/audit';
 import { parseBody, parseQuery } from '@/app/api/utils/validation';
 import { GigCreateSchema, GigListQuerySchema } from '@/app/api/utils/schemas';
-import { buildGigsListQuery } from '@/app/api/utils/gigs-query';
+import { GIG_PAGE_SIZE, buildGigsListQuery } from '@/app/api/utils/gigs-query';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 
@@ -13,8 +13,11 @@ const createLimiter = getRateLimiter('gigs-create', { windowMs: 60 * 60 * 1000, 
 export const GET = withRoute('gigs.list', async (request) => {
   const filters = parseQuery(request.url, GigListQuerySchema);
   const { text, values } = buildGigsListQuery(filters);
-  const gigs = await sql(text, values as (string | number)[]);
-  return Response.json({ gigs });
+  const rows = await sql(text, values as (string | number)[]);
+  // The builder over-fetches by one row so hasMore needs no COUNT query.
+  const hasMore = rows.length > GIG_PAGE_SIZE;
+  const gigs = hasMore ? rows.slice(0, GIG_PAGE_SIZE) : rows;
+  return Response.json({ gigs, page: filters.page, pageSize: GIG_PAGE_SIZE, hasMore });
 });
 
 /** Creates a gig for the calling venue (venue id derived from session, §6.2). */

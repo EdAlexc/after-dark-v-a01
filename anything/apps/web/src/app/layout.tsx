@@ -3,6 +3,11 @@ import type { Metadata } from "next";
 import "./global.css";
 import { Providers } from "./providers";
 
+// Nonce-based CSP (middleware) requires per-request rendering: statically
+// prerendered HTML cannot carry a fresh script nonce, so its inline
+// bootstrap scripts would be blocked. Revisit if the CSP strategy changes.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
 	title: "AfterDark — NYC Nightlife Marketplace",
 	description:

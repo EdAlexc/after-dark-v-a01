@@ -8,9 +8,38 @@
 
 ## 1. Current status — YOU ARE HERE
 
-- **Date:** 2026-07-24 · **Branch:** `claude/p0-foundations` (worktree off `main`)
-- **Project stage:** **P0 (Foundations & hardening) landed. Security/privacy baseline in place;
-  next is P1 (gigs live end-to-end).**
+- **Date:** 2026-07-30 · **Branch:** `claude/p1-gigs-live` (worktree off `main`)
+- **Project stage:** **P1 (gigs live end-to-end) landed + most P0 follow-ups. Next is P2
+  (applications).**
+- **P1 delivered this session** (285 tests green; verified in-browser against a Neon branch,
+  procedures now codified in [TESTING.md](TESTING.md)):
+  - **P1.1** Talent browse consumes real `GET /api/gigs` (validated filters, 12/page
+    pagination via parameterized LIMIT/OFFSET, HOT/NEW badges derived from data); venue
+    browse consumes a new public `GET /api/talent` directory (public-profile columns only).
+    `MOCK_GIGS`/`MOCK_TALENT` deleted. `tonightOnly` fixed to a rolling 24h window (the old
+    UTC-date match dropped late-night gigs).
+  - **P1.2** `/gigs/[id]` detail page (payout hero w/ computed shift payout, about, venue
+    card, live 5% fee estimator, escrow note; map deferred) + `GET /api/gigs/[id]` —
+    PUBLISHED is public, any other status 404s for non-owners (draft-leak safe).
+  - **P1.3** Gig lifecycle DRAFT→PUBLISHED→FILLED→COMPLETED/CANCELLED (`0003_gig_lifecycle.sql`
+    + pure transition matrix in `api/utils/gig-lifecycle.ts`); owner-only idempotent
+    `PATCH /api/gigs/[id]` (audited, optimistic-concurrency guarded); venue dashboard Open
+    Gigs table real via `GET /api/venue/gigs`, with per-status action buttons and real
+    Active-Gigs/Filling-Rate stats (payout/time-to-hire stats honestly muted until P5/P2).
+  - **P1.4** Landing "Hot Gigs Tonight" reads real published gigs (tonight-first, upcoming
+    fallback, friendly empty state) via a `FeaturedTonight` client component.
+  - **P0 follow-ups**: **nonce CSP** shipped (per-request nonce + `strict-dynamic` via
+    middleware; `unsafe-inline` dropped from script-src; app now renders fully dynamic —
+    `force-dynamic` in the root layout is a hard requirement of nonce CSPs). **Sentry**
+    wired (`@sentry/nextjs`, no-op without DSN, all events pass a tested PII scrubber).
+    **RLS** policies shipped dormant (`0004_rls.sql` + `api/utils/rls.ts`; activation is an
+    ops step — see migration header). **twoFactor plugin migration deliberately deferred**
+    → Backlog #17 (rationale there).
+  - Hygiene: off-spec talent create-gig page removed (Backlog #11 ✅); sidebar now shows the
+    real session identity and fake unread badges are gone (Backlog #12 partial).
+  - **Ops**: production Neon DB (`after-dark` project) migrated 0001–0004 and seeded with the
+    three shared preview accounts (talent/venue/party — credentials in TESTING.md §2);
+    sign-in verified against the deployed site.
 - Baseline: create.xyz export in `anything/` + the three audit docs (merged/PR'd earlier).
 - **P0 delivered this session** (all security findings CLAUDE.md §7 #1–#9 addressed):
   - **Migrations**: `apps/web/migrations/0001_baseline.sql` (reproduces §6.1) + `0002_audit_logs.sql`;
@@ -41,14 +70,18 @@
   2FA fails closed without it). `DATABASE_URL` still required.
 
 ### Pick-up-here: next five tasks (in order)
-1. P1.1 — Point `dashboard/talent/browse` (and venue browse) at real `GET /api/gigs` (filters +
-   pagination), delete `MOCK_GIGS`; reuse the validated query params.
-2. P1.2 — `/gigs/[id]` detail page per wireframe p4 (payout hero, about, venue card; map deferred).
-3. P1.3 — Gig lifecycle statuses (extend enum DRAFT→PUBLISHED→FILLED→COMPLETED/CANCELLED via a
-   new migration) + venue dashboard Open Gigs reading real data.
-4. P1.4 — Landing "Featured Tonight" reads real published-tonight gigs (reuse `buildGigsListQuery`).
-5. P0 follow-ups (carry-over, non-blocking): apply CSP nonce (drop `unsafe-inline`); migrate to
-   better-auth twoFactor plugin for recovery codes; add Sentry with PII scrubbing; RLS policies.
+1. P2.1 — `applications` slice: migration (`applications` table + unique (gig_id, talent_id)),
+   `POST /api/gigs/[id]/apply` (talent-only, proposed rate + cover message), wire the detail
+   page's apply panel (estimator already live; flip the disabled submit).
+2. P2.2 — Venue applicant review: `GET /api/venue/applications` + shortlist/hire transitions
+   (audited); make the dashboard Applicants column + `dashboard/venue/applicants` real.
+3. P2.3 — Talent "My Applications" (`dashboard/talent/applicants`) real; application status
+   chips on browse/detail ("✓ Applied").
+4. P2.4 — In-app `notifications` table + bell dropdown; real sidebar badge counts
+   (application received / status changed) — finishes Backlog #12.
+5. Carry-over: better-auth twoFactor plugin migration (Backlog #17 — do it as its own slice
+   with a sign-in challenge page); oxlint in CI (Backlog #20); RLS activation ops step
+   (dedicated non-owner DB role — 0004 policies are already in place).
 
 ---
 
@@ -71,11 +104,15 @@ Lighthouse budgets green, no new ZAP high/medium (TENANT_GUARDRAIL §7 checklist
   `api/vitest.config.ts`); app metadata "Anything App" → "AfterDark".
   Note: oxlint not yet wired into CI (config present) — carry into P1.
 
-### P1 — Gigs end-to-end (≈1 wk) — ☐ not started
-- ☐ Browse consumes real `GET /api/gigs` (neighborhood/role/pay/tonight filters, pagination)
-- ☐ `/gigs/[id]` detail page per wireframe p4 (minus map OK for alpha)
-- ☐ Gig lifecycle statuses (DRAFT→PUBLISHED→FILLED→COMPLETED/CANCELLED) + venue Open Gigs table real
-- ☐ Landing "Featured Tonight" reads real published-tonight gigs
+### P1 — Gigs end-to-end (≈1 wk) — ✅ **landed 2026-07-30** (285 tests green; TESTING.md pass)
+- ☑ Browse consumes real `GET /api/gigs` (neighborhood/role/pay/tonight filters, pagination);
+  venue browse consumes new public `GET /api/talent`
+- ☑ `/gigs/[id]` detail page per wireframe p4 (minus map, minus submit — estimator live, submit
+  arrives with P2 applications)
+- ☑ Gig lifecycle statuses (DRAFT→PUBLISHED→FILLED→COMPLETED/CANCELLED) + venue Open Gigs table real
+- ☑ Landing "Featured Tonight" reads real published-tonight gigs
+- ☑ Bonus from task-5 carry-overs: nonce CSP, Sentry w/ PII scrub, dormant RLS policies
+  (twoFactor plugin migration → Backlog #17)
 
 ### P2 — Applications (≈1 wk) — ☐ not started
 - ☐ `applications` table/API; apply panel w/ proposed rate + cover message + 5% fee net estimator
@@ -141,11 +178,13 @@ Items noted during the audit that are **not** required for the alpha gate but mu
    tag invalidation is ever relied on, configure a real tag cache (or deploy to Vercel).
 10. **Uploads pipeline hardening**: image resizing/thumbnailing, EXIF-strip (GPS metadata =
     PII), AV scanning on user uploads incl. PDF tech riders.
-11. **Legacy dead code** — ✅ done in P0 (`useUpload.ts`, `api/utils/upload.ts`,
-    `useHandleStreamResponse.ts`, `api/vitest.config.ts` removed). **Still open:** talent
-    create-gig page (`dashboard/talent/create-gig`) — not a PRD flow; remove or repurpose in P1.
-12. **DashboardSidebar** hardcoded identity ("DJ Marcus Lee"/"Nebula NYC") and badge counts —
-    replaced during P2/P3; keep an eye out for other hardcoded demo strings.
+11. **Legacy dead code** — ✅ done (P0: `useUpload.ts`, `api/utils/upload.ts`,
+    `useHandleStreamResponse.ts`, `api/vitest.config.ts`; P1 2026-07-30: off-spec talent
+    create-gig page removed, sidebar nav updated).
+12. **DashboardSidebar** hardcoded identity/badges — **partially done 2026-07-30**: identity
+    now comes from the session, hardcoded unread badges removed. Remaining: real badge
+    counts once notifications land (P2.4), venue-name (vs user-name) display, other demo
+    strings in mock-data pages (messages/schedule/applicants — replaced by their slices).
 13. **Accessibility deep pass**: neon-on-dark contrast ratios, focus states on custom chips/
     toggles, calendar keyboard navigation (beyond the P7 axe smoke tests).
 14. **Data warehouse/analytics**: venue KPIs (avg time-to-hire, filling rate) need event
@@ -155,14 +194,25 @@ Items noted during the audit that are **not** required for the alpha gate but mu
 16. **iframe embedding posture**: cookies are `SameSite=None`; P0 set CSP `frame-ancestors` to
     `'self'` + configured create.xyz origins (no `X-Frame-Options`, superseded by CSP). Before
     GA, decide whether to keep the builder pathway or lock `frame-ancestors` to `'self'` only.
-17. **2FA → better-auth twoFactor plugin**: P0 hardened the hand-rolled TOTP (encrypted secret,
-    local QR, rate limits) but kept it hand-rolled. Migrate to the plugin for **recovery/backup
-    codes** and trusted-device handling; re-encrypt legacy plaintext secrets on next enroll
-    (the disable path already tolerates them).
-18. **CSP nonce**: P0 CSP allows `'unsafe-inline'` for scripts (Next.js inline bootstrap).
-    Move to nonce-based CSP to drop `unsafe-inline` (A05 hardening).
-19. **Error tracking**: wire Sentry (or similar) with the `redactPii` scrubber so exceptions are
-    captured without PII; pair with the structured `Logger` added in P0.
+17. **2FA → better-auth twoFactor plugin** — **deliberately deferred again 2026-07-30** after
+    scoping. Why: it is a full slice, not a config tweak — the plugin needs its own schema
+    (`twoFactor` table + `user.twoFactorEnabled`), a sign-in challenge page (today's
+    hand-rolled 2FA is a settings control and **does not gate sign-in at all** — the plugin
+    version will, which is the real win alongside recovery codes), a rewrite of the settings
+    2FA card, changes to the DO-NOT-REWRITE `auth.ts` beyond its "config tuning" safe list,
+    and it obsoletes `SecretBox`/`AUTH_SECRET_ENCRYPTION_KEY` (env-contract change across
+    three docs). Existing enrollees are unaffected either way (different columns; old 2FA
+    never gated sign-in). Do it as its own verified slice — see Pick-up-here item 5.
+18. ~~**CSP nonce**~~ — **DONE (2026-07-30).** Per-request nonce + `'strict-dynamic'` emitted
+    by `src/middleware.ts` (shared builder in `security-headers.js`); `'unsafe-inline'`
+    dropped from script-src; static CSP removed from `next.config.js` (double-CSP would
+    enforce the intersection). Cost accepted: root layout is `force-dynamic` — nonces can't
+    live in prerendered HTML. Revisit if CWV budgets suffer (TENANT_GUARDRAIL §3).
+19. ~~**Error tracking**~~ — **DONE (2026-07-30).** `@sentry/nextjs` via `instrumentation.ts`
+    / `instrumentation-client.ts`; disabled without a DSN; every event passes
+    `src/lib/sentry-scrub.ts` (reuses `redactPii`; identity reduced to user id; cookies/
+    headers dropped). Ingest origin auto-added to CSP connect-src. Set `SENTRY_DSN` +
+    `NEXT_PUBLIC_SENTRY_DSN` in Vercel to activate.
 20. **oxlint in CI**: repo has `.oxlintrc.json` but CI doesn't run it yet; add a lint job.
 21. **Shared rate-limit store** (was #15's concern): the in-memory `SlidingWindowRateLimiter` is
     per-instance. For multi-region/serverless fan-out, back `getRateLimiter` with Upstash Redis
@@ -183,3 +233,12 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     cheap (~16 path references across the 3 docs + CI); a full flatten to the repo root would
     remove the need for Vercel's Root Directory setting but forces the mobile-vs-PWA decision
     in #4 — revisit after P7 when that decision is actually made.
+25. **RLS activation** (policies shipped dormant 2026-07-30 in `0004_rls.sql`): create a
+    dedicated **non-owner** Postgres role on Neon, GRANT it table access, point
+    `DATABASE_URL` at it, and route tenant-table queries through
+    `api/utils/rls.ts#withRlsContext`. Until then the policies are inert (owners bypass
+    non-forced RLS). Verify per TESTING.md §7. Pair with the shared rate-limit store (#21)
+    as pre-load-test hardening.
+26. **Multi-value browse filters**: `GET /api/gigs`/`/api/talent` accept a single
+    neighborhood/role; the UI's multi-select refines client-side within the fetched page
+    (fine at alpha volumes). Add array params + `= ANY($n)` when gig volume makes it matter.

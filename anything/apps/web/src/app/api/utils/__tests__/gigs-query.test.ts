@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GIG_LIST_LIMIT, buildGigsListQuery } from '../gigs-query';
+import { GIG_LIST_LIMIT, GIG_PAGE_SIZE, buildGigsListQuery } from '../gigs-query';
 import { GigListQuerySchema } from '../schemas';
 
 const EMPTY = GigListQuerySchema.parse({});
@@ -22,18 +22,22 @@ describe('buildGigsListQuery', () => {
         tonightOnly: 'true',
       })
     );
-    expect(values).toEqual(['PUBLISHED', '%Bushwick%', '%DJ%', 50, 300]);
-    expect(text).toContain('LIKE LOWER($2)');
+    expect(values).toEqual(['PUBLISHED', '%Bushwick%', '%DJ%', 50, 300, GIG_PAGE_SIZE + 1, 0]);
+    // Neighborhood matches the venue's neighborhood column OR its address.
+    expect(text).toContain('LOWER(vp.neighborhood) LIKE LOWER($2)');
+    expect(text).toContain('LOWER(vp.address) LIKE LOWER($2)');
     expect(text).toContain('LIKE LOWER($3)');
     expect(text).toContain('base_rate >= $4');
     expect(text).toContain('base_rate <= $5');
-    expect(text).toContain('CURRENT_DATE');
+    // Tonight = rolling 24h window (UTC-date matching drops late-night gigs).
+    expect(text).toContain("g.start_time < NOW() + INTERVAL '24 hours'");
+    expect(text).toContain('LIMIT $6 OFFSET $7');
   });
 
   it('keeps placeholder numbering dense when only later filters are present', () => {
     const { text, values } = buildGigsListQuery(GigListQuerySchema.parse({ maxRate: '100' }));
     expect(text).toContain('base_rate <= $2');
-    expect(values).toEqual(['PUBLISHED', 100]);
+    expect(values).toEqual(['PUBLISHED', 100, GIG_PAGE_SIZE + 1, 0]);
   });
 
   it('never interpolates user input into SQL text (SQLi regression)', () => {
@@ -55,16 +59,27 @@ describe('buildGigsListQuery', () => {
     }
   });
 
-  it('applies a bounded constant LIMIT', () => {
-    const { text } = buildGigsListQuery(EMPTY);
-    expect(text).toContain(`LIMIT ${GIG_LIST_LIMIT}`);
-    expect(GIG_LIST_LIMIT).toBeLessThanOrEqual(50);
+  it('paginates via parameterized LIMIT/OFFSET with a bounded page size', () => {
+    expect(GIG_PAGE_SIZE + 1).toBeLessThanOrEqual(GIG_LIST_LIMIT);
+
+    const page1 = buildGigsListQuery(EMPTY);
+    expect(page1.values.slice(-2)).toEqual([GIG_PAGE_SIZE + 1, 0]);
+
+    const page3 = buildGigsListQuery(GigListQuerySchema.parse({ page: '3' }));
+    expect(page3.values.slice(-2)).toEqual([GIG_PAGE_SIZE + 1, 2 * GIG_PAGE_SIZE]);
+  });
+
+  it('rejects out-of-range pages at the schema layer', () => {
+    expect(GigListQuerySchema.safeParse({ page: '0' }).success).toBe(false);
+    expect(GigListQuerySchema.safeParse({ page: '501' }).success).toBe(false);
+    expect(GigListQuerySchema.safeParse({ page: '1.5' }).success).toBe(false);
+    expect(GigListQuerySchema.parse({}).page).toBe(1);
   });
 
   it('omits rate clauses when rates are 0-vs-undefined correctly (0 is a real filter)', () => {
     const withZero = buildGigsListQuery(GigListQuerySchema.parse({ minRate: '0' }));
     expect(withZero.text).toContain('base_rate >= $2');
-    expect(withZero.values).toEqual(['PUBLISHED', 0]);
+    expect(withZero.values).toEqual(['PUBLISHED', 0, GIG_PAGE_SIZE + 1, 0]);
     const without = buildGigsListQuery(EMPTY);
     expect(without.text).not.toContain('base_rate');
   });

@@ -52,6 +52,24 @@ export const RoleSelectionSchema = z.object({
 
 // ─── Gigs ─────────────────────────────────────────────────────────────────────
 
+/** Full lifecycle (P1.3). Creation is still restricted to DRAFT|PUBLISHED. */
+export const GigStatusSchema = z.enum([
+  'DRAFT',
+  'PUBLISHED',
+  'FILLED',
+  'COMPLETED',
+  'CANCELLED',
+]);
+
+/** Owner-only status transition body for PATCH /api/gigs/[id]. */
+export const GigStatusUpdateSchema = z.object({ status: GigStatusSchema });
+
+/** Path id for /api/gigs/[id] — reject non-UUIDs before they reach Postgres. */
+export const GigIdSchema = z.string().uuid();
+
+/** 1-based page for public listings; bounded so OFFSET stays sane. */
+const page = z.coerce.number().int().min(1).max(500).optional().default(1);
+
 export const GigCreateSchema = z
   .object({
     title: shortText(120).min(3),
@@ -92,6 +110,25 @@ export const GigListQuerySchema = z
       .enum(['true', 'false'])
       .optional()
       .transform((value) => value === 'true'),
+    page,
+  })
+  .refine(
+    (query) =>
+      query.minRate === undefined || query.maxRate === undefined || query.minRate <= query.maxRate,
+    { message: 'minRate must be ≤ maxRate', path: ['minRate'] }
+  );
+
+/**
+ * Public talent directory filters (venue browse). Same conventions as the gig
+ * listing: only public-profile fields are filterable, page is bounded.
+ */
+export const TalentListQuerySchema = z
+  .object({
+    neighborhood: shortText(80).optional(),
+    role: shortText(80).optional(),
+    minRate: rate.optional(),
+    maxRate: rate.optional(),
+    page,
   })
   .refine(
     (query) =>
@@ -170,3 +207,5 @@ export const TwoFactorActionSchema = z.discriminatedUnion('action', [
 export type RoleSelection = z.infer<typeof RoleSelectionSchema>;
 export type GigCreate = z.infer<typeof GigCreateSchema>;
 export type GigListQuery = z.infer<typeof GigListQuerySchema>;
+export type GigStatus = z.infer<typeof GigStatusSchema>;
+export type TalentListQuery = z.infer<typeof TalentListQuerySchema>;
