@@ -24,7 +24,8 @@ function sqlWithRole(role: string | null, hasProfile = false) {
   mocks.sql.mockImplementation(async (first: unknown, ...rest: unknown[]) => {
     const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
     if (text.includes('SELECT role FROM "user"')) return [{ role }];
-    if (text.includes('SELECT id FROM talent_profiles')) return hasProfile ? [{ id: 'tp1' }] : [];
+    if (text.includes('FROM talent_profiles') && text.includes('SELECT id'))
+      return hasProfile ? [{ id: 'tp1' }] : [];
     if (text.startsWith('UPDATE "talent_profiles"')) {
       return [{ id: 'tp1', ...(rest[0] ? {} : {}) }];
     }
@@ -92,6 +93,42 @@ describe('PUT /api/talent/profile', () => {
     expect(text).not.toContain('DROP TABLE');
     expect(values).toContain("Robert'); DROP TABLE talent_profiles;--");
     expect(values[values.length - 1]).toBe('talent-1'); // scoped to session user
+  });
+
+  it('keeps completion pct merged from the stored row on partial updates', async () => {
+    // Bug found in E2E: PUT {available_tonight} alone scored completion from
+    // the body only and wrote 0%. The route must merge body over the row.
+    mocks.sql.mockImplementation(async (first: unknown) => {
+      const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
+      if (text.includes('SELECT role FROM "user"')) return [{ role: 'TALENT' }];
+      if (text.includes('FROM talent_profiles') && text.includes('SELECT id'))
+        return [
+          {
+            id: 'tp1',
+            stage_name: 'Nova Reign',
+            pronouns: null,
+            neighborhood: 'LES',
+            bio: 'club-ready',
+            primary_role: 'DJ',
+            genres_vibes: ['house'],
+            hourly_rate_min: 100,
+            hourly_rate_max: null,
+            social_links: { instagram: '@nova' },
+            avatar_url: null,
+          },
+        ];
+      if (text.startsWith('UPDATE "talent_profiles"')) return [{ id: 'tp1' }];
+      return [];
+    });
+    const res = await PUT(put({ available_tonight: true }), {});
+    expect(res.status).toBe(200);
+    const update = mocks.sql.mock.calls.find(([first]) => {
+      const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
+      return text.startsWith('UPDATE "talent_profiles"');
+    })!;
+    // 7 of 9 segments filled on the stored row → 78%, not 0.
+    expect((update as [string, unknown[]])[1]).toContain(78);
+    expect((update as [string, unknown[]])[1]).not.toContain(0);
   });
 
   it('rejects a 501-char bio and >5 portfolio images (wireframe caps)', async () => {

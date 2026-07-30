@@ -154,28 +154,28 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 
 | Feature (PRD §) | Wireframe | Code location | Status |
 |---|---|---|---|
-| Landing page (3.1) | p5 | `src/app/page.tsx` | 🟡 "Hot Gigs Tonight" real (P1.4, `FeaturedTonight.tsx`); rest static; footer links `#` |
+| Landing page (3.1) | p5 | `src/app/page.tsx` | ✅ Hot Gigs Tonight real (P1.4); legal footer real (P2.1); rest static marketing copy |
 | Sign up / sign in / logout | — | `src/app/account/*` | ✅ better-auth, social self-activating |
 | Onboarding (role select + basics) | — | `src/app/onboarding/page.tsx` → `/api/user/role` | ✅ (but accepts `ADMIN` — see §7) |
 | Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | ✅ real `GET /api/gigs` (P1.1): validated filters, pagination, HOT/NEW badges; multi-select refines client-side (Backlog #26) |
 | Browse talent (venue directory) | — | `dashboard/venue/browse/page.tsx` | ✅ real public `GET /api/talent` (P1.1); saved-talent list is client-local |
 | Browse gigs: map view (3.2) | p2 | — | ❌ no map integration |
-| Gig details + application + 5% fee estimator (3.2) | p4 | `gigs/[id]/page.tsx` → `GET /api/gigs/[id]` | ✅ detail + live estimator (P1.2); **submit disabled until P3 applications** |
-| Availability calendar, 3 slots (3.2) | p7 | `dashboard/talent/schedule/page.tsx` | 🟡 mock calendar; no `availabilities` table/API |
-| Talent dashboard: stats, applications, upcoming, check-in (3.2) | p8 | `dashboard/talent/page.tsx` | 🟡 all `STATS`/mock |
-| Talent public profile editor (3.2) | p9 | `dashboard/talent/profile/page.tsx` → `/api/talent/profile` | ✅ real; media = base64 in DB (placeholder) |
-| Venue dashboard: metrics, open gigs, live ops (3.3) | p10 | `dashboard/venue/page.tsx` | 🟡→✅ Open Gigs real w/ lifecycle actions (`GET /api/venue/gigs` + `PATCH /api/gigs/[id]`, P1.3); Active-Gigs/Filling-Rate stats real; payouts/time-to-hire muted until P8/P3; Live Tonight labeled *Sample* |
+| Gig details + application + 5% fee estimator (3.2) | p4 | `gigs/[id]/page.tsx` → `/api/gigs/[id]` + `/apply` | ✅ detail + estimator (P1.2) + live apply/withdraw w/ proposed rate, ✓-Applied states, Inquire→thread (P3/P5); visible to applicants after FILLED |
+| Availability calendar, 3 slots (3.2) | p7 | `dashboard/talent/schedule/page.tsx` → `/api/availability` | ✅ real month grid + 3-slot editor + notes + Available Tonight + shift-conflict dots (P6) |
+| Talent dashboard: stats, applications, upcoming, check-in (3.2) | p8 | `dashboard/talent/page.tsx` | ✅ real earnings (payout ledger), applications, bookings w/ On-My-Way/Check-In/Out, Hot Tonight rail (P3/P7/P8) |
+| Talent public profile editor (3.2) | p9 | `dashboard/talent/profile/page.tsx` → `/api/talent/profile` | ✅ real; media now EXIF-stripped/resized via P4 (Blob when keyed, processed-inline fallback) |
+| Venue dashboard: metrics, open gigs, live ops (3.3) | p10 | `dashboard/venue/page.tsx` | ✅ Open Gigs w/ lifecycle + real applicant counts; **Active Operations** = real shifts w/ check-in/out; **Payouts Pending** from ledger; time-to-hire still muted |
 | Create gig wizard (3.3) | p3 | `dashboard/venue/create-gig/page.tsx` → POST `/api/gigs` | ✅ persists; "Live Analytics" candidates are mock |
-| Applicant tracking: shortlist/hire (3.3) | p10 | `dashboard/{talent,venue}/applicants/page.tsx` | 🟡 `MOCK_APPLICATIONS` |
-| Messages: 2-pane chat, attachments, propose-rate (3.4) | p6 | `dashboard/*/messages/page.tsx` | 🟡 UI only; no conversations/messages backend |
-| Live ops check-in/check-out (2.A/2.B) | p8, p10 | — | ❌ no shifts/check-in model |
-| Payments: Stripe Connect escrow & payouts (1, 2) | p4, p10 | — | ❌ no Stripe code at all (marketing copy only) |
+| Applicant tracking: shortlist/hire (3.3) | p10 | `dashboard/{talent,venue}/applicants/page.tsx` | ✅ real; Shortlist/Hire/Pass/Reconsider; hire = atomic app→HIRED + gig→FILLED + shift INSERT (P3) |
+| Messages: 2-pane chat, attachments, propose-rate (3.4) | p6 | `components/MessagesView.tsx` | ✅ real threads (polling), RATE_PROPOSAL + accept-rate→application, image attachments (P4), gig-in-focus rail, report→`reports` (P5) |
+| Live ops check-in/check-out (2.A/2.B) | p8, p10 | `/api/shifts/[id]` + dashboards | ✅ actor-scoped transitions, idempotency keys on a DB UNIQUE, checkout creates HELD payout (P7) |
+| Payments: Stripe Connect escrow & payouts (1, 2) | p4, p10 | `/api/stripe/*`, `/api/payouts/release` | 🟡 **key-gated**: 5% ledger, 24h escrow release (cron), webhook sig+replay guard all real; transfers activate when Stripe keys are set (none yet) (P8) |
 | Admin moderation: disputes, audit logs, verification (3.4) | p1 | — | ❌ no admin UI/API; `ADMIN` role exists but unused & ungated |
-| Reports/disputes (schema §4) | p1 | — | ❌ |
-| Notifications (bell/badges in every wireframe) | p1–p10 | sidebar badges hardcoded | ❌ |
+| Reports/disputes (schema §4) | p1 | `POST /api/reports` (P5.3) | 🟡 reports flow in; triage UI is P9 |
+| Notifications (bell/badges in every wireframe) | p1–p10 | `components/NotificationsBell.tsx` → `/api/notifications` | ✅ real bell + unread sidebar badges; emitted by applications/messages/shifts/payouts (P3.4) |
 | Global search "gigs or talent" (top bar) | p1–p10 | — | ❌ |
 | Venue↔external calendar & ticketing integrations (2.B) | — | — | ❌ (post-alpha candidate) |
-| Settings (profile, password, 2FA) | — | `dashboard/settings/*` + `/api/settings*` | ✅ real (2FA is hand-rolled; see §7) |
+| Settings (profile, password, 2FA) | — | `dashboard/settings/*` + `/api/settings*` | ✅ real (2FA = better-auth twoFactor plugin since 0005) |
 | Legal surface: privacy, ToS, contact (footer, GDPR G1) | p1–p10 footer | `src/app/legal/*`, `src/app/contact` | ✅ real routes, versioned via `lib/legal.ts` (P2.1) |
 | Data export & account deletion (GDPR G4) | — | `dashboard/settings` → `/api/account/*` | ✅ self-serve, audited, audit-trail pseudonymized (P2.2) |
 | Age gating 18+ / per-gig 21+ (GDPR G12) | p3 toggle | signup + `gigs.age_requirement` | ✅ attested at signup; 21+ badge on detail (P2.5) |
@@ -184,15 +184,24 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 
 **API inventory (real endpoints):** `/api/auth/[...all]`, `/api/auth/token`,
 `/api/auth/expo-web-success`, `/api/session`, `/api/user/role` (GET/POST), `/api/gigs`
-(GET public paginated, POST venue), `/api/gigs/[id]` (GET public-when-published,
-PATCH owner status transition), `/api/venue/gigs` (GET own, all statuses), `/api/talent`
-(GET public directory), `/api/talent/profile` (GET/PUT), `/api/venue/profile` (GET/PUT),
-`/api/settings` (GET/PUT), `/api/settings/change-password` (POST),
-`/api/account/export` (GET, own data), `/api/account` (DELETE, own account),
-`/api/account/age-confirm` (POST, 18+ attestation),
-`/api/auth/two-factor/*` (better-auth twoFactor plugin: enable/disable/verify-totp/
-verify-backup-code — replaced the old `/api/settings/2fa`),
-`/api/__create/check-social-secrets` (dev only).
+(GET public paginated, POST venue), `/api/gigs/[id]` (GET public-when-published +
+applicant carve-out, PATCH owner status transition), **`/api/gigs/[id]/apply`** (POST
+talent), **`/api/applications/[id]`** (PATCH shortlist/hire/reject/withdraw),
+**`/api/talent/applications`**, **`/api/venue/applications`**, `/api/venue/gigs` (own gigs
++ applicant counts), `/api/talent` (public directory), **`/api/talent/shifts`**,
+**`/api/venue/shifts`** (+ payouts-pending aggregate), **`/api/shifts/[id]`** (POST
+idempotent transition), **`/api/conversations`** (GET/POST),
+**`/api/conversations/[id]/messages`** (GET marks-read/POST),
+**`/api/conversations/[id]/accept-rate`** (POST), **`/api/notifications`** (GET/POST
+mark-read), **`/api/reports`** (POST), **`/api/availability`** (GET month/PUT day),
+**`/api/upload`** (POST, P4 pipeline), **`/api/payouts/release`** (POST admin|cron, GET
+cron), **`/api/stripe/connect`** (GET status/POST onboard — 503 without keys),
+**`/api/stripe/webhook`** (POST, signature + replay guard), `/api/talent/profile`,
+`/api/venue/profile`, `/api/settings`, `/api/settings/change-password`,
+`/api/account/export`, `/api/account` (DELETE), `/api/account/age-confirm`,
+`/api/auth/two-factor/*` (better-auth twoFactor plugin),
+`/api/__create/check-social-secrets` (dev only). Every route is declared in
+`api/utils/authz-matrix.ts`; CI fails if one is missing.
 
 ## 5. UI / UX specification
 

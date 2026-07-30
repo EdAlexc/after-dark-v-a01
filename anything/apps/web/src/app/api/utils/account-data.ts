@@ -31,6 +31,11 @@ export interface AccountExport {
   talent_profile: Record<string, unknown> | null;
   venue_profile: Record<string, unknown> | null;
   gigs: Record<string, unknown>[];
+  applications: Record<string, unknown>[];
+  messages: Record<string, unknown>[];
+  availability: Record<string, unknown>[];
+  shifts: Record<string, unknown>[];
+  payouts: Record<string, unknown>[];
   audit_log: Record<string, unknown>[];
 }
 
@@ -42,7 +47,18 @@ export interface AccountExport {
  * session tokens.
  */
 export async function collectAccountExport(userId: string): Promise<AccountExport> {
-  const [userRows, talentRows, venueRows, gigRows, auditRows] = await Promise.all([
+  const [
+    userRows,
+    talentRows,
+    venueRows,
+    gigRows,
+    applicationRows,
+    messageRows,
+    availabilityRows,
+    shiftRows,
+    payoutRows,
+    auditRows,
+  ] = await Promise.all([
     sql`
       SELECT id, name, email, "emailVerified", image, role, recovery_email, phone,
              social_links, "twoFactorEnabled", age_confirmed_at, "createdAt", "updatedAt"
@@ -55,6 +71,43 @@ export async function collectAccountExport(userId: string): Promise<AccountExpor
       JOIN venue_profiles vp ON g.venue_id = vp.id
       WHERE vp.user_id = ${userId}
       ORDER BY g.created_at DESC
+      LIMIT ${EXPORT_ROW_LIMIT}
+    `,
+    sql`
+      SELECT a.* FROM applications a
+      JOIN talent_profiles tp ON tp.id = a.talent_id
+      WHERE tp.user_id = ${userId}
+      ORDER BY a.created_at DESC
+      LIMIT ${EXPORT_ROW_LIMIT}
+    `,
+    // Messages the user AUTHORED — the counterpart's words are their PII.
+    sql`
+      SELECT m.conversation_id, m.content, m.kind, m.rate_cents, m.attachment_url, m.created_at
+      FROM messages m
+      WHERE m.sender_id = ${userId}
+      ORDER BY m.created_at DESC
+      LIMIT ${EXPORT_ROW_LIMIT}
+    `,
+    sql`
+      SELECT av.date, av.time_slot, av.status, av.notes
+      FROM availabilities av
+      JOIN talent_profiles tp ON tp.id = av.talent_id
+      WHERE tp.user_id = ${userId}
+      ORDER BY av.date DESC
+      LIMIT ${EXPORT_ROW_LIMIT}
+    `,
+    sql`
+      SELECT s.* FROM shifts s
+      JOIN talent_profiles tp ON tp.id = s.talent_id
+      WHERE tp.user_id = ${userId}
+      ORDER BY s.created_at DESC
+      LIMIT ${EXPORT_ROW_LIMIT}
+    `,
+    sql`
+      SELECT id, gross_cents, fee_cents, net_cents, status, created_at, released_at
+      FROM payouts
+      WHERE talent_user_id = ${userId} OR venue_user_id = ${userId}
+      ORDER BY created_at DESC
       LIMIT ${EXPORT_ROW_LIMIT}
     `,
     sql`
@@ -79,6 +132,11 @@ export async function collectAccountExport(userId: string): Promise<AccountExpor
     talent_profile: (talentRows[0] as Record<string, unknown>) ?? null,
     venue_profile: (venueRows[0] as Record<string, unknown>) ?? null,
     gigs: gigRows as Record<string, unknown>[],
+    applications: applicationRows as Record<string, unknown>[],
+    messages: messageRows as Record<string, unknown>[],
+    availability: availabilityRows as Record<string, unknown>[],
+    shifts: shiftRows as Record<string, unknown>[],
+    payouts: payoutRows as Record<string, unknown>[],
     audit_log: auditRows as Record<string, unknown>[],
   };
 }

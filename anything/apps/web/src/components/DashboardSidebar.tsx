@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { authClient } from '@/lib/auth-client';
 import {
   LayoutDashboard,
@@ -395,11 +396,33 @@ export default function DashboardSidebar({ role, userName }: DashboardSidebarPro
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
-  const navItems = role === 'talent' ? TALENT_NAV : VENUE_NAV;
   // Real identity from the session — no more hardcoded demo names (Backlog #12).
   const { data: session } = authClient.useSession();
   const displayName =
     userName ?? session?.user?.name ?? (role === 'talent' ? 'Talent' : 'Venue');
+
+  // Real unread-message badge (P3.4/P5 — finishes Backlog #12): total unread
+  // across the caller's conversations, polled gently.
+  const { data: conversationData } = useQuery({
+    queryKey: ['conversations'],
+    queryFn: async () => {
+      const res = await fetch('/api/conversations');
+      if (!res.ok) throw new Error('Failed to load conversations');
+      return res.json() as Promise<{ conversations: Array<{ unread_count: number }> }>;
+    },
+    enabled: Boolean(session?.user),
+    refetchInterval: 30_000,
+  });
+  const unreadMessages = (conversationData?.conversations ?? []).reduce(
+    (sum, conversation) => sum + (conversation.unread_count ?? 0),
+    0
+  );
+
+  const navItems = (role === 'talent' ? TALENT_NAV : VENUE_NAV).map((item) =>
+    item.kind === 'link' && item.label === 'Messages'
+      ? { ...item, badge: unreadMessages > 0 ? unreadMessages : undefined }
+      : item
+  );
 
   // Close mobile drawer on route change
   useEffect(() => {

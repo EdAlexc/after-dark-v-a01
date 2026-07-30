@@ -19,6 +19,8 @@ interface DbState {
   role?: string | null;
   gig?: Record<string, unknown> | null;
   updateReturns?: Record<string, unknown>[] | null;
+  /** Row returned for the caller's own-application lookup (TALENT sessions). */
+  application?: Record<string, unknown> | null;
 }
 
 function gigRow(overrides: Record<string, unknown> = {}) {
@@ -44,6 +46,7 @@ function wireSql(state: DbState) {
       return [{ role: state.role ?? null }];
     }
     if (text.includes('FROM gigs g')) return state.gig ? [state.gig] : [];
+    if (text.includes('FROM applications a')) return state.application ? [state.application] : [];
     if (text.includes('UPDATE gigs SET status')) {
       return state.updateReturns ?? [{ ...state.gig, status: 'CHANGED' }];
     }
@@ -109,6 +112,26 @@ describe('GET /api/gigs/[id]', () => {
     const res = await GET(...get(GIG_ID));
     expect(res.status).toBe(200);
     expect((await res.json()).isOwner).toBe(true);
+  });
+
+  it('keeps a FILLED gig visible to the talent who applied (deep links survive hire)', async () => {
+    // E2E find: hiring flips the gig to FILLED; without the applicant
+    // carve-out the hired talent's dashboard links all started 404ing.
+    mocks.getSession.mockResolvedValue(STRANGER);
+    wireSql({
+      gig: gigRow({ status: 'FILLED' }),
+      role: 'TALENT',
+      application: { id: 'app-1', status: 'HIRED', proposed_rate_cents: 16000 },
+    });
+    const res = await GET(...get(GIG_ID));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.myApplication.status).toBe('HIRED');
+    expect(body.isOwner).toBe(false);
+
+    // Same talent without an application still gets a 404.
+    wireSql({ gig: gigRow({ status: 'FILLED' }), role: 'TALENT', application: null });
+    expect((await GET(...get(GIG_ID))).status).toBe(404);
   });
 
   it('lets ADMIN view any status', async () => {

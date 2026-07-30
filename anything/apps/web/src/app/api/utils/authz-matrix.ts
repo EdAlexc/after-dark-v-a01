@@ -33,7 +33,9 @@ export type Outcome =
   /** 403 — authenticated but the role may not do this. */
   | 'FORBIDDEN'
   /** 404 — allowed to ask, but the resource must not be revealed to exist. */
-  | 'NOT_FOUND';
+  | 'NOT_FOUND'
+  /** 503 — authZ passed but the capability is not configured (key-gated). */
+  | 'UNAVAILABLE';
 
 export interface MatrixRow {
   /** Stable id, used in test names. */
@@ -267,6 +269,247 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     summary: 'Record the 18+ attestation (G12)',
     expect: AUTHENTICATED_SELF,
     note: 'Takes no body: subject is the session user, timestamp is NOW().',
+  },
+
+  // ─── Applications (P3) ──────────────────────────────────────────────────────
+  {
+    id: 'gigs.apply',
+    route: 'gigs/[id]/apply/route.ts',
+    method: 'POST',
+    summary: 'Talent applies to a PUBLISHED gig',
+    expect: TALENT_ONLY,
+    note: "Rate is the talent's ask in cents; the 5% fee is never a client input.",
+  },
+  {
+    id: 'applications.update',
+    route: 'applications/[id]/route.ts',
+    method: 'PATCH',
+    summary: 'Actor-scoped application transition (withdraw / shortlist / hire / reject)',
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'ALLOW', // withdraw own
+      VENUE: 'ALLOW', // review applications to own gigs
+      PARTY: 'FORBIDDEN',
+      ADMIN: 'ALLOW',
+    },
+    expectCrossTenant: {
+      // Neither a rival venue nor an unrelated talent may even learn the row exists.
+      TALENT: 'NOT_FOUND',
+      VENUE: 'NOT_FOUND',
+      ADMIN: 'ALLOW',
+    },
+  },
+  {
+    id: 'talent.applications',
+    route: 'talent/applications/route.ts',
+    method: 'GET',
+    summary: "Own applications (talent's My Applications list)",
+    expect: TALENT_ONLY,
+  },
+  {
+    id: 'venue.applications',
+    route: 'venue/applications/route.ts',
+    method: 'GET',
+    summary: "Applications to the venue's own gigs (public talent card only)",
+    expect: VENUE_ONLY,
+  },
+  {
+    id: 'notifications.list',
+    route: 'notifications/route.ts',
+    method: 'GET',
+    summary: 'Own notifications + unread count',
+    expect: AUTHENTICATED_SELF,
+  },
+  {
+    id: 'notifications.read',
+    route: 'notifications/route.ts',
+    method: 'POST',
+    summary: 'Mark own notifications read',
+    expect: AUTHENTICATED_SELF,
+  },
+
+  // ─── Media (P4) ─────────────────────────────────────────────────────────────
+  {
+    id: 'media.upload',
+    route: 'upload/route.ts',
+    method: 'POST',
+    summary: 'Validated, EXIF-stripped media upload',
+    expect: AUTHENTICATED_SELF,
+    note: 'Bytes are re-encoded before storage; original metadata (incl. GPS) never persists.',
+  },
+
+  // ─── Messaging (P5) ─────────────────────────────────────────────────────────
+  {
+    id: 'conversations.list',
+    route: 'conversations/route.ts',
+    method: 'GET',
+    summary: 'Own conversation list',
+    expect: AUTHENTICATED_SELF,
+  },
+  {
+    id: 'conversations.create',
+    route: 'conversations/route.ts',
+    method: 'POST',
+    summary: 'Open a thread (gig negotiation or PARTY private-party inquiry)',
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'ALLOW',
+      VENUE: 'ALLOW',
+      PARTY: 'ALLOW', // §6.3: their one write surface — venue inquiries only
+      ADMIN: 'ALLOW',
+    },
+  },
+  {
+    id: 'messages.list',
+    route: 'conversations/[id]/messages/route.ts',
+    method: 'GET',
+    summary: 'Thread messages — participants only',
+    expect: AUTHENTICATED_SELF,
+    expectCrossTenant: {
+      TALENT: 'NOT_FOUND',
+      VENUE: 'NOT_FOUND',
+      PARTY: 'NOT_FOUND',
+    },
+    note: 'Admin moderation reads arrive with P9 and will be audited as such.',
+  },
+  {
+    id: 'messages.send',
+    route: 'conversations/[id]/messages/route.ts',
+    method: 'POST',
+    summary: 'Send message / rate proposal / attachment',
+    expect: AUTHENTICATED_SELF,
+    expectCrossTenant: {
+      TALENT: 'NOT_FOUND',
+      VENUE: 'NOT_FOUND',
+      PARTY: 'NOT_FOUND',
+    },
+  },
+  {
+    id: 'conversations.accept-rate',
+    route: 'conversations/[id]/accept-rate/route.ts',
+    method: 'POST',
+    summary: "Accept the counterpart's rate proposal onto the application",
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'ALLOW',
+      VENUE: 'ALLOW',
+      PARTY: 'FORBIDDEN', // party threads have no gig/application to write to
+      ADMIN: 'ALLOW',
+    },
+    expectCrossTenant: {
+      TALENT: 'NOT_FOUND',
+      VENUE: 'NOT_FOUND',
+    },
+  },
+  {
+    id: 'reports.create',
+    route: 'reports/route.ts',
+    method: 'POST',
+    summary: 'File a moderation report (read side is P9 admin-only)',
+    expect: AUTHENTICATED_SELF,
+  },
+
+  // ─── Availability (P6) ──────────────────────────────────────────────────────
+  {
+    id: 'availability.get',
+    route: 'availability/route.ts',
+    method: 'GET',
+    summary: "Own month of availability + booked shifts (talent's private calendar)",
+    expect: TALENT_ONLY,
+  },
+  {
+    id: 'availability.put',
+    route: 'availability/route.ts',
+    method: 'PUT',
+    summary: 'Upsert one day of availability slots',
+    expect: TALENT_ONLY,
+  },
+
+  // ─── Shifts (P7) ────────────────────────────────────────────────────────────
+  {
+    id: 'shifts.transition',
+    route: 'shifts/[id]/route.ts',
+    method: 'POST',
+    summary: 'Check-in/out transition (idempotency-keyed)',
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'ALLOW', // own shift
+      VENUE: 'ALLOW', // own venue's shifts (door control)
+      PARTY: 'FORBIDDEN',
+      ADMIN: 'ALLOW',
+    },
+    expectCrossTenant: {
+      TALENT: 'NOT_FOUND',
+      VENUE: 'NOT_FOUND',
+      ADMIN: 'ALLOW',
+    },
+  },
+  {
+    id: 'venue.shifts',
+    route: 'venue/shifts/route.ts',
+    method: 'GET',
+    summary: "Venue live-ops board + payouts-pending aggregate",
+    expect: VENUE_ONLY,
+  },
+  {
+    id: 'talent.shifts',
+    route: 'talent/shifts/route.ts',
+    method: 'GET',
+    summary: 'Own bookings with payout status',
+    expect: TALENT_ONLY,
+  },
+
+  // ─── Payments (P8) ──────────────────────────────────────────────────────────
+  {
+    id: 'stripe.connect.status',
+    route: 'stripe/connect/route.ts',
+    method: 'GET',
+    summary: 'Own Connect onboarding status',
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'ALLOW',
+      VENUE: 'ALLOW',
+      PARTY: 'FORBIDDEN', // consumers never touch the payout surface (§6.1)
+      ADMIN: 'ALLOW',
+    },
+  },
+  {
+    id: 'stripe.connect.start',
+    route: 'stripe/connect/route.ts',
+    method: 'POST',
+    summary: 'Create/resume Connect Express onboarding (503 without platform keys)',
+    // UNAVAILABLE = authZ passed, then the key gate answered 503. The 401/403
+    // rows still prove the authZ ordering (denies happen BEFORE the gate).
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'UNAVAILABLE',
+      VENUE: 'UNAVAILABLE',
+      PARTY: 'FORBIDDEN',
+      ADMIN: 'UNAVAILABLE',
+    },
+    note: 'With STRIPE_SECRET_KEY configured these UNAVAILABLE cells become ALLOW.',
+  },
+  {
+    id: 'stripe.webhook',
+    route: 'stripe/webhook/route.ts',
+    method: 'POST',
+    summary: 'Stripe event sink — signature IS the authn; replay-guarded by event id',
+    expect: PUBLIC,
+    platform: true,
+    note: 'No session. Unsigned/forged payloads 400 before parsing; replays are dropped.',
+  },
+  {
+    id: 'payouts.release',
+    route: 'payouts/release/route.ts',
+    method: 'POST',
+    summary: 'Escrow release (24h post-checkout) — ADMIN or CRON_SECRET bearer only',
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'FORBIDDEN',
+      VENUE: 'FORBIDDEN',
+      PARTY: 'FORBIDDEN',
+      ADMIN: 'ALLOW',
+    },
   },
 
   // ─── Platform / vendor routes (declared, not behaviorally asserted) ─────────

@@ -42,9 +42,11 @@ function toPublicGig(row: GigDetailRow, isOwner: boolean) {
 }
 
 /**
- * Public gig detail (wireframe p4). PUBLISHED gigs are world-readable;
- * every other status is visible only to the owning venue (or ADMIN) and
- * 404s for everyone else so drafts don't leak existence.
+ * Public gig detail (wireframe p4). PUBLISHED gigs are world-readable.
+ * Non-published statuses stay 404 to the world (drafts don't leak existence),
+ * with two carve-outs: the owning venue/ADMIN, and a talent with an
+ * application on the gig — their dashboard cards and shift rows deep-link
+ * here, and hiring flips the gig to FILLED, which must not break those links.
  */
 export const GET = withRoute('gigs.detail', async (_request, context) => {
   const params = await context.params;
@@ -56,9 +58,25 @@ export const GET = withRoute('gigs.detail', async (_request, context) => {
 
   const user = await authGuard.optionalUser();
   const isOwner = user !== null && (user.id === row.venue_user_id || user.role === 'ADMIN');
-  if (row.status !== 'PUBLISHED' && !isOwner) throw ApiError.notFound();
 
-  return Response.json(toPublicGig(row, isOwner));
+  // A signed-in talent sees their own application state inline ("✓ Applied").
+  let myApplication: Record<string, unknown> | null = null;
+  if (user !== null && user.role === 'TALENT') {
+    const applicationRows = (await sql`
+      SELECT a.id, a.status, a.proposed_rate_cents, a.created_at
+      FROM applications a
+      JOIN talent_profiles tp ON tp.id = a.talent_id
+      WHERE a.gig_id = ${parsed.data} AND tp.user_id = ${user.id}
+      LIMIT 1
+    `) as Array<Record<string, unknown>>;
+    myApplication = applicationRows[0] ?? null;
+  }
+
+  if (row.status !== 'PUBLISHED' && !isOwner && myApplication === null) {
+    throw ApiError.notFound();
+  }
+
+  return Response.json({ ...toPublicGig(row, isOwner), myApplication });
 });
 
 /**

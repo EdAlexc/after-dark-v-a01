@@ -21,6 +21,15 @@ export function jsonify(value: unknown): string | undefined {
   return value === undefined ? undefined : JSON.stringify(value);
 }
 
+/** Shallow copy without `undefined` entries, so spreads can't erase fields. */
+export function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const out: Partial<T> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) (out as Record<string, unknown>)[key] = value;
+  }
+  return out;
+}
+
 export interface BuiltStatement {
   text: string;
   values: unknown[];
