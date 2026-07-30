@@ -20,7 +20,7 @@ import { argon2Verify } from 'argon2-wasm-edge';
 import { betterAuth } from 'better-auth';
 import { createAuthMiddleware } from 'better-auth/api';
 import { verifyPassword } from 'better-auth/crypto';
-import { bearer } from 'better-auth/plugins';
+import { bearer, twoFactor } from 'better-auth/plugins';
 import ws from 'ws';
 import { vercelOrigins } from './deployment-origins';
 
@@ -156,6 +156,10 @@ export const auth = betterAuth({
       '/sign-in/email': { window: 60, max: 10 },
       '/sign-up/email': { window: 60, max: 5 },
       '/change-password': { window: 900, max: 5 },
+      '/two-factor/verify-totp': { window: 900, max: 10 },
+      '/two-factor/verify-backup-code': { window: 900, max: 5 },
+      '/two-factor/enable': { window: 900, max: 5 },
+      '/two-factor/disable': { window: 900, max: 5 },
     },
   },
   user: {
@@ -169,7 +173,12 @@ export const auth = betterAuth({
   // Enable Authorization: Bearer <session-token> so mobile apps (which can't
   // carry cookies through a WebView) authenticate API calls with the token
   // returned from /api/auth/token.
-  plugins: [bearer()],
+  //
+  // twoFactor (additive plugin, Backlog #17): TOTP + one-time backup codes,
+  // enforced AT SIGN-IN for enrolled users (challenge page:
+  // /account/two-factor). Secrets are encrypted with the auth secret; the
+  // plugin's account lockout (10 fails / 15 min) backs the rate limits above.
+  plugins: [bearer(), twoFactor({ issuer: 'AfterDark' })],
 });
 
 export type Session = typeof auth.$Infer.Session;

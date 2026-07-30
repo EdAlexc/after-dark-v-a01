@@ -32,6 +32,9 @@ jobs:
       - name: Typecheck (strict — no ignoreBuildErrors)
         run: yarn workspace web run typecheck
 
+      - name: Lint (oxlint — Backlog #20)
+        run: yarn workspace web run lint
+
       - name: Unit & route tests (vitest)
         run: yarn workspace web run test
 

@@ -9,13 +9,16 @@ import { buildUpdateByKey, jsonify } from '@/app/api/utils/sql-builder';
 /** Media-carrying route: avatar may be a base64 data URL for now. */
 const MAX_SETTINGS_BODY_BYTES = 3_000_000;
 
+// twoFactorEnabled is the better-auth twoFactor plugin's column (camelCase,
+// hence quoted). It is read-only here — enabling/disabling goes through the
+// plugin's own password-verified endpoints, never this route.
 const SETTINGS_COLUMNS =
-  'id, name, email, image, recovery_email, phone, social_links, totp_enabled';
+  'id, name, email, image, recovery_email, phone, social_links, "twoFactorEnabled"';
 
 export const GET = withRoute('settings.get', async () => {
   const user = await authGuard.requireSession();
   const rows = await sql`
-    SELECT id, name, email, image, recovery_email, phone, social_links, totp_enabled
+    SELECT id, name, email, image, recovery_email, phone, social_links, "twoFactorEnabled"
     FROM "user"
     WHERE id = ${user.id}
     LIMIT 1

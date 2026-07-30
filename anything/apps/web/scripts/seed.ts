@@ -2,7 +2,7 @@
 /**
  * Demo seed for local/dev databases (DEV_TIMELINE P0.1).
  *
- *   DATABASE_URL=postgres://… AUTH_SECRET_ENCRYPTION_KEY=… yarn db:seed
+ *   DATABASE_URL=postgres://… yarn db:seed
  *
  * Creates (idempotently, keyed by email):
  *  - a VENUE user + venue profile ("Nebula NYC")

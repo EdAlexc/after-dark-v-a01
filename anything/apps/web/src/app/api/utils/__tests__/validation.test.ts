@@ -9,7 +9,6 @@ import {
   RoleSelectionSchema,
   SettingsUpdateSchema,
   TalentProfileUpdateSchema,
-  TwoFactorActionSchema,
 } from '../schemas';
 
 function jsonRequest(body: unknown): Request {
@@ -309,38 +308,5 @@ describe('profile & settings schemas', () => {
       ChangePasswordSchema.safeParse({ currentPassword: 'old-pass-1', newPassword: 'new-pass-22' })
         .success
     ).toBe(true);
-  });
-});
-
-describe('TwoFactorActionSchema', () => {
-  it('enable requires base32 secret + 6-digit token', () => {
-    expect(
-      TwoFactorActionSchema.safeParse({
-        action: 'enable',
-        secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ',
-        token: '123456',
-      }).success
-    ).toBe(true);
-    expect(
-      TwoFactorActionSchema.safeParse({ action: 'enable', secret: 'not base32!!', token: '123456' })
-        .success
-    ).toBe(false);
-    expect(
-      TwoFactorActionSchema.safeParse({
-        action: 'enable',
-        secret: 'GEZDGNBVGY3TQOJQ',
-        token: '12345',
-      }).success
-    ).toBe(false);
-  });
-
-  it('disable requires only the token; unknown actions rejected', () => {
-    expect(TwoFactorActionSchema.safeParse({ action: 'disable', token: '654321' }).success).toBe(
-      true
-    );
-    expect(TwoFactorActionSchema.safeParse({ action: 'reset', token: '654321' }).success).toBe(
-      false
-    );
-    expect(TwoFactorActionSchema.safeParse({ action: 'disable' }).success).toBe(false);
   });
 });

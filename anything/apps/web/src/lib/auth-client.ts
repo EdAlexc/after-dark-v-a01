@@ -7,7 +7,24 @@
  * routing via trustedOrigins on the server).
  */
 import { createAuthClient } from 'better-auth/react';
+import { twoFactorClient } from 'better-auth/client/plugins';
 
-export const authClient = createAuthClient();
+// Additive twoFactor plugin (Backlog #17) — no baseURL is passed, per the
+// contract above. When a sign-in answers with a 2FA challenge, forward to the
+// challenge page, preserving the sanitized callbackUrl from the current
+// sign-in URL so the post-verification redirect still lands where intended.
+export const authClient = createAuthClient({
+  plugins: [
+    twoFactorClient({
+      onTwoFactorRedirect() {
+        const params = new URLSearchParams(window.location.search);
+        const callbackUrl = params.get('callbackUrl');
+        window.location.href =
+          '/account/two-factor' +
+          (callbackUrl ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : '');
+      },
+    }),
+  ],
+});
 
 export const { signIn, signUp, signOut, useSession } = authClient;

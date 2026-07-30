@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { PostGigButton } from '@/components/PostGigButton';
 import { FeaturedTonight } from '@/components/FeaturedTonight';
 import {

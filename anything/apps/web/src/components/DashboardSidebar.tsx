@@ -241,7 +241,11 @@ function MobileDrawer({
   const toggleGroup = (id: string) =>
     setOpenGroups((prev) => {
       const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
+      if (n.has(id)) {
+        n.delete(id);
+      } else {
+        n.add(id);
+      }
       return n;
     });
 
@@ -427,7 +431,11 @@ export default function DashboardSidebar({ role, userName }: DashboardSidebarPro
     }
     setOpenGroups((prev) => {
       const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
+      if (n.has(id)) {
+        n.delete(id);
+      } else {
+        n.add(id);
+      }
       return n;
     });
   };

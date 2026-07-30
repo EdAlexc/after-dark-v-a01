@@ -2,8 +2,8 @@
 
 > How to verify the app end-to-end: automated suites, manual flows, security probes, and the
 > shared preview accounts. Companion to [CLAUDE.md](CLAUDE.md) (architecture) and
-> [DEV_TIMELINE.MD](DEV_TIMELINE.MD) (status). Last full pass: **2026-07-30** (P1 slice landed —
-> every check below was executed and green on that date).
+> [DEV_TIMELINE.MD](DEV_TIMELINE.MD) (status). Last full pass: **2026-07-30** (P1 slice + 2FA
+> plugin migration + oxlint — every check below was executed and green on that date).
 
 ---
 
@@ -38,10 +38,16 @@ real payment data enters the database.
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 285 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 245 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
+yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
 ```
+
+(The count dropped from 285 → 245 when the hand-rolled TOTP/SecretBox suites left with the
+better-auth twoFactor migration — the plugin now owns that logic. Local quirk: in a
+`.claude/worktrees/*` checkout oxlint needs `--no-ignore` because the parent repo's
+`.gitignore` ignores `.claude/`; CI checkouts are unaffected.)
 
 Coverage highlights by area:
 
@@ -63,8 +69,10 @@ Coverage highlights by area:
 
 1. **Disposable DB**: create a Neon branch of the `after-dark` project (console or MCP), copy
    its **pooled** connection string.
-2. **Env**: in `anything/apps/web/.env.local` set `DATABASE_URL`, `AUTH_SECRET_ENCRYPTION_KEY`
-   (`openssl rand -base64 32`), `BETTER_AUTH_SECRET` (another random), `BETTER_AUTH_URL=http://localhost:4000`.
+2. **Env**: in `anything/apps/web/.env.local` set `DATABASE_URL`, `BETTER_AUTH_SECRET`
+   (`openssl rand -base64 32` — ⚠ it also encrypts 2FA enrollments; rotating it invalidates
+   them), `BETTER_AUTH_URL=http://localhost:4000`. (`AUTH_SECRET_ENCRYPTION_KEY` is obsolete
+   since migration 0005 — harmless if present.)
 3. **Schema + data**:
    ```bash
    yarn db:migrate          # applies 0001–0004
@@ -110,8 +118,23 @@ Each line is a check; all passed 2026-07-30 in Chrome (desktop + mobile viewport
 - Can browse all public surfaces; any principal write (e.g. `POST /api/gigs`) returns 403.
 
 **Settings (any account)**
-- Profile/account/password/2FA cards render and save; 2FA enrollment shows a locally-rendered
-  QR (data URL — verify **no** request to any third-party QR host in the Network tab).
+- Profile/account/password cards render **populated** on a hard refresh and save. (Regression
+  to watch: the settings page once shipped with a `useSearchParams`+`Suspense` wrapper that
+  never resolved during hydration under the nonce-CSP/force-dynamic setup — the form rendered
+  but stayed empty and every control was dead. Fixed 2026-07-30; a hard refresh of
+  `/dashboard/settings` showing real values is the canary.)
+
+**Two-factor authentication (better-auth twoFactor plugin — full loop, verified 2026-07-30)**
+1. Settings → Two-Factor → Enable → confirm password → QR + manual secret + **10 one-time
+   backup codes** appear (QR is a locally-rendered data URL — verify **no** third-party QR
+   host in the Network tab). Enter a live TOTP code → "2FA is Active".
+2. Sign out, sign in with email+password → redirected to `/account/two-factor` (callbackUrl
+   preserved) — **the session is not created until the second factor passes**. Enter a TOTP
+   code → land on the original destination.
+3. Repeat sign-in and choose "Use a backup code instead" → a backup code signs you in (each
+   works once). "Trust this device for 30 days" skips the challenge on that browser.
+4. Settings → Disable → password → back to "Enable". Wrong codes/passwords surface errors;
+   10 consecutive failures lock the account for 15 minutes (plugin lockout).
 
 ## 6. API security probes (run against local or a preview deploy)
 
@@ -161,10 +184,9 @@ DELETE FROM audit_logs WHERE id = 1;    -- denied (append-only)
 
 - Applications/messages/schedule/live-ops/notifications backends land in P2–P5; their UIs are
   present with sample data (labeled where misleading).
-- 2FA is hand-rolled-but-hardened; **recovery codes** arrive with the better-auth twoFactor
-  plugin migration (DEV_TIMELINE Backlog #17 — deliberately deferred; rationale documented
-  there). 2FA is a settings control and does not yet challenge at sign-in.
 - Map views deferred (Backlog #1). Multi-select browse filters refine client-side within the
   fetched page until the API grows array params.
+- Legacy hand-rolled 2FA enrollments were cleared by migration 0005 (they never gated
+  sign-in); affected users simply re-enroll through the plugin flow.
 - `tonightOnly` uses a rolling 24h window (fixed 2026-07-30; was a UTC calendar-date match
   that dropped late-night gigs).
