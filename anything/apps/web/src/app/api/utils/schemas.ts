@@ -188,21 +188,8 @@ export const ChangePasswordSchema = z
     path: ['newPassword'],
   });
 
-const totpToken = z
-  .string()
-  .trim()
-  .regex(/^\d{6}$/, 'must be a 6-digit code');
-
-/** Base32 (RFC 4648) secret as produced by our own enrollment flow. */
-const totpSecret = z
-  .string()
-  .trim()
-  .regex(/^[A-Z2-7]{16,64}$/i, 'invalid secret format');
-
-export const TwoFactorActionSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('enable'), secret: totpSecret, token: totpToken }),
-  z.object({ action: z.literal('disable'), token: totpToken }),
-]);
+// 2FA enrollment/verification bodies are validated by the better-auth
+// twoFactor plugin's own endpoints (Backlog #17) — no app schema needed.
 
 export type RoleSelection = z.infer<typeof RoleSelectionSchema>;
 export type GigCreate = z.infer<typeof GigCreateSchema>;

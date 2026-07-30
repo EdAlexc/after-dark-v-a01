@@ -35,14 +35,17 @@ cd apps/web
 yarn dev                    # Next.js dev server on port 4000
 yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
-yarn test                   # vitest run (285 tests as of P1)
+yarn lint                   # oxlint (workspace .oxlintrc.json), warnings fail
+yarn test                   # vitest run (245 tests as of the 2FA-plugin migration)
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
 yarn db:preview-accounts    # shared talent/venue/party preview accounts (TESTING.md §2; idempotent)
 ```
 
-- **Required env**: `DATABASE_URL` (Neon Postgres) and `AUTH_SECRET_ENCRYPTION_KEY` (encrypts
-  2FA secrets; `openssl rand -base64 32`). Optional: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
+- **Required env**: `DATABASE_URL` (Neon Postgres) and `BETTER_AUTH_SECRET` (signs sessions
+  **and encrypts 2FA enrollments** — rotating it invalidates them; `openssl rand -base64 32`).
+  `AUTH_SECRET_ENCRYPTION_KEY` is obsolete since migration 0005 (harmless if set). Optional:
+  `BETTER_AUTH_URL`,
   `GOOGLE_CLIENT_ID/SECRET`, `APPLE_CLIENT_ID/SECRET/APP_BUNDLE_IDENTIFIER`,
   `EXPO_PUBLIC_PROXY_BASE_URL`, `NEXT_PUBLIC_CREATE_*`, `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN`
   (error tracking — no-op unset). See `apps/web/.env.example`; no real `.env` is committed.
@@ -104,7 +107,9 @@ you which side of the boundary to debug.
 > Settings → Build & Deployment → Root Directory, or `vercel link --repo` from the CLI.
 
 **Env vars to set in Vercel** (Production + Preview): `DATABASE_URL` (Neon **pooled** string),
-`AUTH_SECRET_ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`. The build itself passes
+`BETTER_AUTH_SECRET` (⚠ also encrypts 2FA enrollments — rotate and they reset),
+`BETTER_AUTH_URL`. (`AUTH_SECRET_ENCRYPTION_KEY` is obsolete since migration 0005; leaving it
+set is harmless.) The build itself passes
 without them (every page is `'use client'`, so nothing touches the DB at build time), but the
 running app will not.
 
@@ -173,7 +178,9 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 (GET public paginated, POST venue), `/api/gigs/[id]` (GET public-when-published,
 PATCH owner status transition), `/api/venue/gigs` (GET own, all statuses), `/api/talent`
 (GET public directory), `/api/talent/profile` (GET/PUT), `/api/venue/profile` (GET/PUT),
-`/api/settings` (GET/PUT), `/api/settings/change-password` (POST), `/api/settings/2fa` (GET/POST),
+`/api/settings` (GET/PUT), `/api/settings/change-password` (POST),
+`/api/auth/two-factor/*` (better-auth twoFactor plugin: enable/disable/verify-totp/
+verify-backup-code — replaced the old `/api/settings/2fa`),
 `/api/__create/check-social-secrets` (dev only).
 
 ## 5. UI / UX specification
@@ -334,9 +341,10 @@ Verified findings (2026-07-24), ordered by severity — full remediation & test 
    session; APIs check session but never role (e.g. gigs POST). Add middleware auth gate +
    per-endpoint role checks (authZ matrix in TENANT_GUARDRAIL §6.1).
 3. **2FA**: hand-rolled TOTP; secret stored **plaintext** in `user.totp_secret`; otpauth URI
-   (secret included) sent to third-party `api.qrserver.com` for QR rendering
-   (`api/settings/2fa/route.ts:84-85`). Replace with better-auth twoFactor plugin (encrypted
-   secrets) + local QR generation; add rate limiting + recovery codes.
+   (secret included) sent to third-party `api.qrserver.com` for QR rendering. *Resolved in two
+   stages*: P0 hardened the hand-rolled version (encrypted at rest, local QR, rate limits);
+   2026-07-30 replaced it wholesale with the **better-auth twoFactor plugin** (sign-in
+   challenge, one-time backup codes, trusted devices, account lockout — migration 0005).
 4. **Open redirect**: signin/signup do `window.location.href = callbackUrl` from query param.
    Allowlist relative paths only.
 5. **postMessage to `'*'`** with session JWT in `/api/auth/expo-web-success` (platform file —

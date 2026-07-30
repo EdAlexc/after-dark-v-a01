@@ -8,9 +8,29 @@
 
 ## 1. Current status — YOU ARE HERE
 
-- **Date:** 2026-07-30 · **Branch:** `claude/p1-gigs-live` (worktree off `main`)
-- **Project stage:** **P1 (gigs live end-to-end) landed + most P0 follow-ups. Next is P2
+- **Date:** 2026-07-30 · **Branch:** `claude/p1-gigs-live` (worktree off `main`, PR #7)
+- **Project stage:** **P0 and P1 fully complete — every carry-over closed. Next is P2
   (applications).**
+- **P0/P1 close-out (second pass, same day):**
+  - **2FA → better-auth twoFactor plugin (Backlog #17 ✅)**: migration `0005` (plugin
+    `twoFactor` table + `user.twoFactorEnabled`, legacy hand-rolled enrollments cleared);
+    plugin registered in `auth.ts` (+ rate limits on its endpoints); `twoFactorClient` in
+    `auth-client.ts` with a callbackUrl-preserving challenge redirect; new
+    `/account/two-factor` challenge page (TOTP + one-time backup codes + trust-device);
+    settings 2FA card rebuilt on the plugin (password-gated enable/disable, local QR, backup
+    codes); legacy `/api/settings/2fa` + `totp.ts`/`crypto-box.ts` removed —
+    **`AUTH_SECRET_ENCRYPTION_KEY` is obsolete** (BETTER_AUTH_SECRET now encrypts
+    enrollments; rotating it invalidates them). Sign-in is now genuinely gated (the old 2FA
+    never challenged at sign-in). **Full loop browser-verified** (enroll → challenge → TOTP →
+    backup code → disable); tests 245 green (hand-rolled TOTP/SecretBox suites retired with
+    their code).
+  - **oxlint in CI (Backlog #20 ✅)**: `yarn lint` (deny-warnings) + CI job; 4 pre-existing
+    warnings fixed.
+  - **Bug found & fixed while verifying**: `/dashboard/settings` never hydrated on clean
+    loads (its `useSearchParams`+`Suspense` wrapper stayed suspended forever under the
+    nonce-CSP/force-dynamic setup — form rendered but dead, values never loaded, predating
+    today). Role param now read post-mount; page hydrates and populates. TESTING.md §5 has
+    the canary check.
 - **P1 delivered this session** (285 tests green; verified in-browser against a Neon branch,
   procedures now codified in [TESTING.md](TESTING.md)):
   - **P1.1** Talent browse consumes real `GET /api/gigs` (validated filters, 12/page
@@ -79,9 +99,9 @@
    chips on browse/detail ("✓ Applied").
 4. P2.4 — In-app `notifications` table + bell dropdown; real sidebar badge counts
    (application received / status changed) — finishes Backlog #12.
-5. Carry-over: better-auth twoFactor plugin migration (Backlog #17 — do it as its own slice
-   with a sign-in challenge page); oxlint in CI (Backlog #20); RLS activation ops step
-   (dedicated non-owner DB role — 0004 policies are already in place).
+5. ~~Carry-over: twoFactor plugin (Backlog #17); oxlint in CI (Backlog #20)~~ — **both done
+   2026-07-30.** Remaining ops-only item: RLS activation (dedicated non-owner DB role —
+   0004 policies are already in place, Backlog #25).
 
 ---
 
@@ -194,15 +214,12 @@ Items noted during the audit that are **not** required for the alpha gate but mu
 16. **iframe embedding posture**: cookies are `SameSite=None`; P0 set CSP `frame-ancestors` to
     `'self'` + configured create.xyz origins (no `X-Frame-Options`, superseded by CSP). Before
     GA, decide whether to keep the builder pathway or lock `frame-ancestors` to `'self'` only.
-17. **2FA → better-auth twoFactor plugin** — **deliberately deferred again 2026-07-30** after
-    scoping. Why: it is a full slice, not a config tweak — the plugin needs its own schema
-    (`twoFactor` table + `user.twoFactorEnabled`), a sign-in challenge page (today's
-    hand-rolled 2FA is a settings control and **does not gate sign-in at all** — the plugin
-    version will, which is the real win alongside recovery codes), a rewrite of the settings
-    2FA card, changes to the DO-NOT-REWRITE `auth.ts` beyond its "config tuning" safe list,
-    and it obsoletes `SecretBox`/`AUTH_SECRET_ENCRYPTION_KEY` (env-contract change across
-    three docs). Existing enrollees are unaffected either way (different columns; old 2FA
-    never gated sign-in). Do it as its own verified slice — see Pick-up-here item 5.
+17. ~~**2FA → better-auth twoFactor plugin**~~ — **DONE (2026-07-30, second pass).** Exactly
+    the slice scoped above: migration `0005`, plugin + client plugin, `/account/two-factor`
+    challenge page, settings card rebuild, legacy route/utils removed,
+    `AUTH_SECRET_ENCRYPTION_KEY` retired from the env contract. Sign-in now challenges
+    enrolled users (TOTP or one-time backup code, optional 30-day trusted device; plugin
+    lockout 10 fails/15 min). Browser-verified end-to-end; procedures in TESTING.md §5.
 18. ~~**CSP nonce**~~ — **DONE (2026-07-30).** Per-request nonce + `'strict-dynamic'` emitted
     by `src/middleware.ts` (shared builder in `security-headers.js`); `'unsafe-inline'`
     dropped from script-src; static CSP removed from `next.config.js` (double-CSP would
@@ -213,7 +230,8 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     `src/lib/sentry-scrub.ts` (reuses `redactPii`; identity reduced to user id; cookies/
     headers dropped). Ingest origin auto-added to CSP connect-src. Set `SENTRY_DSN` +
     `NEXT_PUBLIC_SENTRY_DSN` in Vercel to activate.
-20. **oxlint in CI**: repo has `.oxlintrc.json` but CI doesn't run it yet; add a lint job.
+20. ~~**oxlint in CI**~~ — **DONE (2026-07-30).** `yarn lint` in web (oxlint, deny-warnings,
+    workspace config) + CI step; pre-existing warnings fixed.
 21. **Shared rate-limit store** (was #15's concern): the in-memory `SlidingWindowRateLimiter` is
     per-instance. For multi-region/serverless fan-out, back `getRateLimiter` with Upstash Redis
     or a Postgres token-bucket at load-test time.

@@ -23,7 +23,7 @@ function SignInForm() {
     setError(null);
 
     try {
-      const { error: signInError } = await authClient.signIn.email({
+      const { data, error: signInError } = await authClient.signIn.email({
         email,
         password,
       });
@@ -36,6 +36,12 @@ function SignInForm() {
               (typeof signInError === 'object' ? JSON.stringify(signInError) : 'Sign in failed'));
         setError(msg);
         setLoading(false);
+        return;
+      }
+
+      // 2FA-enrolled accounts get a challenge instead of a session; the
+      // twoFactorClient plugin already navigated to /account/two-factor.
+      if (data && 'twoFactorRedirect' in data && data.twoFactorRedirect) {
         return;
       }
 

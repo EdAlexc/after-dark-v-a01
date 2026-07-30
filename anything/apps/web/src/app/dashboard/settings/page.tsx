@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,6 +24,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { authClient } from '@/lib/auth-client';
 
 // ─── Section wrapper ───────────────────────────────────────────────────────────
 
@@ -164,31 +164,67 @@ function AvatarUpload({ value, onChange }: { value: string; onChange: (url: stri
   );
 }
 
-// ─── 2FA Modal ─────────────────────────────────────────────────────────────────
+// ─── 2FA Modals (better-auth twoFactor plugin, Backlog #17) ───────────────────
 
-function TwoFASetupModal({
-  secret,
-  qrUrl,
-  onVerify,
-  onClose,
-}: {
-  secret: string;
-  qrUrl: string;
-  onVerify: (token: string) => void;
-  onClose: () => void;
-}) {
+/**
+ * Enable flow: confirm password → plugin returns the otpauth URI + one-time
+ * backup codes → user scans the locally-rendered QR and confirms a live TOTP
+ * code (2FA only turns on after `verifyTotp` succeeds).
+ */
+function TwoFASetupModal({ onEnabled, onClose }: { onEnabled: () => void; onClose: () => void }) {
+  const [step, setStep] = useState<'password' | 'verify'>('password');
+  const [password, setPassword] = useState('');
+  const [totpUri, setTotpUri] = useState('');
+  const [qrUrl, setQrUrl] = useState('');
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [token, setToken] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const copySecret = () => {
-    void navigator.clipboard.writeText(secret);
+  const manualSecret = /[?&]secret=([^&]+)/.exec(totpUri)?.[1] ?? '';
+
+  const startEnable = async () => {
+    setBusy(true);
+    setError(null);
+    const { data, error: enableError } = await authClient.twoFactor.enable({ password });
+    if (enableError || !data) {
+      setError(enableError?.message ?? 'Could not start 2FA setup');
+      setBusy(false);
+      return;
+    }
+    setTotpUri(data.totpURI);
+    setBackupCodes(data.backupCodes);
+    // Local QR render — the otpauth URI (which embeds the secret) never
+    // leaves the browser (same posture as the P0 hardening). Dynamic import:
+    // qrcode only enters the client bundle when someone actually enrolls.
+    const { toDataURL } = await import('qrcode');
+    setQrUrl(await toDataURL(data.totpURI, { width: 200, margin: 1 }));
+    setStep('verify');
+    setBusy(false);
+  };
+
+  const confirmCode = async () => {
+    setBusy(true);
+    setError(null);
+    const { error: verifyError } = await authClient.twoFactor.verifyTotp({ code: token });
+    if (verifyError) {
+      setError(verifyError.message ?? 'Invalid verification code');
+      setBusy(false);
+      return;
+    }
+    onEnabled();
+  };
+
+  const copyBackupCodes = () => {
+    void navigator.clipboard.writeText(backupCodes.join('\n'));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="bg-[#1E1E1E] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-[#1E1E1E] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl my-8">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h3 className="text-base font-bold text-white">Enable Authenticator App</h3>
@@ -204,66 +240,122 @@ function TwoFASetupModal({
           </button>
         </div>
 
-        {/* Steps */}
-        <ol className="space-y-5 mb-6">
-          <li>
-            <p className="text-xs font-bold text-white/60 uppercase tracking-widest mb-2">
-              1 · Scan QR Code
-            </p>
-            <div className="flex items-center justify-center bg-white rounded-xl p-3 w-fit mx-auto">
-              <img src={qrUrl} alt="2FA QR code" className="w-40 h-40" />
-            </div>
-          </li>
-          <li>
-            <p className="text-xs font-bold text-white/60 uppercase tracking-widest mb-2">
-              2 · Or enter code manually
-            </p>
-            <div className="flex items-center gap-2 bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5">
-              <code className="flex-1 text-xs text-[#00FFCC] font-mono tracking-widest break-all">
-                {secret}
-              </code>
-              <button
-                type="button"
-                onClick={copySecret}
-                className="text-xs text-white/40 hover:text-white transition-colors flex-shrink-0"
-              >
-                {copied ? <CheckCircle2 className="w-4 h-4 text-[#00FFCC]" /> : 'Copy'}
-              </button>
-            </div>
-          </li>
-          <li>
-            <p className="text-xs font-bold text-white/60 uppercase tracking-widest mb-2">
-              3 · Enter 6-digit code to verify
+        {step === 'password' ? (
+          <div className="space-y-4">
+            <p className="text-xs font-bold text-white/60 uppercase tracking-widest">
+              Confirm your password to begin
             </p>
             <input
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              className={`${inputCls} text-center text-xl tracking-[0.5em] font-mono`}
-              placeholder="000000"
-              value={token}
-              onChange={(e) => setToken(e.target.value.replace(/\D/g, ''))}
+              type="password"
+              autoFocus
+              className={inputCls + ' w-full'}
+              placeholder="Your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
             />
-          </li>
-        </ol>
+            {error && <p className="text-sm text-red-400">{error}</p>}
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1 border-white/10 text-white/60 hover:bg-white/5"
+                onClick={onClose}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold"
+                disabled={password.length === 0 || busy}
+                onClick={() => void startEnable()}
+              >
+                Continue
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <ol className="space-y-5 mb-6">
+              <li>
+                <p className="text-xs font-bold text-white/60 uppercase tracking-widest mb-2">
+                  1 · Scan QR Code
+                </p>
+                <div className="flex items-center justify-center bg-white rounded-xl p-3 w-fit mx-auto">
+                  {qrUrl && <img src={qrUrl} alt="2FA QR code" className="w-40 h-40" />}
+                </div>
+                {manualSecret && (
+                  <p className="text-[11px] text-white/30 text-center mt-2">
+                    Or enter manually:{' '}
+                    <code className="text-[#00FFCC] font-mono break-all">{manualSecret}</code>
+                  </p>
+                )}
+              </li>
+              <li>
+                <p className="text-xs font-bold text-white/60 uppercase tracking-widest mb-2">
+                  2 · Save your backup codes
+                </p>
+                <div className="bg-[#121212] border border-white/10 rounded-xl p-3">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    {backupCodes.map((backupCode) => (
+                      <code key={backupCode} className="text-xs text-white/60 font-mono">
+                        {backupCode}
+                      </code>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={copyBackupCodes}
+                    className="mt-2 text-xs text-white/40 hover:text-white transition-colors flex items-center gap-1"
+                  >
+                    {copied ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#00FFCC]" /> Copied
+                      </>
+                    ) : (
+                      'Copy all'
+                    )}
+                  </button>
+                </div>
+                <p className="text-[11px] text-white/30 mt-1.5">
+                  Each code works once if you lose your authenticator. Store them somewhere safe —
+                  they won't be shown again.
+                </p>
+              </li>
+              <li>
+                <p className="text-xs font-bold text-white/60 uppercase tracking-widest mb-2">
+                  3 · Enter 6-digit code to verify
+                </p>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  className={`${inputCls} text-center text-xl tracking-[0.5em] font-mono`}
+                  placeholder="000000"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value.replace(/\D/g, ''))}
+                />
+              </li>
+            </ol>
 
-        <div className="flex gap-3">
-          <Button
-            variant="outline"
-            className="flex-1 border-white/10 text-white/60 hover:bg-white/5"
-            onClick={onClose}
-          >
-            Cancel
-          </Button>
-          <Button
-            className="flex-1 bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold"
-            disabled={token.length !== 6}
-            onClick={() => onVerify(token)}
-          >
-            <ShieldCheck className="w-4 h-4 mr-1.5" />
-            Activate 2FA
-          </Button>
-        </div>
+            {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1 border-white/10 text-white/60 hover:bg-white/5"
+                onClick={onClose}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold"
+                disabled={token.length !== 6 || busy}
+                onClick={() => void confirmCode()}
+              >
+                <ShieldCheck className="w-4 h-4 mr-1.5" />
+                Activate 2FA
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -272,13 +364,28 @@ function TwoFASetupModal({
 // ─── Disable 2FA Modal ─────────────────────────────────────────────────────────
 
 function DisableTwoFAModal({
-  onDisable,
+  onDisabled,
   onClose,
 }: {
-  onDisable: (token: string) => void;
+  onDisabled: () => void;
   onClose: () => void;
 }) {
-  const [token, setToken] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const disable = async () => {
+    setBusy(true);
+    setError(null);
+    const { error: disableError } = await authClient.twoFactor.disable({ password });
+    if (disableError) {
+      setError(disableError.message ?? 'Could not disable 2FA');
+      setBusy(false);
+      return;
+    }
+    onDisabled();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
       <div className="bg-[#1E1E1E] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
@@ -288,18 +395,18 @@ function DisableTwoFAModal({
           </div>
           <div>
             <h3 className="text-sm font-bold text-white">Disable 2FA</h3>
-            <p className="text-xs text-white/40">Enter your authenticator code to confirm</p>
+            <p className="text-xs text-white/40">Enter your password to confirm</p>
           </div>
         </div>
         <input
-          type="text"
-          inputMode="numeric"
-          maxLength={6}
-          className={`${inputCls} text-center text-xl tracking-[0.5em] font-mono mb-4`}
-          placeholder="000000"
-          value={token}
-          onChange={(e) => setToken(e.target.value.replace(/\D/g, ''))}
+          type="password"
+          autoFocus
+          className={`${inputCls} w-full mb-4`}
+          placeholder="Your password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
         />
+        {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
         <div className="flex gap-3">
           <Button
             variant="outline"
@@ -310,8 +417,8 @@ function DisableTwoFAModal({
           </Button>
           <Button
             className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold"
-            disabled={token.length !== 6}
-            onClick={() => onDisable(token)}
+            disabled={password.length === 0 || busy}
+            onClick={() => void disable()}
           >
             Disable
           </Button>
@@ -329,7 +436,7 @@ interface UserSettings {
   image: string;
   recovery_email: string;
   phone: string;
-  totp_enabled: boolean;
+  twoFactorEnabled: boolean;
   social_links: {
     instagram?: string;
     tiktok?: string;
@@ -344,15 +451,24 @@ const DEFAULT_SETTINGS: UserSettings = {
   image: '',
   recovery_email: '',
   phone: '',
-  totp_enabled: false,
+  twoFactorEnabled: false,
   social_links: {},
 };
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 function SettingsInner() {
-  const searchParams = useSearchParams();
-  const role = (searchParams.get('role') === 'venue' ? 'venue' : 'talent') as 'talent' | 'venue';
+  // The role param only selects the sidebar variant. Read it post-mount
+  // instead of via useSearchParams: the Suspense boundary that hook demands
+  // never resolved during hydration on this page (nonce-CSP + force-dynamic
+  // setup), leaving the whole settings tree permanently suspended — every
+  // control dead and the settings query never firing.
+  const [role, setRole] = useState<'talent' | 'venue'>('talent');
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('role') === 'venue') {
+      setRole('venue');
+    }
+  }, []);
 
   const qc = useQueryClient();
 
@@ -366,10 +482,9 @@ function SettingsInner() {
   const [passwordError, setPasswordError] = useState('');
   const [passwordSaved, setPasswordSaved] = useState(false);
 
-  // 2FA state
+  // 2FA state (flows live in the modals via the better-auth twoFactor plugin)
   const [showSetup, setShowSetup] = useState(false);
   const [showDisable, setShowDisable] = useState(false);
-  const [twoFAData, setTwoFAData] = useState<{ secret: string; qrUrl: string } | null>(null);
 
   // ── load settings ──
   const { data: settingsData } = useQuery({
@@ -446,38 +561,20 @@ function SettingsInner() {
     passwordMutation.mutate();
   };
 
-  // ── 2FA ──
-  const open2FASetup = async () => {
-    try {
-      const res = await fetch('/api/settings/2fa');
-      const data = (await res.json()) as { secret: string; qrUrl: string };
-      setTwoFAData(data);
-      setShowSetup(true);
-    } catch {
-      toast.error('Failed to load 2FA setup');
-    }
+  // ── 2FA (modal flows call the plugin directly; these finalize UI state) ──
+  const onTwoFAEnabled = () => {
+    setForm((prev) => ({ ...prev, twoFactorEnabled: true }));
+    setShowSetup(false);
+    toast.success('2FA enabled — sign-ins now require your authenticator');
+    void qc.invalidateQueries({ queryKey: ['settings'] });
   };
 
-  const twoFAMutation = useMutation({
-    mutationFn: async ({ action, token }: { action: 'enable' | 'disable'; token: string }) => {
-      const res = await fetch('/api/settings/2fa', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, secret: twoFAData?.secret, token }),
-      });
-      const data = (await res.json()) as { error?: string; enabled?: boolean };
-      if (!res.ok) throw new Error(data.error ?? 'Failed');
-      return data;
-    },
-    onSuccess: (result) => {
-      setForm((prev) => ({ ...prev, totp_enabled: result.enabled ?? false }));
-      setShowSetup(false);
-      setShowDisable(false);
-      toast.success(result.enabled ? '2FA enabled!' : '2FA disabled');
-      void qc.invalidateQueries({ queryKey: ['settings'] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  const onTwoFADisabled = () => {
+    setForm((prev) => ({ ...prev, twoFactorEnabled: false }));
+    setShowDisable(false);
+    toast.success('2FA disabled');
+    void qc.invalidateQueries({ queryKey: ['settings'] });
+  };
 
   const set = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -490,19 +587,11 @@ function SettingsInner() {
       <DashboardSidebar role={role} />
 
       {/* 2FA Modals */}
-      {showSetup && twoFAData && (
-        <TwoFASetupModal
-          secret={twoFAData.secret}
-          qrUrl={twoFAData.qrUrl}
-          onVerify={(token) => twoFAMutation.mutate({ action: 'enable', token })}
-          onClose={() => setShowSetup(false)}
-        />
+      {showSetup && (
+        <TwoFASetupModal onEnabled={onTwoFAEnabled} onClose={() => setShowSetup(false)} />
       )}
       {showDisable && (
-        <DisableTwoFAModal
-          onDisable={(token) => twoFAMutation.mutate({ action: 'disable', token })}
-          onClose={() => setShowDisable(false)}
-        />
+        <DisableTwoFAModal onDisabled={onTwoFADisabled} onClose={() => setShowDisable(false)} />
       )}
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -784,12 +873,12 @@ function SettingsInner() {
               <div className="flex items-start gap-3">
                 <div
                   className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                    form.totp_enabled
+                    form.twoFactorEnabled
                       ? 'bg-green-500/10 text-green-400'
                       : 'bg-white/5 text-white/30'
                   }`}
                 >
-                  {form.totp_enabled ? (
+                  {form.twoFactorEnabled ? (
                     <ShieldCheck className="w-5 h-5" />
                   ) : (
                     <ShieldOff className="w-5 h-5" />
@@ -797,9 +886,9 @@ function SettingsInner() {
                 </div>
                 <div>
                   <p className="text-sm font-bold text-white">
-                    {form.totp_enabled ? '2FA is Active' : 'Authenticator App'}
+                    {form.twoFactorEnabled ? '2FA is Active' : 'Authenticator App'}
                   </p>
-                  {form.totp_enabled ? (
+                  {form.twoFactorEnabled ? (
                     <p className="text-xs text-green-400 mt-0.5">
                       Your account is protected by an authenticator app
                     </p>
@@ -824,7 +913,7 @@ function SettingsInner() {
                 </div>
               </div>
               <div className="flex-shrink-0">
-                {form.totp_enabled ? (
+                {form.twoFactorEnabled ? (
                   <Button
                     variant="outline"
                     size="sm"
@@ -837,7 +926,7 @@ function SettingsInner() {
                 ) : (
                   <Button
                     size="sm"
-                    onClick={() => void open2FASetup()}
+                    onClick={() => setShowSetup(true)}
                     className="bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold text-xs gap-1.5"
                   >
                     <ShieldCheck className="w-3.5 h-3.5" />
@@ -856,9 +945,5 @@ function SettingsInner() {
 }
 
 export default function SettingsPage() {
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <SettingsInner />
-    </Suspense>
-  );
+  return <SettingsInner />;
 }

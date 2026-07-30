@@ -7,7 +7,6 @@ import {
   Search,
   MapPin,
   DollarSign,
-  Zap,
   Bell,
   Building2,
   Music,
