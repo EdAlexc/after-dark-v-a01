@@ -8,9 +8,10 @@
 
 ## 1. Current status — YOU ARE HERE
 
-- **Date:** 2026-07-30 · **Branch:** `claude/p1-gigs-live` (worktree off `main`, PR #7)
-- **Project stage:** **P0 and P1 fully complete — every carry-over closed. Next is P2
-  (applications).**
+- **Date:** 2026-07-30 · **Branch:** `claude/p1-gigs-live` (worktree off `main`; PR #7 merged,
+  PR #8 open)
+- **Project stage:** **P0 and P1 fully complete — every carry-over closed. Remaining phases
+  re-sliced (§2.1); next is the new P2 (trust & compliance spine), then P3 applications.**
 - **P0/P1 close-out (second pass, same day):**
   - **2FA → better-auth twoFactor plugin (Backlog #17 ✅)**: migration `0005` (plugin
     `twoFactor` table + `user.twoFactorEnabled`, legacy hand-rolled enrollments cleared);
@@ -45,7 +46,7 @@
     + pure transition matrix in `api/utils/gig-lifecycle.ts`); owner-only idempotent
     `PATCH /api/gigs/[id]` (audited, optimistic-concurrency guarded); venue dashboard Open
     Gigs table real via `GET /api/venue/gigs`, with per-status action buttons and real
-    Active-Gigs/Filling-Rate stats (payout/time-to-hire stats honestly muted until P5/P2).
+    Active-Gigs/Filling-Rate stats (payout/time-to-hire stats honestly muted until P8/P3).
   - **P1.4** Landing "Hot Gigs Tonight" reads real published gigs (tonight-first, upcoming
     fallback, friendly empty state) via a `FeaturedTonight` client component.
   - **P0 follow-ups**: **nonce CSP** shipped (per-request nonce + `strict-dynamic` via
@@ -90,27 +91,82 @@
   2FA fails closed without it). `DATABASE_URL` still required.
 
 ### Pick-up-here: next five tasks (in order)
-1. P2.1 — `applications` slice: migration (`applications` table + unique (gig_id, talent_id)),
-   `POST /api/gigs/[id]/apply` (talent-only, proposed rate + cover message), wire the detail
-   page's apply panel (estimator already live; flip the disabled submit).
-2. P2.2 — Venue applicant review: `GET /api/venue/applications` + shortlist/hire transitions
-   (audited); make the dashboard Applicants column + `dashboard/venue/applicants` real.
-3. P2.3 — Talent "My Applications" (`dashboard/talent/applicants`) real; application status
-   chips on browse/detail ("✓ Applied").
-4. P2.4 — In-app `notifications` table + bell dropdown; real sidebar badge counts
-   (application received / status changed) — finishes Backlog #12.
-5. ~~Carry-over: twoFactor plugin (Backlog #17); oxlint in CI (Backlog #20)~~ — **both done
-   2026-07-30.** Remaining ops-only item: RLS activation (dedicated non-owner DB role —
-   0004 policies are already in place, Backlog #25).
+
+> The remaining phases were **re-sliced 2026-07-30** (§2.1 explains why and maps old → new).
+> Applications moved from P2 to **P3**; the new **P2** is the compliance + test spine, which
+> is legally blocking now that the deployed app accepts signups, and which makes every later
+> slice cheaper to secure.
+
+1. **P2.1** — Legal surface: real `/legal/privacy`, `/legal/terms`, `/contact` routes, footer
+   links wired, cookie audit (G1/G3). Half a day, and it unblocks any signup marketing.
+2. **P2.2** — Self-serve DSR: `GET /api/account/export` + `DELETE /api/account` (re-auth,
+   cascade, audit-log pseudonymization) with Settings UI (G4).
+3. **P2.3** — AuthZ matrix harness: declarative `role × endpoint × ownership` table +
+   generated suite; a route without a row fails CI (TENANT_GUARDRAIL §6.1).
+4. **P2.4** — RLS activation (Backlog #25): non-owner DB role, GRANTs, `withRlsContext` on
+   tenant routes, `DATABASE_URL` cutover, negative tests. Policies from `0004` already exist.
+5. **P2.5** — 18+ age gate at signup + per-gig 21+ flag surfaced (G12); `docs/ropa.md` and
+   `docs/retention.md` (G2/G7). Then **P3 applications** begins.
 
 ---
 
 ## 2. Phase plan to alpha
 
-Estimates assume one focused developer (human or AI-assisted); slices are independently
-shippable behind the previous one. Acceptance for every slice additionally includes the
-guardrail gates: unit+integration tests green, authZ/tenant-isolation tests for new endpoints,
-Lighthouse budgets green, no new ZAP high/medium (TENANT_GUARDRAIL §7 checklist).
+Estimates assume one focused developer (human or AI-assisted). **Re-sliced 2026-07-30** (see
+§2.1 for the rationale and the old→new map): the remaining work is now smaller, ordered so
+that security obligations and force-multipliers land before the code that depends on them,
+and annotated with what can run in parallel.
+
+### 2.0 Definition of done — applies to every slice, don't restate it
+
+A slice is shippable when **all** of these hold. Anything a slice needs *beyond* this is
+listed in its own "Security gate" row.
+
+1. Migration is forward-only, idempotent, and applied to a disposable Neon branch first.
+2. Every new endpoint has: zod validation, an `authGuard` role check, server-derived tenant
+   scoping (never a client-supplied owner id), and a row in the **authZ matrix table**
+   (P2.3) — CI fails if a route has no row.
+3. Tests: unit (pure logic) + route (authN/authZ/tenant-isolation/input-rejection) + the
+   SQLi-payload regression pattern already used in `gigs-query`.
+4. Writes that create money, PII, or state transitions are audited via `auditLogger`.
+5. `yarn test && yarn typecheck && yarn lint && yarn build` green; browser-verified against
+   seeded data; TESTING.md updated with the manual procedure.
+6. DEV_TIMELINE status block + phase checkbox updated in the same PR.
+
+### 2.1 Why this order (sequencing rationale + old→new map)
+
+**Ordering principles**
+
+1. **Legally-blocking work precedes more real users.** The app is deployed and accepting
+   signups *today*, so TENANT_GUARDRAIL §4 G1 (privacy/ToS), G4 (export/delete) and G12
+   (18+) are already-live obligations, not P7 polish. They also unblock growth: ad platforms
+   and app stores refuse traffic to a product with no privacy policy.
+2. **Force-multipliers before the code that needs them.** The authZ matrix harness, RLS
+   activation, and the media pipeline each make every later slice cheaper *and* safer.
+   Retrofitting RLS across 9 tables costs several times what activating it on 4 does.
+3. **Blast-radius isolation.** Money, PII egress, and destructive operations get their own
+   slice and their own review — never bundled with UI work. This is why Stripe split out of
+   the old "live ops & payments" mega-slice.
+4. **Slices stay ≤ ~3 days**, independently shippable and revertable behind the previous one.
+   Smaller slices = earlier feedback, smaller merge conflicts, cheaper rollback.
+5. **Parallel tracks are marked** so two developers (or agent sessions) don't collide on the
+   same tables.
+
+**What changed from the original P2–P7**
+
+| Original | Now | Why |
+|---|---|---|
+| GDPR surface buried in P7 | **P2.1/P2.2/P2.5** (first) | Legally live the moment real users sign up — which already happened. Also unblocks marketing. |
+| AuthZ matrix implicit per-slice | **P2.3** (explicit, once) | TENANT_GUARDRAIL calls it "the single most important test artifact in the repo"; building it once makes every later slice's authZ free and un-forgettable. |
+| RLS activation dangling in Backlog #25 | **P2.4** (scheduled) | Cheapest while only 4 tenant tables exist; every later migration then ships its policy alongside. |
+| Uploads inside P3 messaging | **P4** (own slice) | Also fixes a *live* privacy issue (base64 PII in DB, no EXIF/GPS strip — G11) and unblocks attachments. |
+| P5 = shifts **+** Stripe (1.5–2 wk) | **P7 shifts** / **P8 payments** | Halves the riskiest phase; shifts ship without waiting on payments, and money code gets isolated review. |
+| Rate-limit store in Backlog | **P10** (before load test) | In-memory limiter is per-instance; it must be shared before the Apdex gate means anything. |
+| Serial P2→P7 chain | Parallel tracks marked | P6 availability and P9 admin share no tables with their neighbours. |
+
+Acceptance for every slice additionally includes the guardrail gates: unit+integration tests
+green, authZ/tenant-isolation tests for new endpoints, Lighthouse budgets green, no new ZAP
+high/medium (TENANT_GUARDRAIL §7 checklist).
 
 ### P0 — Foundations & hardening (≈1 wk) — ✅ **landed 2026-07-24** (219 tests green)
 - ☑ Migration baseline + seed data + `.env.example` (verified on a disposable Neon branch)
@@ -128,48 +184,147 @@ Lighthouse budgets green, no new ZAP high/medium (TENANT_GUARDRAIL §7 checklist
 - ☑ Browse consumes real `GET /api/gigs` (neighborhood/role/pay/tonight filters, pagination);
   venue browse consumes new public `GET /api/talent`
 - ☑ `/gigs/[id]` detail page per wireframe p4 (minus map, minus submit — estimator live, submit
-  arrives with P2 applications)
+  arrives with P3 applications, renumbered from P2 in the 2026-07-30 re-slice)
 - ☑ Gig lifecycle statuses (DRAFT→PUBLISHED→FILLED→COMPLETED/CANCELLED) + venue Open Gigs table real
 - ☑ Landing "Featured Tonight" reads real published-tonight gigs
 - ☑ Bonus from task-5 carry-overs: nonce CSP, Sentry w/ PII scrub, dormant RLS policies
   (twoFactor plugin migration → Backlog #17)
 
-### P2 — Applications (≈1 wk) — ☐ not started
-- ☐ `applications` table/API; apply panel w/ proposed rate + cover message + 5% fee net estimator
-- ☐ Venue applicant review (shortlist/hire) real; talent "My Applications" real
-- ☐ In-app `notifications` (application received / status changed); sidebar badges real
+### P2 — Trust & compliance spine (≈3–4 d) — ☐ not started · **do this first**
 
-### P3 — Messaging & negotiation (≈1–1.5 wk) — ☐ not started
-- ☐ `conversations` + `messages` (polling or SSE); two-pane UI wired; unread counts
-- ☐ Rate-proposal message kind + "Propose Final Rate" flow; gig-in-focus sidebar
-- ☐ Attachments via object storage presign (replaces base64 pattern); Report Conversation → `reports`
+> Nothing here is feature work, and that is the point: P2.1/P2.2/P2.5 are legal obligations
+> that went live when the deployed app started accepting signups, and P2.3/P2.4 make every
+> slice after this one cheaper to build and harder to get wrong. If time is short, descope in
+> this order: P2.5 docs → P2.4 → never P2.1/P2.2.
 
-### P4 — Availability & scheduling (≈0.5–1 wk) — ☐ not started
-- ☐ `availabilities` CRUD + calendar wiring (3 slots/day per PRD); Available Tonight flag
-- ☐ Conflict warnings vs booked shifts; profile boost surfacing in browse ordering
+- ☐ **P2.1 Legal surface (≈0.5 d, unblocks marketing).** Real `/legal/privacy`, `/legal/terms`,
+  `/contact` routes (versioned, dated, reachable logged-out); footer `#` links wired; cookie
+  audit proving only `better-auth` cookies exist pre-consent (G1, G3).
+- ☐ **P2.2 Self-serve DSR (≈1.5 d).** `GET /api/account/export` — streamed JSON of user +
+  profiles + gigs + applications (+ messages/shifts as those land), rate-limited, audited.
+  `DELETE /api/account` — password (and 2FA when enrolled) re-auth, cascade delete, audit-log
+  actor pseudonymization, Stripe-disconnect hook stubbed for P8. Settings UI for both (G4).
+- ☐ **P2.3 AuthZ matrix harness (≈1 d, force-multiplier).** One declarative table encoding
+  TENANT_GUARDRAIL §6.1, and a generated suite iterating `role × endpoint × (own id, other
+  tenant's id)` asserting 200/401/403 — heaviest on PARTY negative coverage. **A route with
+  no row fails CI**, so authZ cannot be forgotten in P3–P10.
+- ☐ **P2.4 RLS activation (≈0.5 d, Backlog #25).** Create the non-owner Postgres role, GRANT
+  table access, route tenant queries through `withRlsContext`, cut `DATABASE_URL` over, add
+  negative tests (venue A cannot read venue B under the enforcing role). The `0004` policies
+  already exist. From here, every new migration ships its policy in the same file.
+- ☐ **P2.5 Age gate + governance docs (≈0.5 d).** 18+ assertion at signup and the per-gig 21+
+  flag surfaced on the detail page (G12); `docs/ropa.md` + `docs/retention.md` (G2, G7).
 
-### P5 — Live ops & payments (≈1.5–2 wk) — ☐ not started
-- ☐ `shifts` model; check-in/check-out endpoints (idempotent, audited) + venue Active Operations
-  & talent Check In real
-- ☐ Stripe Connect Express onboarding (test mode); destination charges w/ 5% application fee;
-  escrow release 24h after checkout; `payouts` ledger; webhook signature verification
-- ☐ Venue "Payouts Pending" metric real
+**Security gate:** G1/G3/G4/G12 verifiable per TENANT_GUARDRAIL §4.2; the export contains
+every PII table listed in §4.1; delete leaves no orphan rows and pseudonymizes (never deletes)
+the audit trail; RLS negative tests green.
 
-### P6 — Admin & trust (≈1 wk) — ☐ not started
-- ☐ Admin gating (role granted via DB/console only); moderation dashboard: reports triage,
-  user & gig management table (suspend/verify), audit-log viewer + CSV export
-- ☐ KPI cards (users, disputes, traffic) from real aggregates
+### P3 — Applications (≈3–4 d) — ☐ not started · *depends: P2.3*
+- ☐ **P3.1** `applications` table (unique `(gig_id, talent_id)`, proposed rate in integer
+  cents) + `POST /api/gigs/[id]/apply` (TALENT-only, rate-limited, PUBLISHED gigs only); flip
+  the detail page's disabled submit — the 5% estimator is already live from P1.2.
+- ☐ **P3.2** Venue review: `GET /api/venue/applications`; shortlist/hire transitions using the
+  same pure transition-matrix pattern as `gig-lifecycle.ts`; hiring flips the gig to FILLED in
+  one transaction. Dashboard Applicants column + `dashboard/venue/applicants` real.
+- ☐ **P3.3** Talent "My Applications" real; "✓ Applied" state on browse + detail; withdraw.
+- ☐ **P3.4** `notifications` table + bell dropdown + real sidebar badges (finishes Backlog
+  #12). **Built here as shared infrastructure — P5 and P7 emit into it rather than rolling
+  their own.**
 
-### P7 — PWA & alpha polish (≈1 wk) — ☐ not started
-- ☐ `manifest.webmanifest` (name AfterDark, standalone, theme `#121212`, maskable icons)
-- ☐ Service worker via Serwist: precache shell/static, network-first APIs, offline fallback page
-- ☐ Installability + Lighthouse PWA pass; CWV budgets in CI; Apdex k6 gate (TENANT_GUARDRAIL §3)
-- ☐ GDPR user-facing surface: privacy policy, ToS, contact, account export & delete (see §5
-  TENANT_GUARDRAIL §4 — legally required before real users, even alpha testers)
+**Security gate:** a talent may never read another talent's application; a venue sees only
+applications to its own gigs (both directions encoded in the P2.3 matrix); the proposed rate
+is server-validated against the gig, never trusted from the client.
+
+### P4 — Media pipeline (≈2 d) — ☐ not started · *unblocks P5; fixes a live privacy gap*
+- ☐ Presigned upload route (S3/R2) + CDN read URLs; server-side size and MIME enforcement.
+- ☐ **EXIF strip on every image** (GPS in photo metadata is PII — G11) + image resizing.
+- ☐ Migrate existing base64 avatars/portfolio images out of Postgres into object storage
+  (backfill script + fallback read path); tighten CSP `img-src` to the CDN origin.
+
+**Security gate:** no user-supplied file is served from an origin that can execute it; the
+upload route is authenticated and rate-limited; the G11 network audit shows zero third-party
+PII egress.
+
+### P5 — Messaging & negotiation (≈4–5 d) — ☐ not started · *depends: P3, P4*
+- ☐ **P5.1** `conversations` + `messages` schema; participant-scoped reads; polling via
+  TanStack Query (SSE deferred — serverless-friendly); unread counts feed P3.4 notifications.
+- ☐ **P5.2** Two-pane UI wired; `RATE_PROPOSAL` message kind + "Propose Final Rate" flow
+  (accepting one writes the agreed rate onto the application); gig-in-focus sidebar.
+- ☐ **P5.3** Attachments on the P4 pipeline; Report Conversation → `reports` table (feeds P9).
+
+**Security gate:** message reads are participant-scoped *and* RLS-covered; PARTY may open only
+private-party inquiry threads, never gig threads; attachments inherit P4's validation.
+
+### P6 — Availability & scheduling (≈2–3 d) — ☐ not started · **parallel with P5**
+- ☐ `availabilities` CRUD (3 slots/day per PRD) + calendar wiring; Available Tonight flag.
+- ☐ Conflict warnings against booked shifts; availability boost in browse ordering.
+
+*Shares no tables with P5 — safe to run concurrently.*
+
+### P7 — Live ops / shifts (≈3 d) — ☐ not started · *depends: P3.2 hire*
+- ☐ `shifts` model (call time; status SCHEDULED→IN_TRANSIT→CHECKED_IN→CHECKED_OUT).
+- ☐ Check-in/out endpoints: **idempotency keys backed by a DB unique constraint** (§6.3),
+  audited and replay-safe under the midnight burst; venue Active Operations and talent Check
+  In become real.
+
+**Security gate:** talent may check in/out only their own shift, a venue only its own venue's;
+double-submits and out-of-order transitions provably no-op rather than double-count hours.
+
+### P8 — Payments / Stripe Connect (≈4–5 d) — ☐ not started · *depends: P7* · **isolated by design**
+
+> The highest-risk slice in the project: real money, webhooks, PCI posture. It ships alone and
+> is reviewed alone.
+
+- ☐ **P8.1** Connect Express onboarding (test mode); store **only** Stripe account/transfer
+  ids — never PANs or IBANs (SAQ-A posture, §6.4).
+- ☐ **P8.2** Destination charges with a **server-computed** 5% application fee; `payouts`
+  ledger append-only, all money in **integer cents**.
+- ☐ **P8.3** Webhook endpoint with signature verification + replay/idempotency guard; escrow
+  release 24 h after checkout (scheduled job); venue "Payouts Pending" metric real.
+
+**Security gate:** dedicated tests for fee tampering (a client-sent fee is ignored), forged
+and replayed webhook rejection, and double-release prevention; no card data ever touches our
+servers or logs.
+
+### P9 — Admin & trust (≈3 d) — ☐ not started · **parallel with P8** (needs P5.3 reports)
+- ☐ Admin gating (ADMIN granted out-of-band only — self-service escalation is already blocked).
+- ☐ Moderation dashboard: reports triage, user & gig management (suspend/verify), audit-log
+  viewer, **async** CSV export (handlers stay under 1 s, §6.3).
+- ☐ KPI cards from real aggregates.
+
+**Security gate:** every admin action is audited with the actor id; admin reads of private
+messages are logged as moderation events; no admin surface is reachable by any non-ADMIN role.
+
+### P10 — PWA, performance & alpha gate (≈3–4 d) — ☐ not started
+- ☐ **P10.1** `manifest.webmanifest` (AfterDark, standalone, theme `#121212`, maskable icons).
+- ☐ **P10.2** Serwist service worker: precache shell/static, network-first APIs, offline
+  fallback. **Never cache authed API responses; purge caches on logout** (§6.6) — test:
+  logout → offline → no PII retrievable from cache.
+- ☐ **P10.3** Shared rate-limit store (Upstash or a Postgres token bucket, Backlog #21) — the
+  in-memory limiter is per-instance, which makes the Apdex gate meaningless until this lands.
+- ☐ **P10.4** Gates in CI: Lighthouse CWV budgets, k6 Apdex ≥ 0.85 @ T=300 ms
+  (TENANT_GUARDRAIL §3.4 scenarios), `@axe-core/playwright` on the 10 core screens.
+
+**Security gate:** the §6.6 cache-purge test is green; no service-worker route bypasses auth.
+
+### Dependency graph (what can run in parallel)
+
+```
+P2 (spine) ──► P3 (applications) ──► P5 (messaging) ──► P9 (admin)
+                     │                    ▲               ▲
+                     │              P4 (media) ───────────┘
+                     │                    │
+                     └──► P7 (shifts) ──► P8 (payments)
+
+P6 (availability) ── independent after P2; run alongside P5
+P10 (PWA/perf)    ── P10.1/P10.2 can start any time after P2; P10.4 gates last
+```
 
 **Alpha exit gate:** full loop demo (venue posts → talent applies → negotiation → hire →
-check-in/out → sandbox payout → admin audit trail) on the deployed PWA, with TENANT_GUARDRAIL
-§7 checklist signed off. Rough total: **7–9 focused weeks.**
+check-in/out → sandbox payout → admin audit trail) on the deployed PWA, with the
+TENANT_GUARDRAIL §7 checklist signed off **and** the §4.2 GDPR obligations demonstrably live.
+Rough total: **5.5–7 focused weeks** serial; roughly a week less when P6, P9 and P10.1–2 run
+in parallel.
 
 ---
 
@@ -196,8 +351,9 @@ Items noted during the audit that are **not** required for the alpha gate but mu
    p1/p4/p10 show ratings; no reviews model exists), ID verification vendor.
 9. **`revalidateTag` no-op**: `publisher/open-next.config.ts` uses `tagCache: "dummy"` — if ISR
    tag invalidation is ever relied on, configure a real tag cache (or deploy to Vercel).
-10. **Uploads pipeline hardening**: image resizing/thumbnailing, EXIF-strip (GPS metadata =
-    PII), AV scanning on user uploads incl. PDF tech riders.
+10. **Uploads pipeline hardening** — **scheduled as P4** (presign, size/MIME, EXIF-strip,
+    resize, base64 backfill). Still backlog-only: AV scanning on user uploads incl. PDF tech
+    riders.
 11. **Legacy dead code** — ✅ done (P0: `useUpload.ts`, `api/utils/upload.ts`,
     `useHandleStreamResponse.ts`, `api/vitest.config.ts`; P1 2026-07-30: off-spec talent
     create-gig page removed, sidebar nav updated).
@@ -209,8 +365,8 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     toggles, calendar keyboard navigation (beyond the P7 axe smoke tests).
 14. **Data warehouse/analytics**: venue KPIs (avg time-to-hire, filling rate) need event
     capture design; consider a simple `events` table now to avoid losing history.
-15. **Rate-limit store**: P0 rate limiting can be in-memory per-lambda; multi-region scale
-    needs a shared store (Upstash Redis or Postgres-based) — revisit at load-test time.
+15. ~~**Rate-limit store**~~ — superseded by #21, now **scheduled as P10.3** (it must land
+    before the k6 Apdex gate is meaningful).
 16. **iframe embedding posture**: cookies are `SameSite=None`; P0 set CSP `frame-ancestors` to
     `'self'` + configured create.xyz origins (no `X-Frame-Options`, superseded by CSP). Before
     GA, decide whether to keep the builder pathway or lock `frame-ancestors` to `'self'` only.
@@ -232,9 +388,9 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     `NEXT_PUBLIC_SENTRY_DSN` in Vercel to activate.
 20. ~~**oxlint in CI**~~ — **DONE (2026-07-30).** `yarn lint` in web (oxlint, deny-warnings,
     workspace config) + CI step; pre-existing warnings fixed.
-21. **Shared rate-limit store** (was #15's concern): the in-memory `SlidingWindowRateLimiter` is
-    per-instance. For multi-region/serverless fan-out, back `getRateLimiter` with Upstash Redis
-    or a Postgres token-bucket at load-test time.
+21. **Shared rate-limit store** (was #15's concern) — **scheduled as P10.3.** The in-memory
+    `SlidingWindowRateLimiter` is per-instance; back `getRateLimiter` with Upstash Redis or a
+    Postgres token-bucket before the load test, or the Apdex/429 numbers measure nothing.
 22. ~~**Auth on Vercel preview deployments**~~ — **DONE (2026-07-27).** `src/lib/
     deployment-origins.ts` derives this deployment's own origins from `VERCEL_URL`,
     `VERCEL_BRANCH_URL` and `VERCEL_PROJECT_PRODUCTION_URL`, and `auth.ts` spreads them into
@@ -251,12 +407,13 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     cheap (~16 path references across the 3 docs + CI); a full flatten to the repo root would
     remove the need for Vercel's Root Directory setting but forces the mobile-vs-PWA decision
     in #4 — revisit after P7 when that decision is actually made.
-25. **RLS activation** (policies shipped dormant 2026-07-30 in `0004_rls.sql`): create a
-    dedicated **non-owner** Postgres role on Neon, GRANT it table access, point
-    `DATABASE_URL` at it, and route tenant-table queries through
+25. **RLS activation** (policies shipped dormant 2026-07-30 in `0004_rls.sql`) — **scheduled
+    as P2.4**, deliberately early: activating on 4 tenant tables is far cheaper than
+    retrofitting across the 9 that P3–P8 will add, and afterwards every migration ships its
+    policy in the same file. Create a dedicated **non-owner** Postgres role on Neon, GRANT it
+    table access, point `DATABASE_URL` at it, and route tenant-table queries through
     `api/utils/rls.ts#withRlsContext`. Until then the policies are inert (owners bypass
-    non-forced RLS). Verify per TESTING.md §7. Pair with the shared rate-limit store (#21)
-    as pre-load-test hardening.
+    non-forced RLS). Verify per TESTING.md §7.
 26. **Multi-value browse filters**: `GET /api/gigs`/`/api/talent` accept a single
     neighborhood/role; the UI's multi-select refines client-side within the fetched page
     (fine at alpha volumes). Add array params + `= ANY($n)` when gig volume makes it matter.

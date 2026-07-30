@@ -75,7 +75,7 @@ Coverage highlights by area:
    since migration 0005 — harmless if present.)
 3. **Schema + data**:
    ```bash
-   yarn db:migrate          # applies 0001–0004
+   yarn db:migrate          # applies 0001–0005
    yarn db:seed             # demo venue+talent, 4 gigs across statuses (refuses prod)
    yarn db:preview-accounts # the §2 accounts (safe anywhere, idempotent)
    ```
@@ -112,7 +112,7 @@ Each line is a check; all passed 2026-07-30 in Chrome (desktop + mobile viewport
   filters map to validated query params (tonight toggle, pay range, single role/neighborhood
   server-side; multi-select + search refine client-side), pagination Prev/Next appears when
   a page overflows (12/page).
-- Card → detail → estimator as above. Submit is intentionally disabled ("coming soon" — P2).
+- Card → detail → estimator as above. Submit is intentionally disabled ("coming soon" — P3).
 
 **Party loop** (sign in as `party.preview@…`)
 - Can browse all public surfaces; any principal write (e.g. `POST /api/gigs`) returns 403.
@@ -182,7 +182,8 @@ DELETE FROM audit_logs WHERE id = 1;    -- denied (append-only)
 
 ## 8. Known gaps (do not report as regressions)
 
-- Applications/messages/schedule/live-ops/notifications backends land in P2–P5; their UIs are
+- Applications/messages/schedule/live-ops/notifications backends land in P3–P8 (plan re-sliced
+  2026-07-30 — see DEV_TIMELINE §2); their UIs are
   present with sample data (labeled where misleading).
 - Map views deferred (Backlog #1). Multi-select browse filters refine client-side within the
   fetched page until the API grows array params.

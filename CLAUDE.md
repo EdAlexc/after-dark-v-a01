@@ -154,11 +154,11 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | ✅ real `GET /api/gigs` (P1.1): validated filters, pagination, HOT/NEW badges; multi-select refines client-side (Backlog #26) |
 | Browse talent (venue directory) | — | `dashboard/venue/browse/page.tsx` | ✅ real public `GET /api/talent` (P1.1); saved-talent list is client-local |
 | Browse gigs: map view (3.2) | p2 | — | ❌ no map integration |
-| Gig details + application + 5% fee estimator (3.2) | p4 | `gigs/[id]/page.tsx` → `GET /api/gigs/[id]` | ✅ detail + live estimator (P1.2); **submit disabled until P2 applications** |
+| Gig details + application + 5% fee estimator (3.2) | p4 | `gigs/[id]/page.tsx` → `GET /api/gigs/[id]` | ✅ detail + live estimator (P1.2); **submit disabled until P3 applications** |
 | Availability calendar, 3 slots (3.2) | p7 | `dashboard/talent/schedule/page.tsx` | 🟡 mock calendar; no `availabilities` table/API |
 | Talent dashboard: stats, applications, upcoming, check-in (3.2) | p8 | `dashboard/talent/page.tsx` | 🟡 all `STATS`/mock |
 | Talent public profile editor (3.2) | p9 | `dashboard/talent/profile/page.tsx` → `/api/talent/profile` | ✅ real; media = base64 in DB (placeholder) |
-| Venue dashboard: metrics, open gigs, live ops (3.3) | p10 | `dashboard/venue/page.tsx` | 🟡→✅ Open Gigs real w/ lifecycle actions (`GET /api/venue/gigs` + `PATCH /api/gigs/[id]`, P1.3); Active-Gigs/Filling-Rate stats real; payouts/time-to-hire muted until P5/P2; Live Tonight labeled *Sample* |
+| Venue dashboard: metrics, open gigs, live ops (3.3) | p10 | `dashboard/venue/page.tsx` | 🟡→✅ Open Gigs real w/ lifecycle actions (`GET /api/venue/gigs` + `PATCH /api/gigs/[id]`, P1.3); Active-Gigs/Filling-Rate stats real; payouts/time-to-hire muted until P8/P3; Live Tonight labeled *Sample* |
 | Create gig wizard (3.3) | p3 | `dashboard/venue/create-gig/page.tsx` → POST `/api/gigs` | ✅ persists; "Live Analytics" candidates are mock |
 | Applicant tracking: shortlist/hire (3.3) | p10 | `dashboard/{talent,venue}/applicants/page.tsx` | 🟡 `MOCK_APPLICATIONS` |
 | Messages: 2-pane chat, attachments, propose-rate (3.4) | p6 | `dashboard/*/messages/page.tsx` | 🟡 UI only; no conversations/messages backend |
@@ -315,7 +315,7 @@ Add, via a migration tool (recommend **drizzle-kit** or plain SQL migrations che
   (extend the `TALENT|VENUE|ADMIN` enum) with a minimal `party_profiles` row (or just the
   `user` record) and a public-content-only authZ scope — deny-by-default on everything in the
   gig/application/message/shift/payout tables; a private-party inquiry to a venue routes through
-  the same conversations model (P3) but flagged as a consumer inquiry, not a gig application.
+  the same conversations model (P5) but flagged as a consumer inquiry, not a gig application.
   Add PARTY to the TENANT_GUARDRAIL §6.1 authZ matrix (public reads ✅, all principal writes ❌).
 - Recommended defense-in-depth: Postgres **RLS** policies per table keyed on
   `current_setting('app.user_id')`, plus application-level checks. Verification procedures in
@@ -367,29 +367,39 @@ data:** sign up → profiles → publish gig → browse/apply → negotiate in m
 check-in/out → (sandbox) Stripe Connect escrow payout → admin can see audit trail — meeting the
 guardrails (Apdex ≥ 0.85 fallback / ≥ 0.94 target at T=300ms, CWV "good", OWASP/GDPR checklist).
 
-Build as **vertical slices** (each = schema + API + UI + tests + guardrail checks), in order:
+Build as **vertical slices** (each = schema + API + UI + tests + guardrail checks). P0–P1 are
+done; the remaining phases were **re-sliced 2026-07-30** to front-load legally-blocking
+compliance and the force-multipliers that make later slices cheaper to secure — the rationale,
+old→new map, dependency graph, and per-slice security gates live in DEV_TIMELINE §2 (which is
+the authoritative plan; this list is the summary).
 
-- **P0 — Foundations** (blocks everything): migration baseline for §6.1 tables; `middleware.ts`
+- **P0 — Foundations** ✅ (blocks everything): migration baseline for §6.1 tables; `middleware.ts`
   auth+RBAC; zod validation on all route bodies; security headers; fix findings 1/3/4;
-  structured logger + `audit_logs`; CI (typecheck w/o `ignoreBuildErrors`, vitest, lint,
-  `yarn npm audit`); seed script; remove/park dead code; rename "Anything App" metadata.
-- **P1 — Gigs live end-to-end**: browse page consumes real `GET /api/gigs` (filters,
-  pagination); `/gigs/[id]` detail page; gig status lifecycle; venue dashboard Open Gigs real.
-- **P2 — Applications**: `applications` slice; apply panel w/ 5% fee estimator; venue
-  applicant review shortlist/hire; talent My Applications; notifications (in-app).
-- **P3 — Messaging & negotiation**: conversations/messages slice (polling/SSE); rate-proposal
-  message kind; gig-in-focus sidebar; report conversation → `reports`.
-- **P4 — Availability & scheduling**: availabilities CRUD + calendar UI wiring; Available
-  Tonight flag; conflict detection vs booked shifts.
-- **P5 — Live ops & payments**: `shifts` check-in/out with idempotent transitions; Stripe
-  Connect (Express) onboarding, destination charges + escrow release 24h post-completion
-  (test mode for alpha); payout ledger; venue Active Operations real.
-- **P6 — Admin & trust**: admin role gating; moderation dashboard (reports triage, user & gig
-  management, audit log viewer, CSV export); user verification flag.
-- **P7 — PWA & polish**: `manifest.webmanifest` + icons + theme color `#121212`; service
-  worker (recommend **Serwist**) with offline app shell + cached static assets (never cache
-  authed API responses beyond short SWR); installability pass; Lighthouse PWA + CWV budget in
-  CI; uploads to object storage; landing page real featured gigs.
+  structured logger + `audit_logs`; CI; seed script; dead code removed; metadata renamed.
+- **P1 — Gigs live end-to-end** ✅: browse consumes real `GET /api/gigs` (filters, pagination);
+  `/gigs/[id]` detail page; gig status lifecycle; venue dashboard Open Gigs real.
+- **P2 — Trust & compliance spine** (do first): legal pages + cookie audit; self-serve data
+  export/delete; **authZ matrix test harness** (a route without a row fails CI); RLS
+  activation; 18+ age gate + RoPA/retention docs. Legally live obligations plus the
+  multipliers every later slice leans on.
+- **P3 — Applications**: `applications` slice; apply panel (5% estimator already live); venue
+  shortlist/hire; talent My Applications; `notifications` as shared infra for P5/P7.
+- **P4 — Media pipeline**: presigned object-storage uploads, size/MIME limits, **EXIF strip**,
+  base64→storage backfill. Unblocks P5 attachments and closes a live privacy gap.
+- **P5 — Messaging & negotiation**: conversations/messages (polling); rate-proposal message
+  kind; gig-in-focus sidebar; report conversation → `reports`.
+- **P6 — Availability & scheduling**: availabilities CRUD + calendar wiring; Available Tonight;
+  conflict detection. *Parallel with P5.*
+- **P7 — Live ops / shifts**: `shifts` model; idempotent, audited check-in/out (idempotency
+  keys backed by a unique constraint); venue Active Operations + talent Check In real.
+- **P8 — Payments / Stripe Connect** (isolated by design): Express onboarding; destination
+  charges with a server-computed 5% fee; append-only `payouts` ledger in integer cents;
+  webhook signature verification + replay guard; escrow release 24 h post-checkout.
+- **P9 — Admin & trust**: admin gating; moderation dashboard (reports triage, user & gig
+  management, audit-log viewer, async CSV export); KPI cards from real aggregates.
+- **P10 — PWA, performance & alpha gate**: manifest + icons; Serwist service worker (never
+  cache authed responses, purge on logout); shared rate-limit store; Lighthouse CWV, k6 Apdex
+  and axe gates in CI.
 
 Deferred post-alpha: map view w/ pins, external calendar/ticketing integrations, mobile (Expo)
 app, WebSockets, push notifications, promoter payment triangle, advanced matching ("Live
