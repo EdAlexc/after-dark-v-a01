@@ -36,8 +36,8 @@ export const POST = withRoute('gigs.create', async (request) => {
   const venueId = venueRows[0].id;
 
   const result = await sql`
-    INSERT INTO gigs (venue_id, title, role_needed, description, start_time, end_time, base_rate, tips_included, status)
-    VALUES (${venueId}, ${gig.title}, ${gig.role_needed}, ${gig.description}, ${gig.start_time}, ${gig.end_time}, ${gig.base_rate}, ${gig.tips_included}, ${gig.status})
+    INSERT INTO gigs (venue_id, title, role_needed, description, start_time, end_time, base_rate, tips_included, age_requirement, status)
+    VALUES (${venueId}, ${gig.title}, ${gig.role_needed}, ${gig.description}, ${gig.start_time}, ${gig.end_time}, ${gig.base_rate}, ${gig.tips_included}, ${gig.age_requirement}, ${gig.status})
     RETURNING *
   `;
 

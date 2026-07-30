@@ -23,7 +23,7 @@ function put(body: unknown): Request {
 function sqlWithRole(role: string | null, hasProfile = false) {
   mocks.sql.mockImplementation(async (first: unknown, ...rest: unknown[]) => {
     const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
-    if (text.includes('SELECT role FROM "user"')) return role ? [{ role }] : [];
+    if (text.includes('SELECT role FROM "user"')) return [{ role }];
     if (text.includes('SELECT id FROM talent_profiles')) return hasProfile ? [{ id: 'tp1' }] : [];
     if (text.startsWith('UPDATE "talent_profiles"')) {
       return [{ id: 'tp1', ...(rest[0] ? {} : {}) }];
@@ -45,7 +45,12 @@ describe('GET /api/talent/profile', () => {
     expect((await GET(new Request('http://t.local'), {})).status).toBe(401);
 
     mocks.getSession.mockResolvedValue(SESSION);
-    mocks.sql.mockResolvedValue([]);
+    // Role lookup must still resolve (guard checks the account exists); the
+    // profile query is what returns nothing here.
+    mocks.sql.mockImplementation(async (first: unknown) => {
+      const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
+      return text.includes('SELECT role FROM "user"') ? [{ role: 'TALENT' }] : [];
+    });
     const res = await GET(new Request('http://t.local'), {});
     await expect(res.json()).resolves.toEqual({ profile: null });
   });

@@ -7,8 +7,10 @@ import {
   Bell,
   Camera,
   CheckCircle2,
+  Download,
   Eye,
   EyeOff,
+  Trash2,
   KeyRound,
   Lock,
   Mail,
@@ -361,6 +363,110 @@ function TwoFASetupModal({ onEnabled, onClose }: { onEnabled: () => void; onClos
   );
 }
 
+// ─── Delete-account modal (G4 erasure) ────────────────────────────────────────
+
+/**
+ * Irreversible, so it asks for two independent things: the account password
+ * (re-authentication, in case the session is not really the owner) and the
+ * literal word DELETE (intent, in case the click was a mistake).
+ */
+function DeleteAccountModal({ onClose }: { onClose: () => void }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    const res = await fetch('/api/account', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password, confirm }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      setError(body?.error ?? 'Could not delete account');
+      setBusy(false);
+      return;
+    }
+    // The account (and its sessions) are gone — leave the authed area entirely.
+    window.location.href = '/?deleted=1';
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="bg-[#1E1E1E] border border-red-500/20 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center flex-shrink-0">
+            <Trash2 className="w-5 h-5 text-red-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-white">Delete your account</h3>
+            <p className="text-xs text-white/40">This cannot be undone</p>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3 mb-5">
+          <p className="text-xs text-white/50 leading-relaxed">
+            Deleting removes your profile, your gigs, and your applications. Your security
+            audit trail is retained in pseudonymized form — it will no longer identify you.
+            Consider <span className="text-white/70 font-semibold">exporting your data</span>{' '}
+            first.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <label className="block">
+            <span className="text-[11px] font-semibold text-white/40 uppercase tracking-widest">
+              Confirm your password
+            </span>
+            <input
+              type="password"
+              autoFocus
+              className={`${inputCls} mt-1.5`}
+              placeholder="Your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-semibold text-white/40 uppercase tracking-widest">
+              Type DELETE to confirm
+            </span>
+            <input
+              type="text"
+              className={`${inputCls} mt-1.5 font-mono tracking-widest`}
+              placeholder="DELETE"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+            />
+          </label>
+        </div>
+
+        {error && <p className="text-sm text-red-400 mt-3">{error}</p>}
+
+        <div className="flex gap-3 mt-5">
+          <Button
+            variant="outline"
+            className="flex-1 border-white/10 text-white/60 hover:bg-white/5"
+            onClick={onClose}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold"
+            disabled={busy || password.length === 0 || confirm !== 'DELETE'}
+            onClick={() => void remove()}
+          >
+            {busy ? 'Deleting…' : 'Delete forever'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Disable 2FA Modal ─────────────────────────────────────────────────────────
 
 function DisableTwoFAModal({
@@ -485,6 +591,8 @@ function SettingsInner() {
   // 2FA state (flows live in the modals via the better-auth twoFactor plugin)
   const [showSetup, setShowSetup] = useState(false);
   const [showDisable, setShowDisable] = useState(false);
+  // Account erasure (G4)
+  const [showDelete, setShowDelete] = useState(false);
 
   // ── load settings ──
   const { data: settingsData } = useQuery({
@@ -593,6 +701,7 @@ function SettingsInner() {
       {showDisable && (
         <DisableTwoFAModal onDisabled={onTwoFADisabled} onClose={() => setShowDisable(false)} />
       )}
+      {showDelete && <DeleteAccountModal onClose={() => setShowDelete(false)} />}
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
@@ -934,6 +1043,65 @@ function SettingsInner() {
                   </Button>
                 )}
               </div>
+            </div>
+          </Section>
+
+          {/* ── Privacy & Data (GDPR self-serve, G4) ── */}
+          <Section
+            icon={<Download className="w-4 h-4" />}
+            title="Privacy & Data"
+            subtitle="Your data is yours — take it with you or erase it"
+          >
+            <div className="space-y-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-bold text-white">Download my data</p>
+                  <p className="text-xs text-white/40 mt-0.5 leading-relaxed">
+                    A machine-readable JSON copy of your account, profile, gigs and activity
+                    log. Credentials are excluded on purpose.
+                  </p>
+                </div>
+                <a
+                  href="/api/account/export"
+                  download
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-md bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export
+                </a>
+              </div>
+
+              <div className="border-t border-white/5 pt-5 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-bold text-red-400">Delete my account</p>
+                  <p className="text-xs text-white/40 mt-0.5 leading-relaxed">
+                    Permanently removes your profile, gigs and applications. Your security
+                    audit trail is kept but no longer identifies you.{' '}
+                    <span className="text-white/60 font-semibold">This cannot be undone.</span>
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDelete(true)}
+                  className="flex-shrink-0 border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-400 font-semibold text-xs gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete
+                </Button>
+              </div>
+
+              <p className="text-[11px] text-white/25 leading-relaxed border-t border-white/5 pt-4">
+                Read our{' '}
+                <a href="/legal/privacy" className="text-white/40 hover:text-[#00FFCC] underline">
+                  Privacy Policy
+                </a>{' '}
+                for what we collect and how long we keep it, or{' '}
+                <a href="/contact" className="text-white/40 hover:text-[#00FFCC] underline">
+                  contact us
+                </a>{' '}
+                for any request this page doesn't cover.
+              </p>
             </div>
           </Section>
 

@@ -35,7 +35,7 @@ function post(body: unknown): Request {
 function sqlWithRole(role: string | null, extra?: (text: string) => unknown[] | undefined) {
   mocks.sql.mockImplementation(async (first: unknown, ..._rest: unknown[]) => {
     const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
-    if (text.includes('SELECT role FROM "user"')) return role ? [{ role }] : [];
+    if (text.includes('SELECT role FROM "user"')) return [{ role }];
     if (text.includes('SELECT id FROM venue_profiles')) return [{ id: 'vp-1' }];
     if (text.includes('INSERT INTO gigs')) return [{ id: 'g-1', status: 'PUBLISHED' }];
     return extra?.(text) ?? [];

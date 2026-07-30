@@ -309,22 +309,31 @@ export default function LandingPage() {
             </h4>
             <ul className="space-y-4 text-sm font-medium text-white/60">
               <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
+                <Link
+                  href="/dashboard/talent/browse"
+                  className="hover:text-[#00FFCC] transition-colors"
+                >
                   Browse Gigs
                 </Link>
               </li>
               <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
+                <Link
+                  href="/dashboard/venue/create-gig"
+                  className="hover:text-[#00FFCC] transition-colors"
+                >
                   Post a Listing
                 </Link>
               </li>
               <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
+                <Link href="/dashboard/venue" className="hover:text-[#00FFCC] transition-colors">
                   Venues
                 </Link>
               </li>
               <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
+                <Link
+                  href="/dashboard/venue/browse"
+                  className="hover:text-[#00FFCC] transition-colors"
+                >
                   Talent Network
                 </Link>
               </li>
@@ -335,25 +344,23 @@ export default function LandingPage() {
             <h4 className="font-bold mb-6 uppercase tracking-widest text-xs text-white/40">
               Company
             </h4>
+            {/* Trimmed to destinations that exist. About/Careers/Press return when
+                there are real pages behind them — a dead link costs more trust
+                than a missing one. */}
             <ul className="space-y-4 text-sm font-medium text-white/60">
               <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
-                  About Us
+                <Link href="/legal/terms" className="hover:text-[#00FFCC] transition-colors">
+                  Safety &amp; Trust
                 </Link>
               </li>
               <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
-                  Careers
+                <Link href="/contact" className="hover:text-[#00FFCC] transition-colors">
+                  Contact Support
                 </Link>
               </li>
               <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
-                  Safety & Trust
-                </Link>
-              </li>
-              <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
-                  Press
+                <Link href="/legal/privacy" className="hover:text-[#00FFCC] transition-colors">
+                  Your Data &amp; Rights
                 </Link>
               </li>
             </ul>
@@ -363,25 +370,31 @@ export default function LandingPage() {
             <h4 className="font-bold mb-6 uppercase tracking-widest text-xs text-white/40">
               Legal
             </h4>
+            {/* Real routes (G1). "Cookie Policy" and "Payment Terms" are sections of
+                the two documents rather than separate pages — link to them, don't
+                invent pages that would go stale. */}
             <ul className="space-y-4 text-sm font-medium text-white/60">
               <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
+                <Link href="/legal/terms" className="hover:text-[#00FFCC] transition-colors">
                   Terms of Service
                 </Link>
               </li>
               <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
+                <Link href="/legal/privacy" className="hover:text-[#00FFCC] transition-colors">
                   Privacy Policy
                 </Link>
               </li>
               <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
+                <Link
+                  href="/legal/privacy#cookies"
+                  className="hover:text-[#00FFCC] transition-colors"
+                >
                   Cookie Policy
                 </Link>
               </li>
               <li>
-                <Link href="#" className="hover:text-[#00FFCC] transition-colors">
-                  Payment Terms
+                <Link href="/contact" className="hover:text-[#00FFCC] transition-colors">
+                  Contact Support
                 </Link>
               </li>
             </ul>

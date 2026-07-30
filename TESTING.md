@@ -2,8 +2,8 @@
 
 > How to verify the app end-to-end: automated suites, manual flows, security probes, and the
 > shared preview accounts. Companion to [CLAUDE.md](CLAUDE.md) (architecture) and
-> [DEV_TIMELINE.MD](DEV_TIMELINE.MD) (status). Last full pass: **2026-07-30** (P1 slice + 2FA
-> plugin migration + oxlint — every check below was executed and green on that date).
+> [DEV_TIMELINE.MD](DEV_TIMELINE.MD) (status). Last full pass: **2026-07-30** (P2 trust &
+> compliance spine — every check below was executed and green on that date).
 
 ---
 
@@ -12,7 +12,7 @@
 Real, DB-backed, and covered by the procedures below: auth (email/password + social),
 onboarding/roles, talent & venue profiles, settings (account, password, 2FA), **gig create →
 publish → browse → detail → lifecycle transitions**, public talent directory, landing "Hot Gigs
-Tonight". Still UI-with-sample-data (do not file bugs against these): messages, schedule
+Tonight", **legal pages, 18+/21+ age gating, and self-serve data export + account deletion**. Still UI-with-sample-data (do not file bugs against these): messages, schedule
 calendar, applicants (both roles), venue "Live Tonight" rail (labeled *Sample*), talent
 dashboard stats. Full matrix: CLAUDE.md §4.
 
@@ -38,14 +38,13 @@ real payment data enters the database.
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 245 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 373 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
 ```
 
-(The count dropped from 285 → 245 when the hand-rolled TOTP/SecretBox suites left with the
-better-auth twoFactor migration — the plugin now owns that logic. Local quirk: in a
+(245 → 373 with P2: the generated authZ matrix contributes 112 on its own. Local quirk: in a
 `.claude/worktrees/*` checkout oxlint needs `--no-ignore` because the parent repo's
 `.gitignore` ignores `.claude/`; CI checkouts are unaffected.)
 
@@ -60,9 +59,16 @@ Coverage highlights by area:
   idempotent PATCH, concurrent-update guard, UUID validation before SQL.
 - **Client money/time helpers** (`lib/gigs`): 5% fee math (net+fee=gross invariant), NUMERIC
   string parsing, HOT/NEW urgency windows, shift-hour math.
+- **AuthZ matrix** (`api/utils/authz-matrix.ts` + its suite, 112 tests): every route × every
+  actor (anon/TALENT/VENUE/PARTY/ADMIN) × own-vs-other-tenant, plus a **coverage gate** that
+  fails CI when a `route.ts` has no matrix row. This is the artifact TENANT_GUARDRAIL §6.1
+  asks for — read it first when reviewing any authZ question.
+- **DSR** (`api/utils/account-data.ts`): export completeness and self-describing exclusions,
+  no credential material in any query, per-collection LIMITs, and erasure ordering
+  (pseudonymize the audit trail *before* deleting the user, or the link is unrecoverable).
 - **Security**: middleware auth gate + callbackUrl smuggling, **nonce CSP** (per-request nonce,
   no `unsafe-inline` script-src), security headers, Sentry PII scrub, RLS migration structure,
-  TOTP RFC vectors, AES-GCM tampering, rate-limit windows, redirect sanitizer, migration
+  **deleted-account session invalidation**, rate-limit windows, redirect sanitizer, migration
   runner ordering.
 
 ## 4. Local end-to-end verification (repeatable procedure)
@@ -75,7 +81,7 @@ Coverage highlights by area:
    since migration 0005 — harmless if present.)
 3. **Schema + data**:
    ```bash
-   yarn db:migrate          # applies 0001–0004
+   yarn db:migrate          # applies 0001–0006
    yarn db:seed             # demo venue+talent, 4 gigs across statuses (refuses prod)
    yarn db:preview-accounts # the §2 accounts (safe anywhere, idempotent)
    ```
@@ -112,7 +118,47 @@ Each line is a check; all passed 2026-07-30 in Chrome (desktop + mobile viewport
   filters map to validated query params (tonight toggle, pay range, single role/neighborhood
   server-side; multi-select + search refine client-side), pagination Prev/Next appears when
   a page overflows (12/page).
-- Card → detail → estimator as above. Submit is intentionally disabled ("coming soon" — P2).
+- Card → detail → estimator as above. Submit is intentionally disabled ("coming soon" — P3).
+
+**Legal surface & cookies (P2.1 — G1/G3, verified 2026-07-30)**
+- `/legal/privacy`, `/legal/terms`, `/contact` all return 200 **logged out** (they must be
+  readable by a regulator or a prospective user who has no account).
+- Each document shows a version and effective date sourced from `src/lib/legal.ts` — bump both
+  there when the text changes substantively.
+- Footer legal links resolve; no `href="#"` remains in the footer. "Cookie Policy" anchors to
+  `/legal/privacy#cookies`.
+- **Cookie audit**: load a legal page logged-out and confirm **no `Set-Cookie` response header
+  and no non-`better-auth` cookies** in DevTools → Application. That is what lets us ship
+  without a consent banner; the moment an analytics tag appears, G3 changes.
+
+**Age gate (P2.5 — G12)**
+- Signup shows an "I am 18 or older" checkbox; **Join is disabled until it is ticked**, and
+  submitting without it errors rather than creating an account.
+- After signup, `user.age_confirmed_at` is stamped via `POST /api/account/age-confirm` (no
+  body — the timestamp is server-side `NOW()`, never client-supplied). Replaying it is a
+  no-op: the first attestation wins, so the legal record can't be rewritten.
+- Creating a gig with the 21+ toggle persists `age_requirement = 21`; the detail page shows a
+  **21+ ONLY** badge and an inline "You must be 21 or older to work this gig" line.
+- `age_requirement: 16` (or anything outside 18/21) is rejected 400 by schema *and* by a DB
+  CHECK constraint.
+
+**Privacy & Data — DSR (P2.2 — G4, verified 2026-07-30)**
+1. Settings → **Privacy & Data** → *Export* downloads
+   `afterdark-data-export-<date>.json` with `Content-Disposition: attachment` and
+   `Cache-Control: no-store, private`.
+2. The file contains `user`, `talent_profile`, `venue_profile`, `gigs`, `audit_log`, plus a
+   `meta.excluded` list naming what is deliberately withheld (password hash, 2FA secret and
+   backup codes, session tokens). **Grep it for credential material — there must be none.**
+3. *Delete* requires **both** the account password and the typed word `DELETE`; either one
+   wrong returns 400 and changes nothing.
+4. After deletion the user row is gone, profiles/gigs cascade, and the audit trail survives
+   with `actor_id` rewritten to `deleted:<hmac>` — never the original id.
+5. **Regression to watch (found and fixed in P2):** a deleted account's cookie must stop
+   working *immediately*. better-auth caches the session in the cookie for 7 days, so
+   `getSession` still succeeds after erasure — `AuthGuard` now confirms the user row exists on
+   every authenticated request. Canary: delete an account, then reuse the same cookie on any
+   authenticated endpoint and expect **401**, not 200. (The same check signs out a session
+   whose database was swapped underneath it, which is how it first showed up locally.)
 
 **Party loop** (sign in as `party.preview@…`)
 - Can browse all public surfaces; any principal write (e.g. `POST /api/gigs`) returns 403.
@@ -155,6 +201,16 @@ curl -s -o /dev/null -w '%{http_code}\n' $BASE/api/venue/gigs                # �
 curl -s "$BASE/api/gigs?status=DRAFT" | grep -c DRAFT                        # → 0
 ```
 
+```bash
+# Data-subject endpoints are session-scoped — there is no id to tamper with
+curl -s -o /dev/null -w '%{http_code}\n' $BASE/api/account/export             # → 401 anon
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H 'Content-Type: application/json' \
+  -d '{"password":"x","confirm":"DELETE"}' $BASE/api/account                   # → 401 anon
+# Erasure needs BOTH factors
+#   wrong password  → 400 "Password is incorrect"
+#   confirm != DELETE → 400 "Type DELETE to confirm account deletion"
+```
+
 **CSP**: `curl -sI $BASE/ | grep -i content-security-policy` → `script-src 'self' 'nonce-…'
 'strict-dynamic'` (a **fresh nonce per request** — run twice and diff), no `unsafe-inline` in
 script-src, `frame-ancestors 'self'` (+ configured builder origins). Pages must load with an
@@ -164,29 +220,58 @@ script-src, `frame-ancestors 'self'` (+ configured builder origins). Pages must 
 With a DSN, trigger an error and confirm in the Sentry UI that the event has no cookies,
 headers, email, or phone — only `user.id` (scrubber: `src/lib/sentry-scrub.ts` + tests).
 
-## 7. RLS (staged defense-in-depth)
+## 7. RLS (verified; production cutover pending)
 
-`migrations/0004_rls.sql` enables RLS + policies on `talent_profiles`, `venue_profiles`,
-`gigs`, `audit_logs`, keyed on `current_setting('app.user_id'/'app.role')` (set per-request via
-`src/app/api/utils/rls.ts`). While the app connects as the Neon **owner role the policies are
-dormant** (owners bypass non-forced RLS) — activation = create a non-owner role, GRANT, point
-`DATABASE_URL` at it (see the migration header). To verify enforcement on a Neon branch:
+`migrations/0004_rls.sql` declares the policies and `0006` GRANTs a least-privilege role.
+**As of 2026-07-30 these are proven to work** — but they are still inert in production,
+because the app connects as the table owner and owners bypass non-forced RLS. The full
+runbook, including why the cutover is gated on wiring rather than an env var, is
+[`docs/rls-cutover.md`](docs/rls-cutover.md).
 
-```sql
-SET ROLE <non_owner_role>;
-SELECT set_config('app.user_id', '<some-user-id>', false);
-SELECT count(*) FROM gigs;              -- only PUBLISHED + own-venue rows
-UPDATE gigs SET status='DRAFT' WHERE id='<other-venues-gig>';  -- 0 rows
-DELETE FROM audit_logs WHERE id = 1;    -- denied (append-only)
+Re-verify against any Neon branch:
+
+```bash
+# 1. Create the role on the branch, then re-run migrations so 0006 GRANTs to it
+#    CREATE ROLE afterdark_app WITH LOGIN PASSWORD '…' NOBYPASSRLS;
+yarn db:migrate && yarn db:seed
+
+# 2. Prove isolation as the non-owner role (10 checks; exits non-zero on any failure)
+OWNER_URL=<owner conn> RLS_URL=<afterdark_app conn> yarn db:verify-rls
 ```
+
+What it asserts, and why each matters:
+
+| Check | Why |
+|---|---|
+| Connected role has `rolbypassrls = false` | Without this the rest proves nothing |
+| Context-less read sees only `PUBLISHED` gigs | Default deny for unscoped queries |
+| Another venue's DRAFT invisible **by direct id** | Existence itself must not leak |
+| …still invisible with the attacker's own valid context | Context is not a skeleton key |
+| Venue **can** read its own drafts with context | Positive control — the policy scopes, not blanket-denies |
+| Cross-tenant `UPDATE` affects 0 rows | Writes are scoped, not just reads |
+| `audit_logs` `UPDATE`/`DELETE` denied | Append-only by privilege, not merely by convention |
+| Role cannot run DDL | Blast radius of a compromised app credential |
+| Public talent directory still readable | The product still works under RLS |
+
+⚠️ Never point this at the production branch: it inserts a second "rival" tenant on purpose.
 
 ## 8. Known gaps (do not report as regressions)
 
-- Applications/messages/schedule/live-ops/notifications backends land in P2–P5; their UIs are
+- Applications/messages/schedule/live-ops/notifications backends land in P3–P8 (plan re-sliced
+  2026-07-30 — see DEV_TIMELINE §2); their UIs are
   present with sample data (labeled where misleading).
 - Map views deferred (Backlog #1). Multi-select browse filters refine client-side within the
   fetched page until the API grows array params.
 - Legacy hand-rolled 2FA enrollments were cleared by migration 0005 (they never gated
   sign-in); affected users simply re-enroll through the plugin flow.
+- **RLS is verified but not yet enforcing in production** — the app still connects as the
+  table owner. App-level authZ (proven by the matrix suite) is the active control; RLS is the
+  defence-in-depth layer awaiting the cutover in `docs/rls-cutover.md`.
+- **Uploaded images are not EXIF-stripped** and profile media still lives base64 in Postgres —
+  a known privacy gap, scheduled as P4 and recorded in `docs/ropa.md` §5.
+- Legal copy is written to match what the code actually does, but has **not been reviewed by
+  counsel**; that is required before general availability, not before alpha.
+- No automated retention-purge job yet — log retention relies on provider defaults
+  (`docs/retention.md` §4).
 - `tonightOnly` uses a rolling 24h window (fixed 2026-07-30; was a UTC calendar-date match
   that dropped late-night gigs).

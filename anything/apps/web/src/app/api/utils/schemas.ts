@@ -79,6 +79,12 @@ export const GigCreateSchema = z
     end_time: timestamp,
     base_rate: rate,
     tips_included: z.boolean().optional().default(false),
+    // Minimum age to work the gig (G12). Only the platform floor (18) and the
+    // alcohol-service/21+ room are valid — matches the DB CHECK in 0006.
+    age_requirement: z
+      .union([z.literal(18), z.literal(21)])
+      .optional()
+      .default(18),
     status: z.enum(['DRAFT', 'PUBLISHED']).optional().default('DRAFT'),
   })
   .superRefine((gig, ctx) => {
@@ -190,6 +196,14 @@ export const ChangePasswordSchema = z
 
 // 2FA enrollment/verification bodies are validated by the better-auth
 // twoFactor plugin's own endpoints (Backlog #17) — no app schema needed.
+
+// ─── Account / data-subject requests (G4) ─────────────────────────────────────
+
+/** Erasure requires the password again plus a typed confirmation. */
+export const AccountDeleteSchema = z.object({
+  password: z.string().min(1).max(200),
+  confirm: z.string().trim().max(20),
+});
 
 export type RoleSelection = z.infer<typeof RoleSelectionSchema>;
 export type GigCreate = z.infer<typeof GigCreateSchema>;

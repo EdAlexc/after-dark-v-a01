@@ -9,10 +9,20 @@ import { ApiError } from '../route-kit';
 
 const USER: SessionUser = { id: 'u1', email: 'u1@example.com', name: 'U One' };
 
-function guardWith(user: SessionUser | null, role: string | null): AuthGuard {
+/**
+ * `role: null` means "user exists but hasn't onboarded"; `exists: false` means
+ * the account row is gone (deleted). Those are different outcomes — 403 vs 401
+ * — which is exactly what the P2 deletion bug turned on.
+ */
+function guardWith(
+  user: SessionUser | null,
+  role: string | null,
+  exists = true
+): AuthGuard {
   const deps: GuardDeps = {
     getSessionUser: async () => user,
-    getUserRole: async (userId) => (userId === USER.id ? role : null),
+    getUserRecord: async (userId) =>
+      exists && userId === USER.id ? { role: role as never } : null,
   };
   return new AuthGuard(deps);
 }
@@ -38,6 +48,13 @@ describe('AuthGuard.requireSession', () => {
       guardWith({ id: '', email: '' } as SessionUser, null).requireSession(),
       401
     );
+  });
+
+  it('throws 401 when the account was deleted but the cookie is still valid', async () => {
+    // better-auth caches the session in the cookie for 7 days, so getSession
+    // succeeds after erasure. Found in P2 verification: without the existence
+    // check, a just-deleted user kept calling authenticated endpoints.
+    await expectStatus(guardWith(USER, 'TALENT', false).requireSession(), 401);
   });
 });
 
@@ -69,20 +86,24 @@ describe('AuthGuard.requireRole (authZ matrix, TENANT_GUARDRAIL §6.1)', () => {
     await expectStatus(guardWith(null, null).requireRole('VENUE'), 401);
   });
 
+  it('throws 401 for a deleted account, never 403 (it is not a role problem)', async () => {
+    await expectStatus(guardWith(USER, 'VENUE', false).requireRole('VENUE'), 401);
+  });
+
   it('supports multi-role gates', async () => {
     const result = await guardWith(USER, 'TALENT').requireRole('TALENT', 'VENUE');
     expect(result.role).toBe('TALENT');
   });
 
   it('never trusts a client-supplied role string (DB is the source)', async () => {
-    // The guard only consults deps.getUserRole; there is no code path for a
+    // The guard only consults deps.getUserRecord; there is no code path for a
     // request-provided role. This assertion documents the invariant.
     const deps: GuardDeps = {
       getSessionUser: async () => USER,
-      getUserRole: vi.fn(async () => 'TALENT'),
+      getUserRecord: vi.fn(async () => ({ role: 'TALENT' as const })),
     };
     const guard = new AuthGuard(deps);
     await expectStatus(guard.requireRole('VENUE'), 403);
-    expect(deps.getUserRole).toHaveBeenCalledWith(USER.id);
+    expect(deps.getUserRecord).toHaveBeenCalledWith(USER.id);
   });
 });
