@@ -7,6 +7,7 @@ import { GIG_TRANSITIONS, canTransition } from '@/app/api/utils/gig-lifecycle';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 import { withRlsContext, type RlsUser } from '@/app/api/utils/rls';
+import { track } from '@/app/api/utils/events';
 
 const statusLimiter = getRateLimiter('gigs-status', { windowMs: 60 * 60 * 1000, max: 60 });
 
@@ -140,6 +141,15 @@ export const PATCH = withRoute('gigs.status', async (request, context) => {
     entityId: parsed.data,
     metadata: { from: currentStatus, to: nextStatus },
   });
+
+  // KPI capture (S6): publish/cancel instants feed time-to-hire + filling rate.
+  if (nextStatus === 'PUBLISHED' || nextStatus === 'CANCELLED') {
+    await track(user, nextStatus === 'PUBLISHED' ? 'gig.published' : 'gig.cancelled', {
+      venueId: row.venue_id ? String(row.venue_id) : null,
+      gigId: parsed.data,
+      payload: { role: row.role_needed ?? null },
+    });
+  }
 
   return Response.json(toPublicGig({ ...row, ...updated[0] } as GigDetailRow, true));
 });

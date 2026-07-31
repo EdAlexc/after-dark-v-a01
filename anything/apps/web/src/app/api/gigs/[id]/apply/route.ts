@@ -7,6 +7,7 @@ import { ApplicationCreateSchema, GigIdSchema } from '@/app/api/utils/schemas';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 import { withRlsContext } from '@/app/api/utils/rls';
+import { track } from '@/app/api/utils/events';
 
 const applyLimiter = getRateLimiter('applications-create', {
   windowMs: 60 * 60 * 1000,
@@ -45,11 +46,11 @@ export const POST = withRoute('gigs.apply', async (request, context) => {
   // Only open gigs accept applications; a non-published gig 404s like the
   // detail route (existence stays hidden).
   const gigRows = (await sql`
-    SELECT g.id, g.title, vp.user_id AS venue_user_id
+    SELECT g.id, g.title, g.venue_id, vp.user_id AS venue_user_id
     FROM gigs g JOIN venue_profiles vp ON vp.id = g.venue_id
     WHERE g.id = ${gigId} AND g.status = 'PUBLISHED'
     LIMIT 1
-  `) as Array<{ id: string; title: string; venue_user_id: string }>;
+  `) as Array<{ id: string; title: string; venue_id: string; venue_user_id: string }>;
   if (gigRows.length === 0) throw ApiError.notFound('Gig not found or no longer open');
   const gig = gigRows[0];
 
@@ -86,6 +87,11 @@ export const POST = withRoute('gigs.apply', async (request, context) => {
     gigId,
     gigTitle: gig.title,
     applicationId: String(result[0].id),
+  });
+  // KPI capture (S6): application volume per venue/gig (no talent identity).
+  await track(user, 'application.created', {
+    venueId: gig.venue_id ? String(gig.venue_id) : null,
+    gigId,
   });
 
   return Response.json({ application: result[0] }, { status: 201 });

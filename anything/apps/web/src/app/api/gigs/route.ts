@@ -7,6 +7,7 @@ import { GIG_PAGE_SIZE, buildGigsListQuery } from '@/app/api/utils/gigs-query';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 import { withRlsContext } from '@/app/api/utils/rls';
+import { track } from '@/app/api/utils/events';
 
 const createLimiter = getRateLimiter('gigs-create', { windowMs: 60 * 60 * 1000, max: 30 });
 
@@ -54,6 +55,15 @@ export const POST = withRoute('gigs.create', async (request) => {
     entityId: String(result[0]?.id ?? ''),
     metadata: { status: gig.status, venueId: String(venueId) },
   });
+
+  // KPI capture (S6): publishing straight from the wizard counts.
+  if (gig.status === 'PUBLISHED') {
+    await track(user, 'gig.published', {
+      venueId: String(venueId),
+      gigId: String(result[0]?.id ?? ''),
+      payload: { role: gig.role_needed },
+    });
+  }
 
   return Response.json({ gig: result[0] }, { status: 201 });
 });

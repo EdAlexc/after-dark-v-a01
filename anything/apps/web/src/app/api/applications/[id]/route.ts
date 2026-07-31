@@ -13,6 +13,7 @@ import { dollarsToCents } from '@/app/api/utils/money';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 import { withRlsContext } from '@/app/api/utils/rls';
+import { track } from '@/app/api/utils/events';
 
 const reviewLimiter = getRateLimiter('applications-review', {
   windowMs: 60 * 60 * 1000,
@@ -29,6 +30,7 @@ interface ApplicationRow {
   gig_status: string;
   gig_base_rate: string | null;
   gig_start_time: string | null;
+  gig_venue_id: string | null;
   venue_user_id: string;
   talent_user_id: string;
 }
@@ -57,7 +59,7 @@ export const PATCH = withRoute('applications.update', async (request, context) =
     sql`
       SELECT a.id, a.gig_id, a.talent_id, a.status, a.proposed_rate_cents,
              g.title AS gig_title, g.status AS gig_status, g.base_rate AS gig_base_rate,
-             g.start_time AS gig_start_time,
+             g.start_time AS gig_start_time, g.venue_id AS gig_venue_id,
              vp.user_id AS venue_user_id, tp.user_id AS talent_user_id
       FROM applications a
       JOIN gigs g ON g.id = a.gig_id
@@ -129,6 +131,11 @@ export const PATCH = withRoute('applications.update', async (request, context) =
       status: 'HIRED',
       gigId: application.gig_id,
       gigTitle: application.gig_title,
+    });
+    // KPI capture (S6): the fill instant closes the time-to-hire pair.
+    await track(user, 'gig.filled', {
+      venueId: application.gig_venue_id ? String(application.gig_venue_id) : null,
+      gigId: application.gig_id,
     });
     return Response.json({ application: { ...application, status: 'HIRED' } });
   }

@@ -6,6 +6,7 @@ import { parseBody } from '@/app/api/utils/validation';
 import { AdminGigUpdateSchema, GigIdSchema } from '@/app/api/utils/schemas';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { withRlsContext } from '@/app/api/utils/rls';
+import { track } from '@/app/api/utils/events';
 
 /**
  * PATCH /api/admin/gigs/[id] (P9.2) — moderation takedown. The ONLY admin gig
@@ -23,11 +24,17 @@ export const PATCH = withRoute('admin.gigs.update', async (request, context) => 
   // RLS (S2): reading any status and writing the takedown both need the
   // ADMIN-context platform policies.
   const gigs = await withRlsContext<
-    Array<{ id: string; title: string; status: string; venue_user_id: string }>
+    Array<{
+      id: string;
+      title: string;
+      status: string;
+      venue_id: string | null;
+      venue_user_id: string;
+    }>
   >(
     admin,
     sql`
-      SELECT g.id, g.title, g.status, vp.user_id AS venue_user_id
+      SELECT g.id, g.title, g.status, g.venue_id, vp.user_id AS venue_user_id
       FROM gigs g JOIN venue_profiles vp ON vp.id = g.venue_id
       WHERE g.id = ${parsed.data} LIMIT 1
     `
@@ -59,6 +66,11 @@ export const PATCH = withRoute('admin.gigs.update', async (request, context) => 
     gigId: gig.id,
     gigTitle: gig.title,
     reason: body.reason ?? 'Removed by moderation',
+  });
+  // KPI capture (S6): takedowns leave the filling-rate denominator honestly.
+  await track(admin, 'gig.cancelled', {
+    venueId: gig.venue_id ? String(gig.venue_id) : null,
+    gigId: gig.id,
   });
 
   return Response.json({ gig: updated[0] });

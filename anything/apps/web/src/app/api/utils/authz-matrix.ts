@@ -185,6 +185,14 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     summary: "The calling venue's own gigs, all statuses",
     expect: VENUE_ONLY,
   },
+  {
+    id: 'venue.stats',
+    route: 'venue/stats/route.ts',
+    method: 'GET',
+    summary: 'Own KPI aggregates from the S6 event capture (time-to-hire, filling rate)',
+    expect: VENUE_ONLY,
+    note: 'Events carry no PII; the projection is per-venue counts and durations only.',
+  },
 
   // ─── Profiles (§6.1 settings/profile rows) ──────────────────────────────────
   {
