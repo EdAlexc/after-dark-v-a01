@@ -17,12 +17,19 @@ const USER: SessionUser = { id: 'u1', email: 'u1@example.com', name: 'U One' };
 function guardWith(
   user: SessionUser | null,
   role: string | null,
-  exists = true
+  exists = true,
+  suspended: { at: string; reason?: string } | null = null
 ): AuthGuard {
   const deps: GuardDeps = {
     getSessionUser: async () => user,
     getUserRecord: async (userId) =>
-      exists && userId === USER.id ? { role: role as never } : null,
+      exists && userId === USER.id
+        ? {
+            role: role as never,
+            suspendedAt: suspended?.at ?? null,
+            suspendedReason: suspended?.reason ?? null,
+          }
+        : null,
   };
   return new AuthGuard(deps);
 }
@@ -105,5 +112,40 @@ describe('AuthGuard.requireRole (authZ matrix, TENANT_GUARDRAIL §6.1)', () => {
     const guard = new AuthGuard(deps);
     await expectStatus(guard.requireRole('VENUE'), 403);
     expect(deps.getUserRecord).toHaveBeenCalledWith(USER.id);
+  });
+});
+
+describe('AuthGuard suspension (P9)', () => {
+  const SUSPENDED = { at: '2026-07-30T00:00:00Z', reason: 'ToS violation' };
+
+  it('403s every authenticated surface once suspended, with the reason', async () => {
+    const guard = guardWith(USER, 'TALENT', true, SUSPENDED);
+    await expectStatus(guard.requireSession(), 403);
+    await expectStatus(guard.requireRole('TALENT'), 403);
+    try {
+      await guard.requireSession();
+    } catch (err) {
+      expect((err as ApiError).message).toContain('ToS violation');
+    }
+  });
+
+  it('suspension outranks even ADMIN role checks', async () => {
+    const guard = guardWith(USER, 'ADMIN', true, SUSPENDED);
+    await expectStatus(guard.requireRole('ADMIN'), 403);
+  });
+
+  it('allowSuspended lets the GDPR self-service routes through', async () => {
+    const guard = guardWith(USER, 'TALENT', true, SUSPENDED);
+    await expect(guard.requireSession({ allowSuspended: true })).resolves.toEqual(USER);
+  });
+
+  it('optionalUser hides owner extras from a suspended account', async () => {
+    const guard = guardWith(USER, 'VENUE', true, SUSPENDED);
+    await expect(guard.optionalUser()).resolves.toBeNull();
+  });
+
+  it('a clean account is unaffected', async () => {
+    const guard = guardWith(USER, 'TALENT');
+    await expect(guard.requireSession()).resolves.toEqual(USER);
   });
 });

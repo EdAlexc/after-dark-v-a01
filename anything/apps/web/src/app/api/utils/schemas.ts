@@ -300,6 +300,54 @@ export const UploadSchema = z.object({
   purpose: z.enum(['avatar', 'portfolio', 'gallery', 'attachment']).optional().default('avatar'),
 });
 
+// ─── Admin & trust (P9) ───────────────────────────────────────────────────────
+
+export const AdminReportsQuerySchema = z.object({
+  status: z.enum(['OPEN', 'REVIEWING', 'CLOSED']).optional(),
+});
+
+/** Triage transition. OPEN→REVIEWING→CLOSED (or straight to CLOSED). */
+export const AdminReportUpdateSchema = z.object({
+  status: z.enum(['REVIEWING', 'CLOSED']),
+  resolution_note: shortText(2000).optional(),
+});
+
+export const AdminUsersQuerySchema = z.object({
+  q: shortText(120).optional(),
+  role: z.enum(['TALENT', 'VENUE', 'PARTY', 'ADMIN']).optional(),
+  /** flagged = has at least one non-closed report against them, or suspended. */
+  flagged: z.coerce.boolean().optional(),
+  page: z.coerce.number().int().min(1).max(500).optional().default(1),
+});
+
+export const AdminUserUpdateSchema = z.object({
+  suspended: z.boolean(),
+  /** Required when suspending; shown to the user on their 403. */
+  reason: shortText(500).optional(),
+});
+
+export const AdminGigsQuerySchema = z.object({
+  status: GigStatusSchema.optional(),
+  page: z.coerce.number().int().min(1).max(500).optional().default(1),
+});
+
+/** Moderation takedown is the only admin gig write. */
+export const AdminGigUpdateSchema = z.object({
+  status: z.literal('CANCELLED'),
+  reason: shortText(500).optional(),
+});
+
+export const AdminAuditQuerySchema = z.object({
+  actor: shortText(120).optional(),
+  action: shortText(120).optional(),
+  entity_type: shortText(60).optional(),
+  page: z.coerce.number().int().min(1).max(1000).optional().default(1),
+  format: z.enum(['json', 'csv']).optional().default('json'),
+});
+
+export const ReportIdSchema = z.coerce.number().int().min(1);
+export const UserIdSchema = z.string().min(1).max(64);
+
 // ─── Account / data-subject requests (G4) ─────────────────────────────────────
 
 /** Erasure requires the password again plus a typed confirmation. */

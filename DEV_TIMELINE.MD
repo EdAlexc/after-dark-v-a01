@@ -8,11 +8,50 @@
 
 ## 1. Current status — YOU ARE HERE
 
-- **Date:** 2026-07-30 · **Branch:** `claude/p3-p8-marketplace-loop` (worktree off `main`;
-  PRs #7–#10 merged)
-- **Project stage:** **P0–P8 complete. The full marketplace loop runs end-to-end on real
-  data** (apply → negotiate → hire → shift check-in/out → escrowed payout → release).
-  Next: P9 (admin & trust) and P10 (PWA & alpha gate).
+- **Date:** 2026-07-30 · **Branch:** `claude/p9-admin-trust` (worktree off `main`;
+  PRs #7–#11 merged)
+- **Project stage:** **P0–P9 complete.** The marketplace loop runs end-to-end AND the
+  platform can now moderate itself (reports triage, suspension, takedowns, audit viewer).
+  Next: **P10 (PWA, performance & the alpha gate)** — the last slice before alpha.
+- **P9 delivered this session** (583 tests green; the whole moderation loop executed live
+  against a Neon branch and browser-verified; migration 0012 + the admin preview account
+  applied to production):
+  - **P9.1 Admin gating + reports triage**: migration `0012_admin_trust.sql`
+    (`user.suspended_at/-reason`, report `reviewed_by/-at/resolution_note`, triage indexes).
+    `GET/PATCH /api/admin/reports[/[id]]` — queue is open-first/HIGH-first; transitions
+    OPEN→REVIEWING→CLOSED are optimistic-concurrency-guarded, audited, and CLOSED is
+    terminal. **Reading a reported conversation's messages writes an
+    `admin.moderation.messages_read` audit event** (the security gate's "admin reads of
+    private messages are logged" requirement, verified live).
+  - **Suspension is enforced in AuthGuard**, not per-route: any non-NULL `suspended_at`
+    turns every authenticated request into a 403 carrying the reason, effective on the
+    target's next request (the guard reads the row per request — no session dance). The
+    single deliberate carve-out: `allowSuspended` on the two GDPR self-service routes —
+    **data-subject rights survive moderation** (suspended export verified 200 while every
+    other call 403'd). `optionalUser` treats suspended as signed-out, so no owner extras.
+  - **P9.2 User & gig management**: `GET /api/admin/users` (search/role/flagged, report
+    counts) + `PATCH /api/admin/users/[id]` suspend/unsuspend with guardrails — no
+    self-suspension, no suspending ADMINs (de-escalate out-of-band first), reason required.
+    `GET /api/admin/gigs` (cross-tenant view w/ applicant + report pressure) +
+    `PATCH /api/admin/gigs/[id]` **takedown → CANCELLED only** (zod literal — an admin
+    cannot publish or edit a venue's gig), idempotent, audited, venue notified with reason.
+  - **P9.2 Audit viewer + export**: `GET /api/admin/audit-logs` (filters, 50/page) and
+    `?format=csv` — RFC-4180-escaped, **bounded at 10k newest rows so the handler stays
+    <1s** instead of an async job (documented trade-off); every export is itself audited.
+  - **KPI overview** `GET /api/admin/overview`: users by role + suspended, reports by
+    status/severity, gigs by status, payout ledger totals, live-shift count, Stripe
+    configured flag — wireframe p1's cards from real aggregates.
+  - **Admin UI** `/dashboard/admin` (wireframe p1, one dense screen): KPI cards, Reports
+    Triage (severity chips, Review/Close), User & Gig Management (tabs, search, flagged
+    filter, suspend/reinstate/take-down), live Audit Log rail, Export Audit Log button.
+    `DashboardSidebar` gained the `admin` variant; a non-admin who reaches the page gets a
+    clean "Admin access required" card (the APIs are the real gate).
+  - **AuthZ matrix**: 8 new ADMIN_ONLY rows (274 generated tests); admin preview account
+    (`admin.preview@afterdark.dev`) added to the out-of-band provisioning script — which
+    revealed the script never created the 4th account (destructure bug, fixed).
+  - **Bugs found while verifying**: better-auth's `user` table is camelCase (`"createdAt"`)
+    — two admin queries 500'd until quoted; the preview-accounts script silently skipped
+    the admin entry.
 - **P3–P8 delivered this session** (520 tests green; the whole loop executed against a Neon
   branch — API-level with curl and visually in the browser — procedures in
   [TESTING.md](TESTING.md); migrations 0007–0011 applied to the production branch):
@@ -187,23 +226,22 @@
 
 ### Pick-up-here: next five tasks (in order)
 
-> P3–P8 are complete; **P9 admin & trust** is next (reports are already flowing into the
-> `reports` table from P5.3). The RLS production cutover remains the carried ops item.
+> P9 is complete; **P10 (PWA, performance & alpha gate)** is the last slice before alpha.
 
-1. **P9.1** — Admin gating + moderation dashboard skeleton: ADMIN-only layout/sidebar
-   variant, reports triage list (severity chips, review → CLOSED/REVIEWING transitions,
-   audited). The `reports` table and matrix outcomes already exist — this is UI + two
-   endpoints. **Add matrix rows in the same PR** (the coverage gate enforces it).
-2. **P9.2** — User & gig management: suspend/verify flags + audit-log viewer with CSV export
-   (async, handlers < 1s); every admin action audited with actor id.
-3. **P10.1–.2** — PWA shell: `manifest.webmanifest` + icons + Serwist service worker
-   (precache shell, network-first APIs, **never cache authed responses; purge on logout**).
-4. **Ops carry-over** — RLS cutover on prod (`afterdark_app` role per
-   [`docs/rls-cutover.md`](docs/rls-cutover.md)); set `CRON_SECRET` in Vercel so the hourly
-   payout release actually fires; when ready for money tests, add `STRIPE_SECRET_KEY` +
-   `STRIPE_WEBHOOK_SECRET` (test mode) and `BLOB_READ_WRITE_TOKEN` for real image storage.
-5. **P10.3–.4** — Shared rate-limit store (Backlog #21) + CI gates (Lighthouse budgets, k6
-   Apdex, axe) — the alpha exit checklist.
+1. **P10.1** — `manifest.webmanifest` (AfterDark, standalone, theme `#121212`, maskable
+   icons) + install prompt sanity on iOS/Android emulation.
+2. **P10.2** — Serwist service worker: precache shell/static, network-first APIs, offline
+   fallback page. **Never cache authed API responses; purge caches on logout** (§6.6) —
+   test: logout → offline → no PII retrievable from the cache.
+3. **P10.3** — Shared rate-limit store (Upstash Redis or Postgres token bucket, Backlog
+   #21): back `getRateLimiter` with it so limits hold across serverless instances; the k6
+   Apdex gate is meaningless until this lands.
+4. **P10.4** — CI gates: Lighthouse CWV budgets (TENANT_GUARDRAIL §3.2), k6 Apdex ≥ 0.85 @
+   T=300 ms (§3.4 scenarios), `@axe-core/playwright` on the 10 core screens (dark-theme
+   contrast!).
+5. **Ops carry-overs** — RLS cutover (`docs/rls-cutover.md`); `CRON_SECRET` in Vercel for
+   the payout cron; Stripe test keys when ready (DEV_TIMELINE P8 honest-status checklist);
+   `BLOB_READ_WRITE_TOKEN` for real image storage.
 
 ---
 
@@ -395,11 +433,11 @@ servers or logs.
 > the Stripe platform account → set `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` (test
 > mode) in Vercel → register the webhook endpoint → run TESTING.md §10's Stripe addendum.
 
-### P9 — Admin & trust (≈3 d) — ☐ not started · **parallel with P8** (needs P5.3 reports)
-- ☐ Admin gating (ADMIN granted out-of-band only — self-service escalation is already blocked).
-- ☐ Moderation dashboard: reports triage, user & gig management (suspend/verify), audit-log
+### P9 — Admin & trust (≈3 d) — ✅ **landed 2026-07-30** (moderation loop verified live; suspension enforced in AuthGuard)
+- ☑ Admin gating (ADMIN granted out-of-band only — self-service escalation is already blocked).
+- ☑ Moderation dashboard: reports triage, user & gig management (suspend/verify), audit-log
   viewer, **async** CSV export (handlers stay under 1 s, §6.3).
-- ☐ KPI cards from real aggregates.
+- ☑ KPI cards from real aggregates.
 
 **Security gate:** every admin action is audited with the actor id; admin reads of private
 messages are logged as moderation events; no admin surface is reachable by any non-ADMIN role.

@@ -170,8 +170,8 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Messages: 2-pane chat, attachments, propose-rate (3.4) | p6 | `components/MessagesView.tsx` | ✅ real threads (polling), RATE_PROPOSAL + accept-rate→application, image attachments (P4), gig-in-focus rail, report→`reports` (P5) |
 | Live ops check-in/check-out (2.A/2.B) | p8, p10 | `/api/shifts/[id]` + dashboards | ✅ actor-scoped transitions, idempotency keys on a DB UNIQUE, checkout creates HELD payout (P7) |
 | Payments: Stripe Connect escrow & payouts (1, 2) | p4, p10 | `/api/stripe/*`, `/api/payouts/release` | 🟡 **key-gated**: 5% ledger, 24h escrow release (cron), webhook sig+replay guard all real; transfers activate when Stripe keys are set (none yet) (P8) |
-| Admin moderation: disputes, audit logs, verification (3.4) | p1 | — | ❌ no admin UI/API; `ADMIN` role exists but unused & ungated |
-| Reports/disputes (schema §4) | p1 | `POST /api/reports` (P5.3) | 🟡 reports flow in; triage UI is P9 |
+| Admin moderation: disputes, audit logs, verification (3.4) | p1 | `dashboard/admin` + `/api/admin/*` | ✅ triage, suspend/reinstate (AuthGuard-enforced platform-wide), takedowns, audit viewer + CSV, KPI cards (P9) |
+| Reports/disputes (schema §4) | p1 | `/api/reports` + admin triage | ✅ report → triage → REVIEWING/CLOSED w/ notes; moderation reads audited (P9) |
 | Notifications (bell/badges in every wireframe) | p1–p10 | `components/NotificationsBell.tsx` → `/api/notifications` | ✅ real bell + unread sidebar badges; emitted by applications/messages/shifts/payouts (P3.4) |
 | Global search "gigs or talent" (top bar) | p1–p10 | — | ❌ |
 | Venue↔external calendar & ticketing integrations (2.B) | — | — | ❌ (post-alpha candidate) |
@@ -196,7 +196,10 @@ idempotent transition), **`/api/conversations`** (GET/POST),
 mark-read), **`/api/reports`** (POST), **`/api/availability`** (GET month/PUT day),
 **`/api/upload`** (POST, P4 pipeline), **`/api/payouts/release`** (POST admin|cron, GET
 cron), **`/api/stripe/connect`** (GET status/POST onboard — 503 without keys),
-**`/api/stripe/webhook`** (POST, signature + replay guard), `/api/talent/profile`,
+**`/api/stripe/webhook`** (POST, signature + replay guard), **`/api/admin/overview`**,
+**`/api/admin/reports`** (+`/[id]` GET detail w/ audited moderation reads, PATCH triage),
+**`/api/admin/users`** (+`/[id]` PATCH suspend/unsuspend), **`/api/admin/gigs`** (+`/[id]`
+PATCH takedown), **`/api/admin/audit-logs`** (JSON + audited CSV export), `/api/talent/profile`,
 `/api/venue/profile`, `/api/settings`, `/api/settings/change-password`,
 `/api/account/export`, `/api/account` (DELETE), `/api/account/age-confirm`,
 `/api/auth/two-factor/*` (better-auth twoFactor plugin),
@@ -356,7 +359,9 @@ Verified findings (2026-07-24), ordered by severity — full remediation & test 
 
 1. **Privilege escalation**: `POST /api/user/role` accepts `ADMIN` from any signed-in user
    (`anything/apps/web/src/app/api/user/role/route.ts:23`). Restrict to `TALENT|VENUE`; admin
-   is granted out-of-band only.
+   is granted out-of-band only. *(Fixed in P0; P9 added the admin surface itself — every
+   `/api/admin/*` route is ADMIN-only in the matrix, all writes audited, and account
+   suspension is enforced centrally in AuthGuard.)*
 2'. **AuthZ is now machine-checked** (P2.3): `src/app/api/utils/authz-matrix.ts` declares every
    route × role × ownership and the generated suite fails CI if a route has no row. Start
    there for any authZ question.

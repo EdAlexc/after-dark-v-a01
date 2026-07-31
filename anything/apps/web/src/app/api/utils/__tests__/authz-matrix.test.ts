@@ -80,7 +80,7 @@ function wireSql(actor: Actor, ownerId: string, gigStatus = 'PUBLISHED') {
   mocks.sql.mockImplementation(async (first: unknown, ..._rest: unknown[]) => {
     const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
 
-    if (text.includes('SELECT role FROM "user"')) {
+    if (text.includes('SELECT role, suspended_at')) {
       // anon never reaches this lookup; a signed-in actor always has a row.
       return actor === 'anon' ? [] : [{ role: actor }];
     }
@@ -183,6 +183,35 @@ function wireSql(actor: Actor, ownerId: string, gigStatus = 'PUBLISHED') {
     if (text.includes('stripe_accounts')) return [];
     if (text.includes('FROM notifications') || text.includes('UPDATE notifications')) return [];
     if (text.includes('INSERT INTO notifications')) return [];
+    // P9 admin shapes. requireRole('ADMIN') already gated non-admins before SQL.
+    if (text.includes('FROM reports r')) return [];
+    if (text.includes('FROM reports WHERE id')) {
+      return [
+        {
+          id: 1,
+          reporter_id: OTHER_ID,
+          entity_type: 'gig',
+          entity_id: GIG_ID,
+          reason: 'matrix',
+          severity: 'MEDIUM',
+          status: 'OPEN',
+          created_at: 'now',
+          reviewed_at: null,
+          resolution_note: null,
+        },
+      ];
+    }
+    if (text.includes('UPDATE reports')) {
+      return [{ id: 1, status: 'REVIEWING', entity_type: 'gig', entity_id: GIG_ID }];
+    }
+    if (text.includes('FROM "user" u')) return [];
+    if (text.includes('SELECT id, role, suspended_at FROM "user"')) {
+      return [{ id: OTHER_ID, role: 'TALENT', suspended_at: null }];
+    }
+    if (text.includes('UPDATE "user"')) {
+      return [{ id: OTHER_ID, suspended_at: 'now', suspended_reason: 'matrix probe' }];
+    }
+    if (text.includes('FROM audit_logs')) return [];
     if (text.includes('INSERT INTO reports')) {
       return [{ id: 1, status: 'OPEN', severity: 'MEDIUM', created_at: 'now' }];
     }
@@ -261,6 +290,10 @@ const REQUEST_BODY: Record<string, unknown | ((actor: Actor) => unknown)> = {
   'shifts.transition': { to: 'CHECKED_IN', idempotency_key: 'matrix-idem-0001' },
   'stripe.connect.start': {},
   'payouts.release': {},
+  // P9 admin surfaces
+  'admin.reports.update': { status: 'REVIEWING' },
+  'admin.users.update': { suspended: true, reason: 'matrix probe' },
+  'admin.gigs.update': { status: 'CANCELLED', reason: 'matrix takedown' },
 };
 
 /** Query strings for GET routes whose schema requires one. */
@@ -351,6 +384,9 @@ function idParamFor(row: MatrixRow): string {
   if (row.route.startsWith('shifts/')) return SHIFT_ID;
   if (row.route.startsWith('conversations/')) return CONVERSATION_ID;
   if (row.route.startsWith('applications/')) return 'a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d';
+  if (row.route.startsWith('admin/reports/')) return '1';
+  // Always another (non-admin) account: self-suspension is a separate 400 test.
+  if (row.route.startsWith('admin/users/')) return OTHER_ID;
   return GIG_ID;
 }
 

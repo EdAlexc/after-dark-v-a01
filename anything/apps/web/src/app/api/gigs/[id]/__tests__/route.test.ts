@@ -40,7 +40,7 @@ function gigRow(overrides: Record<string, unknown> = {}) {
 function wireSql(state: DbState) {
   mocks.sql.mockImplementation(async (first: unknown, ..._rest: unknown[]) => {
     const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
-    if (text.includes('SELECT role FROM "user"')) {
+    if (text.includes('SELECT role, suspended_at')) {
       // A signed-in user always has a row; role may be null (pre-onboarding).
       // Returning [] would now mean "account deleted" → 401.
       return [{ role: state.role ?? null }];
