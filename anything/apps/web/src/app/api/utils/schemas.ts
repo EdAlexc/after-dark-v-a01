@@ -315,6 +315,21 @@ export const ReportCreateSchema = z.object({
   severity: z.enum(['LOW', 'MEDIUM', 'HIGH']).optional().default('MEDIUM'),
 });
 
+// ─── Web Push (S9) ───────────────────────────────────────────────────────────
+
+/** Browser PushSubscription.toJSON() shape — bounds mirror 0019's CHECKs. */
+export const PushSubscribeSchema = z.object({
+  endpoint: z.string().url().max(1000),
+  keys: z.object({
+    p256dh: z.string().min(1).max(200),
+    auth: z.string().min(1).max(100),
+  }),
+});
+
+export const PushUnsubscribeSchema = z.object({
+  endpoint: z.string().url().max(1000),
+});
+
 // ─── Reviews & trust (S8) ────────────────────────────────────────────────────
 
 export const ReviewCreateSchema = z.object({

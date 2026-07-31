@@ -8,6 +8,7 @@ import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 import { withRlsContext, type RlsUser } from '@/app/api/utils/rls';
 import { track } from '@/app/api/utils/events';
+import { isHotWindow, pushHotGigToTalent } from '@/app/api/utils/push';
 
 const statusLimiter = getRateLimiter('gigs-status', { windowMs: 60 * 60 * 1000, max: 60 });
 
@@ -149,6 +150,10 @@ export const PATCH = withRoute('gigs.status', async (request, context) => {
       gigId: parsed.data,
       payload: { role: row.role_needed ?? null },
     });
+  }
+  // S9: Hot Tonight push (id-only payload; no-op without VAPID keys).
+  if (nextStatus === 'PUBLISHED' && isHotWindow(row.start_time as string | null)) {
+    await pushHotGigToTalent(parsed.data);
   }
 
   return Response.json(toPublicGig({ ...row, ...updated[0] } as GigDetailRow, true));

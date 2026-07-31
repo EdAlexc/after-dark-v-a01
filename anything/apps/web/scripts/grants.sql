@@ -25,6 +25,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   legal_holds,
   events,
   reviews,
+  push_subscriptions,
   rate_limit_counters, "rateLimit",
   "user", "session", "account", "verification", "twoFactor"
   TO afterdark_app;

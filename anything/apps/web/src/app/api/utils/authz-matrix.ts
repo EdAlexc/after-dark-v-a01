@@ -441,6 +441,45 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     expect: AUTHENTICATED_SELF,
   },
 
+  // ─── Realtime & push (S9) ───────────────────────────────────────────────────
+  {
+    id: 'stream.events',
+    route: 'stream/route.ts',
+    method: 'GET',
+    summary: 'SSE invalidation stream — authed per connection, emits query keys only',
+    expect: AUTHENTICATED_SELF,
+    note: 'Frames carry TanStack Query keys, never row data; refetches re-run authed routes.',
+  },
+  {
+    id: 'push.status',
+    route: 'push/subscribe/route.ts',
+    method: 'GET',
+    summary: 'Own push opt-in status + VAPID public key (enabled:false when unkeyed)',
+    expect: AUTHENTICATED_SELF,
+  },
+  {
+    id: 'push.subscribe',
+    route: 'push/subscribe/route.ts',
+    method: 'POST',
+    summary: 'Register this browser for hot-gig push (503 without VAPID keys)',
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'UNAVAILABLE',
+      VENUE: 'UNAVAILABLE',
+      PARTY: 'UNAVAILABLE',
+      ADMIN: 'UNAVAILABLE',
+    },
+    note: 'With WEB_PUSH_VAPID_* configured these UNAVAILABLE cells become ALLOW.',
+  },
+  {
+    id: 'push.unsubscribe',
+    route: 'push/subscribe/route.ts',
+    method: 'DELETE',
+    summary: 'Drop own subscription for this browser endpoint',
+    expect: AUTHENTICATED_SELF,
+    note: 'Delete is user-scoped by predicate + RLS; no key gate — cleanup must always work.',
+  },
+
   // ─── Reviews & trust (S8) ───────────────────────────────────────────────────
   {
     id: 'reviews.list',

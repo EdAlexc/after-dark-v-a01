@@ -8,6 +8,7 @@ import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 import { withRlsContext } from '@/app/api/utils/rls';
 import { track } from '@/app/api/utils/events';
+import { isHotWindow, pushHotGigToTalent } from '@/app/api/utils/push';
 
 const createLimiter = getRateLimiter('gigs-create', { windowMs: 60 * 60 * 1000, max: 30 });
 
@@ -63,6 +64,10 @@ export const POST = withRoute('gigs.create', async (request) => {
       gigId: String(result[0]?.id ?? ''),
       payload: { role: gig.role_needed },
     });
+    // S9: Hot Tonight push (id-only payload; no-op without VAPID keys).
+    if (isHotWindow(gig.start_time)) {
+      await pushHotGigToTalent(String(result[0]?.id ?? ''));
+    }
   }
 
   return Response.json({ gig: result[0] }, { status: 201 });

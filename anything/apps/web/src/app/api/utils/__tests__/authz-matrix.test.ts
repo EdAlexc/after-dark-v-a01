@@ -176,6 +176,7 @@ function wireSql(actor: Actor, ownerId: string, gigStatus = 'PUBLISHED') {
     }
     if (text.includes('FROM reviews')) return [];
 
+    if (text.includes('push_subscriptions')) return [];
     if (text.includes('FROM shift_transitions')) return [];
     if (text.includes('INSERT INTO shift_transitions')) return [];
     if (text.includes('FROM shifts s')) {
@@ -314,6 +315,12 @@ const REQUEST_BODY: Record<string, unknown | ((actor: Actor) => unknown)> = {
   'admin.reports.update': { status: 'REVIEWING' },
   // S8 reviews
   'reviews.create': { shift_id: SHIFT_ID, rating: 5, comment: 'matrix review' },
+  // S9 push
+  'push.subscribe': {
+    endpoint: 'https://push.example/endpoint-1',
+    keys: { p256dh: 'matrix-p256dh', auth: 'matrix-auth' },
+  },
+  'push.unsubscribe': { endpoint: 'https://push.example/endpoint-1' },
   'admin.users.update': { suspended: true, reason: 'matrix probe' },
   'admin.gigs.update': { status: 'CANCELLED', reason: 'matrix takedown' },
 };
