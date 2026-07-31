@@ -479,6 +479,10 @@ in parallel.
 
 Items noted during the audit that are **not** required for the alpha gate but must not be lost:
 
+> **2026-07-31:** every item below was re-evaluated for alpha necessity — verdicts and
+> reasoning in §4.5. Three items changed status: #10 (partially alpha-blocking), #16
+> (recommended before distribution), #21 (conditional on signup model).
+
 1. **Map view** (browse pins + gig-detail map, wireframe p2/p4) — needs geocoding + lat/lng on
    gigs; consider MapLibre + OSM tiles to avoid key management.
 2. **External calendar & ticketing integrations** for venues (PRD §2.B) — Google/Outlook
@@ -575,3 +579,121 @@ Items noted during the audit that are **not** required for the alpha gate but mu
 28. **Availability boost in browse ordering** (P6 remainder): `available_tonight` and open
     slots should float matching talent/gigs higher in the browse lists; needs an index-backed
     ORDER BY tweak in `gigs-query.ts`/`talent-query.ts` once ranking rules are decided.
+
+---
+
+## 4. Alpha production-readiness assessment — 2026-07-31
+
+> Requested audit: **is the codebase ready for production and distribution to alpha test
+> users?** Assessed at commit `d5e731a` (= `main`) against the alpha definition
+> (CLAUDE.md §8) and the release gate (TENANT_GUARDRAIL §7). Every claim below was
+> re-verified this session, not read off prior status notes.
+
+### 4.1 Verdict
+
+**Not yet — but the distance is one broken CI gate, a handful of Vercel env vars, and one
+product decision (PWA in or out of alpha), not months of engineering.** The marketplace
+itself (P0–P9) is functionally complete, tenant-scoped, audited, and passes its full local
+quality gate. What blocks distribution is operational: the CI merge gate has been silently
+red since PR #8, the deployed environment is missing the keys that make payments, cron
+release, image storage and error tracking real, and the "PWA" in the alpha definition does
+not exist in any form. By the project's *own* alpha exit gate (TENANT_GUARDRAIL §7 — all
+boxes) the answer is plainly **no**: P10 has not started and no §7 box is checked. For a
+small **invite-only** alpha, the §4.3 blocker list below is the honest minimum; everything
+else can trail it.
+
+### 4.2 What was verified this session (evidence, not claims)
+
+| Check | Result |
+|---|---|
+| `yarn typecheck` | ✅ clean (after clearing a stale `.next/` cache that referenced routes deleted in P0/P1 — tsconfig includes Next's generated types, so a stale cache fails typecheck; `rm -rf .next` resolves) |
+| `yarn test` | ✅ **583/583** (29 files) — matches the P9 status claim |
+| `yarn build` | ✅ full route table, all `ƒ` dynamic, middleware present — matches the §2.1 "correct build" signature |
+| `yarn lint` | ⚠️ exits 1 with **"No files found to lint"** — see the CI finding below. With the stale ignore file bypassed (`--no-ignore`): ✅ **0 warnings on `src scripts test`** |
+| **CI on `main`** | ❌ **red since PR #8 (2026-07-30)** — the last four `main` runs (PRs #8, #10, #11, #12) all failed at the Lint step |
+| PWA surface | ❌ confirmed absent — `public/` contains only `favicon.png`; no manifest, no service worker |
+| Rate limiter | in-memory `Map` per instance (`rate-limit.ts`) — P10.3 confirmed outstanding |
+| Stripe | key-gated as documented (`stripe.ts` checks `STRIPE_SECRET_KEY`); no keys configured |
+| Payout cron | `vercel.json` schedules `/api/payouts/release` hourly — inert until `CRON_SECRET` is set in Vercel |
+| RLS cutover | `withRlsContext` exists only in `rls.ts`, wired into **zero** routes — production still connects as owner, as documented |
+| Retention purge job (G7) | ❌ absent — `docs/retention.md` exists, no purge script or cron |
+| Incident runbook (G9) | ❌ absent — `docs/` has only `retention.md`, `rls-cutover.md`, `ropa.md` |
+| Local Node | 20.11 (target is 22) — all gates still pass; keep 22 in CI/Vercel |
+
+**The CI finding (root-caused):** `anything/.eslintignore` — a create.xyz export leftover
+from the initial import — contains a single `*`. oxlint honors ancestor `.eslintignore`
+files, so the lint step added in PR #8 (Backlog #20) lints **zero files** and exits 1.
+Because the job aborts there, **vitest and the production build have not executed in CI for
+any merge since PR #8** — the entire P2–P9 stretch merged with an unprotecting gate (the
+suites were only ever run locally; this session re-ran them at `main` and they do pass).
+Fix is one line — **delete `anything/.eslintignore`** — verified safe: with ignores
+bypassed, lint reports 0 warnings, so CI goes green immediately.
+
+### 4.3 Blockers before distributing to alpha testers
+
+| # | Item | Why it blocks | Cost |
+|---|---|---|---|
+| B1 | **Restore the CI gate**: delete `anything/.eslintignore` | `main` is currently unprotected — tests/build don't run on merges; docs claiming "CI green" are false as of PR #8 | 1-line PR |
+| B2 | **Error tracking on**: set `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` in Vercel | Distributing to testers with zero crash visibility wastes the alpha — every bug becomes a support conversation instead of a stack trace. The PII-scrubbed pipeline is already built (Backlog #19); it is a no-op without a DSN | minutes (ops) |
+| B3 | **Decide the payments story**: set test-mode `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` (P8 honest-status checklist) **or** explicitly brief testers that payouts are simulated | The alpha loop is defined with "(sandbox) Stripe Connect escrow payout". Without keys the ledger advances but no money moves — testers will report "I never got paid" as a bug unless told | hours (ops + TESTING.md §10 pass) |
+| B4 | **Set `CRON_SECRET`** in Vercel | The 24 h escrow release never fires — HELD payouts accumulate until an admin releases manually; talent-facing "pending payout" numbers go stale | minutes (ops) |
+| B5 | **Set `BLOB_READ_WRITE_TOKEN`** in Vercel | Without it every tester photo/attachment is stored inline in Postgres as a data URL — re-creating the base64-PII-in-DB problem P4 was built to close (EXIF is stripped either way, but storage/bloat/egress are wrong) | minutes (ops) |
+| B6 | **PWA decision**: build P10.1–P10.2 (~2 d) **or** amend the alpha definition to "responsive web app" and defer PWA | The alpha is *defined* as "deployable PWA" and the PRD targets one; nothing PWA exists. Shipping testers a plain web app is fine — silently calling it the PWA alpha is not | decision + 0–2 d |
+| B7 | **G9 incident runbook** (`docs/incident-runbook.md`) | The 72 h GDPR breach-notification duty applies *now* (real signups exist); alpha adds testers' PII. A tabletop-tested one-pager satisfies it | ~half day (doc) |
+
+### 4.4 Required for the formal alpha *exit* gate, but not for starting a closed alpha
+
+- **P10.3 shared rate-limit store** — in-memory limits don't hold across serverless
+  instances, so brute-force protection on login/2FA is porous. Acceptable risk *only* while
+  signups are invite-only; required before any open signup. (Also a prerequisite for
+  meaningful k6 numbers.)
+- **P10.4 CI gates** (Lighthouse CWV, k6 Apdex, axe) — these *are* the §7 alpha-exit
+  checklist; a closed alpha can start while they land, but "alpha complete" cannot be
+  declared without them.
+- **RLS production cutover** (Backlog #25) — defense-in-depth. The enforced layer today is
+  AuthGuard + the machine-checked authZ matrix (274 generated tests), which is real
+  protection; cutover order in `docs/rls-cutover.md`.
+- **G7 retention purge job** — the schedule is documented but nothing purges; at alpha data
+  volumes nothing exceeds retention windows for ~90 days, which bounds the deadline.
+- **Doc hygiene**: §1 of this file still contains stale P0-era lines (e.g. "New env var:
+  `AUTH_SECRET_ENCRYPTION_KEY` is now **required**" — obsolete since migration 0005, and a
+  "Still UI-with-mock-data" list describing pre-P3 reality). Anyone assessing state from §1
+  alone is misled; prune on the next status update.
+
+### 4.5 Technical Backlog re-evaluation (necessary for alpha?)
+
+| # | Item | Alpha? | Reasoning |
+|---|---|---|---|
+| 1 | Map view | **No** | Discovery works via list + filters; the PRD alpha loop never requires the map. Cosmetic gap testers will notice but can be told about. |
+| 2 | Calendar/ticketing integrations | **No** | Post-alpha by design; nothing in the loop depends on them. |
+| 3 | Promoter sub-role / payment triangle | **No** | Needs product definition first; alpha's two principals are venue + talent. |
+| 4 | Mobile (Expo) app | **No** | The PWA/responsive web app is the alpha vehicle; the scaffold renders `null` and ships nothing user-visible. |
+| 5 | WebSockets/push | **No** | 5 s polling is the documented, serverless-friendly alpha choice and works. |
+| 6 | Matching engine | **No, with one caveat** | The create-gig "Live Analytics" rail shows **fabricated candidates** — hide it or label it as illustrative before testers use it to make hiring decisions or file bugs against fake data. Small UI task. |
+| 7 | Global search | **No, with one caveat** | The endpoint can wait, but the **decorative top-bar search box** invites testers to type into a dead control on every screen — hide it or stub a "coming soon" state for alpha. |
+| 8 | Trust score / ratings / ID verification | **No** | Ratings shown are static profile fields; no reviews model exists. Fine for alpha if not presented as live data. |
+| 9 | `revalidateTag` no-op | **No** | The open-next path is unused on Vercel; nothing relies on tag invalidation. |
+| 10 | Uploads hardening remainder | **Partially YES** | Setting `BLOB_READ_WRITE_TOKEN` is blocker B5 (else tester images land in Postgres). Backfill only touches pre-P4 seed rows — trivial, do with B5. AV scanning: post-alpha (closed cohort; sharp re-encode already neutralizes image-embedded payloads). |
+| 11 | Legacy dead code | done | — |
+| 12 | Sidebar identity/badges | done | — |
+| 13 | A11y deep pass | **No** | Beyond P10.4's axe gate (which is alpha-exit); the deep pass (keyboard calendar, contrast sweep) is post-alpha. |
+| 14 | Analytics/events table | **No** | Venue KPIs that need it are honestly muted in the UI; capture design can wait. |
+| 15 | (superseded by #21) | — | — |
+| 16 | iframe embedding posture | **Recommended** | Distributed testers don't need the create.xyz builder pathway. Locking `frame-ancestors` to `'self'` (and revisiting platform-wide `SameSite=None`) is cheap and shrinks clickjacking/embed surface before strangers get the URL. Not strictly blocking. |
+| 17 | 2FA plugin migration | done | — |
+| 18 | CSP nonce | done | — |
+| 19 | Error tracking | done (code) | **Activation is blocker B2** — a DSN must be set for it to exist in production. |
+| 20 | oxlint in CI | done (code) — **but currently failing** | The step it added is the red-CI culprit (stale `anything/.eslintignore`, see §4.2). Effectively reopened until B1 lands. |
+| 21 | Shared rate-limit store (P10.3) | **Conditional** | Invite-only alpha: acceptable risk, ship after. Any open/self-serve signup: required first — per-instance limits are no limits under serverless fan-out. |
+| 22 | Preview-deploy auth | done | — |
+| 23 | Scope Vercel installs to `web` | **No** | Build-time cost only; zero runtime effect. |
+| 24 | Repo structure flatten | **No** | Cosmetic; forces the mobile decision (#4) prematurely. |
+| 25 | RLS production cutover | **No for closed alpha** | App-level authZ is the enforced, machine-checked layer (AuthGuard + matrix). Do it early post-alpha, in the `docs/rls-cutover.md` order — an unwired cutover silently hides venues' own drafts. |
+| 26 | Legal counsel review | **No for alpha** | Policies are real, versioned, and describe actual behavior — that satisfies G1 for alpha. Counsel review + DPAs (G10) + DPIA (G13) remain GA blockers. |
+| 27 | Multi-value browse filters | **No** | Client-side refinement is fine at alpha gig volumes. |
+| 28 | Availability boost in ordering | **No** | Ranking nicety; browse is correct without it. |
+
+**Net-new items surfaced by this assessment** (not previously in the backlog): the B1 CI
+fix; hide-or-label the mock Live Analytics rail (#6 caveat); hide-or-stub the decorative
+global search box (#7 caveat); prune the stale §1 status lines (§4.4); G9 incident runbook
+(B7).
