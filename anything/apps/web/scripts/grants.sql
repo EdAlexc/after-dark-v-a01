@@ -51,6 +51,11 @@ REVOKE UPDATE, DELETE ON stripe_events FROM afterdark_app;
 -- is the only privilege the app role needs.
 GRANT EXECUTE ON FUNCTION app_user_has_application(UUID) TO afterdark_app;
 
+-- The availability yes/no probe (0017) — same doctrine: boolean-only definer
+-- so the browse boost and match counts survive the cutover without widening
+-- calendar visibility.
+GRANT EXECUTE ON FUNCTION app_talent_available_on(UUID, DATE) TO afterdark_app;
+
 -- Identity sequences (audit_logs.id, payouts.id).
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO afterdark_app;
 

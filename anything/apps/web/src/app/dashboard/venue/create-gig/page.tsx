@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   ChevronRight,
   ChevronDown,
@@ -68,12 +69,45 @@ const ROLE_OPTIONS = [
   'Event Staff',
 ];
 
-const MOCK_CANDIDATES = [
-  { name: 'DJ Marcus Lee', role: 'DJ / Producer', rating: 4.9, rate: '$160-$220/hr', match: 98 },
-  { name: 'Kira Voss', role: 'DJ / Producer', rating: 4.8, rate: '$140-$200/hr', match: 95 },
-  { name: 'Tony Reyes', role: 'DJ / Producer', rating: 4.7, rate: '$100-$180/hr', match: 91 },
-  { name: 'Amara J.', role: 'DJ / Producer', rating: 4.6, rate: '$120-$160/hr', match: 88 },
-];
+/** GET /api/gigs/match-preview response (S7 — real Live Analysis). */
+interface MatchPreview {
+  matches: { total: number; availableTonight: number; availableOnDate: number | null };
+  candidates: Array<{
+    id: string;
+    stage_name: string;
+    primary_role: string | null;
+    neighborhood: string | null;
+    avatar_url: string | null;
+    hourly_rate_min: string | number | null;
+    hourly_rate_max: string | number | null;
+    available_tonight: boolean | null;
+    available_on_date: boolean | null;
+    match_score: number;
+  }>;
+  pricing: { sample: number; p25: number | null; median: number | null; p75: number | null };
+}
+
+function candidateRateBand(
+  min: string | number | null,
+  max: string | number | null
+): string | null {
+  const lo = Number(min);
+  const hi = Number(max);
+  if (Number.isFinite(lo) && lo > 0 && Number.isFinite(hi) && hi > 0)
+    return `$${lo}–$${hi}/hr`;
+  if (Number.isFinite(lo) && lo > 0) return `$${lo}+/hr`;
+  return null;
+}
+
+/** Debounce a changing value so the preview doesn't fire per keystroke. */
+function useDebounced<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -179,7 +213,32 @@ export default function CreateGigPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  const matchCount = form.role_needed ? 12 : 0;
+  // Real Live Analysis (S7): candidate aggregates + public cards + pricing
+  // hint from /api/gigs/match-preview, debounced off the wizard fields.
+  const previewInput = useDebounced(
+    {
+      role: form.role_needed,
+      rate: form.base_rate,
+      date: form.start_date,
+    },
+    400
+  );
+  const { data: preview } = useQuery({
+    queryKey: ['match-preview', previewInput],
+    queryFn: async () => {
+      const params = new URLSearchParams({ role: previewInput.role });
+      if (previewInput.rate && Number(previewInput.rate) > 0)
+        params.set('rate', previewInput.rate);
+      if (previewInput.date) params.set('date', previewInput.date);
+      const res = await fetch(`/api/gigs/match-preview?${params.toString()}`);
+      if (!res.ok) throw new Error('Preview failed');
+      return res.json() as Promise<MatchPreview>;
+    },
+    enabled: previewInput.role.length >= 2,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
+  const matchCount = form.role_needed && preview ? preview.matches.total : 0;
 
   const handleSaveDraft = async () => {
     setSaving(true);
@@ -657,79 +716,105 @@ export default function CreateGigPage() {
                 <span className="text-xs font-bold uppercase tracking-widest text-white/40">
                   Live Analysis
                 </span>
-                <span className="text-[9px] font-black uppercase tracking-widest text-yellow-400/80 bg-yellow-400/10 border border-yellow-400/20 rounded-full px-2 py-0.5">
-                  Sample data
-                </span>
+                <Zap className="w-3.5 h-3.5 text-[#00FFCC] fill-current" />
               </div>
-              <p className="text-[11px] text-white/30 mb-3 leading-relaxed">
-                Illustrative preview — real candidate matching is coming soon.
-              </p>
               <div className="flex items-center gap-4 py-3 px-4 rounded-xl bg-[#00FFCC]/5 border border-[#00FFCC]/15">
                 <div className="w-12 h-12 rounded-xl bg-[#00FFCC]/15 flex items-center justify-center flex-shrink-0">
                   <Users className="w-6 h-6 text-[#00FFCC]" />
                 </div>
                 <div>
                   <p className="text-3xl font-black text-[#00FFCC] leading-none">{matchCount}</p>
-                  <p className="text-xs text-white/50 mt-0.5">Perfect matches found</p>
+                  <p className="text-xs text-white/50 mt-0.5">
+                    Matching talent on AfterDark
+                  </p>
                 </div>
               </div>
 
-              {matchCount > 0 && (
+              {preview && matchCount > 0 && (
                 <div className="mt-3 space-y-1.5 text-[11px] text-white/40">
                   <div className="flex items-center justify-between">
-                    <span>Avg. response time</span>
-                    <span className="text-white/70 font-bold">~14 min</span>
+                    <span>Available tonight</span>
+                    <span className="text-white/70 font-bold">
+                      {preview.matches.availableTonight}
+                    </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span>Est. fill time</span>
-                    <span className="text-white/70 font-bold">2-4 hrs</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Est. outreach</span>
-                    <span className="text-[#00FFCC] font-bold">{matchCount * 3}+ talent</span>
+                  {preview.matches.availableOnDate !== null && (
+                    <div className="flex items-center justify-between">
+                      <span>Free on your date</span>
+                      <span className="text-[#00FFCC] font-bold">
+                        {preview.matches.availableOnDate}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Pricing hint from published-gig percentiles (S7) */}
+              {preview && preview.pricing.sample >= 3 && preview.pricing.median !== null && (
+                <div className="mt-3 p-3 rounded-xl bg-[#1A1A1A] border border-white/5 space-y-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">
+                    Going rate · {preview.pricing.sample} similar gigs
+                  </p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xl font-black text-white">
+                      ${Math.round(preview.pricing.median)}
+                    </span>
+                    <span className="text-[11px] text-white/40">
+                      /hr median
+                      {preview.pricing.p25 !== null && preview.pricing.p75 !== null
+                        ? ` · $${Math.round(preview.pricing.p25)}–$${Math.round(preview.pricing.p75)} typical`
+                        : ''}
+                    </span>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Top Candidates */}
-            {matchCount > 0 && (
+            {/* Top Candidates — real public directory cards (S7) */}
+            {preview && preview.candidates.length > 0 && (
               <div className="p-5 flex-1">
                 <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-3">
                   Top Candidates
                 </p>
                 <div className="space-y-2.5">
-                  {MOCK_CANDIDATES.map((c) => (
+                  {preview.candidates.map((c) => (
                     <div
-                      key={c.name}
+                      key={c.id}
                       className="flex items-center gap-3 p-3 rounded-xl bg-[#1A1A1A] border border-white/5 hover:border-white/10 transition-colors"
                     >
-                      <div className="w-9 h-9 rounded-full bg-[#00FFCC]/10 border border-[#00FFCC]/20 flex items-center justify-center flex-shrink-0">
-                        <span className="text-[#00FFCC] text-xs font-black">
-                          {c.name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .join('')
-                            .slice(0, 2)}
-                        </span>
+                      <div className="w-9 h-9 rounded-full bg-[#00FFCC]/10 border border-[#00FFCC]/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                        {c.avatar_url ? (
+                          <img
+                            src={c.avatar_url}
+                            alt={c.stage_name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-[#00FFCC] text-xs font-black">
+                            {c.stage_name
+                              .split(' ')
+                              .map((part) => part[0])
+                              .join('')
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </span>
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold text-white truncate">{c.name}</p>
-                        <p className="text-[11px] text-white/40">{c.rate}</p>
+                        <p className="text-xs font-bold text-white truncate">{c.stage_name}</p>
+                        <p className="text-[11px] text-white/40 truncate">
+                          {candidateRateBand(c.hourly_rate_min, c.hourly_rate_max) ??
+                            c.primary_role ??
+                            '—'}
+                        </p>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="text-xs font-black text-[#00FFCC]">{c.match}%</p>
-                        <div className="flex items-center gap-0.5 justify-end">
-                          {[...Array(5)].map((_, i) => (
-                            <div
-                              key={i}
-                              className={cn(
-                                'w-1.5 h-1.5 rounded-full',
-                                i < Math.floor(c.rating) ? 'bg-yellow-400' : 'bg-white/10'
-                              )}
-                            />
-                          ))}
-                        </div>
+                        <p className="text-xs font-black text-[#00FFCC]">{c.match_score}%</p>
+                        {c.available_on_date ? (
+                          <p className="text-[9px] font-black text-[#00FFCC]/70">FREE THAT DAY</p>
+                        ) : c.available_tonight ? (
+                          <p className="text-[9px] font-black text-yellow-400/80">TONIGHT</p>
+                        ) : null}
                       </div>
                     </div>
                   ))}
@@ -739,24 +824,26 @@ export default function CreateGigPage() {
                   <div className="flex items-start gap-2">
                     <Zap className="w-3.5 h-3.5 text-[#00FFCC] mt-0.5 flex-shrink-0" />
                     <p className="text-[11px] text-white/50 leading-relaxed">
-                      Publishing this gig will instantly notify all matched talent. Average response
-                      time is under 15 minutes.
+                      Counts and cards come from live profiles and calendars. Publishing makes
+                      this gig visible to everyone browsing.
                     </p>
                   </div>
                 </div>
               </div>
             )}
 
-            {matchCount === 0 && (
+            {(!preview || preview.candidates.length === 0) && (
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
                 <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center mb-3">
                   <Users className="w-6 h-6 text-white/20" />
                 </div>
                 <p className="text-sm font-bold text-white/30">
-                  Select a role to see matching talent
+                  {form.role_needed ? 'No matching talent yet' : 'Select a role to see matching talent'}
                 </p>
                 <p className="text-[11px] text-white/20 mt-1">
-                  We'll show you the best candidates based on your gig details
+                  {form.role_needed
+                    ? 'Try widening the rate — matches update as you type'
+                    : "We'll show you real candidates based on your gig details"}
                 </p>
               </div>
             )}

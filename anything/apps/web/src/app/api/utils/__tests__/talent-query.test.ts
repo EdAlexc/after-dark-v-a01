@@ -75,11 +75,17 @@ describe('buildTalentListQuery', () => {
     const { text } = buildTalentListQuery(EMPTY);
     const order = text.slice(text.indexOf('ORDER BY'));
     expect(order).toContain('available_tonight DESC');
-    expect(order).toContain(`av.status = 'AVAILABLE'`);
-    expect(order).toContain('av.date = CURRENT_DATE');
+    // The probe must go through the 0017 SECURITY DEFINER helper — a direct
+    // EXISTS on availabilities silently stops boosting post-RLS-cutover.
+    expect(order).toContain('app_talent_available_on(talent_profiles.id, CURRENT_DATE)');
+    expect(order).not.toContain('FROM availabilities');
     // Tonight flag outranks the slot probe, which outranks completion.
-    expect(order.indexOf('available_tonight')).toBeLessThan(order.indexOf('av.status'));
-    expect(order.indexOf('av.status')).toBeLessThan(order.indexOf('profile_completion_pct'));
+    expect(order.indexOf('available_tonight')).toBeLessThan(
+      order.indexOf('app_talent_available_on')
+    );
+    expect(order.indexOf('app_talent_available_on')).toBeLessThan(
+      order.indexOf('profile_completion_pct')
+    );
   });
 
   it('keeps the boost subquery free of user input (only parameters reach values)', () => {

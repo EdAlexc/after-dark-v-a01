@@ -300,6 +300,7 @@ const REQUEST_BODY: Record<string, unknown | ((actor: Actor) => unknown)> = {
 const REQUEST_QUERY: Record<string, string> = {
   'availability.get': '?month=2026-08',
   'search.list': '?q=matrix',
+  'gigs.match-preview': '?role=DJ',
 };
 
 function buildRequest(row: MatrixRow, actor: Actor): Request {

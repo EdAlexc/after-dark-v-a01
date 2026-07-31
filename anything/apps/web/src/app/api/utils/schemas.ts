@@ -181,6 +181,19 @@ export const SearchQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(20).optional().default(8),
 });
 
+// ─── Matching engine (S7 / Backlog #6) ───────────────────────────────────────
+
+/** Create-gig "Live Analysis" preview inputs (VENUE-only endpoint). */
+export const MatchPreviewQuerySchema = z.object({
+  role: shortText(80).min(2),
+  rate: rate.optional(),
+  /** Gig date for the availability probe. */
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD')
+    .optional(),
+});
+
 // ─── Profiles ─────────────────────────────────────────────────────────────────
 
 export const TalentProfileUpdateSchema = z.object({

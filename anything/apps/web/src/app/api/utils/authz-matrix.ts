@@ -186,6 +186,14 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     expect: VENUE_ONLY,
   },
   {
+    id: 'gigs.match-preview',
+    route: 'gigs/match-preview/route.ts',
+    method: 'GET',
+    summary: "Create-gig Live Analysis — candidate aggregates + public cards (S7)",
+    expect: VENUE_ONLY,
+    note: 'Hiring tool: public directory columns + one availability boolean; slot details never leave the calendar.',
+  },
+  {
     id: 'venue.stats',
     route: 'venue/stats/route.ts',
     method: 'GET',

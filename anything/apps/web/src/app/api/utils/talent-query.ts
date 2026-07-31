@@ -67,16 +67,12 @@ export function buildTalentListQuery(filters: TalentListQuery): BuiltQuery {
   }
 
   // Ranking (P6 + S5/#28): Available-tonight boost first, then talent with an
-  // open AVAILABLE slot today (probe rides 0009's UNIQUE(talent_id, date,
-  // time_slot) index), then most complete profiles — the closest thing to
-  // "quality" pre-reviews.
+  // open AVAILABLE slot today, then most complete profiles — the closest
+  // thing to "quality" pre-reviews. The probe goes through the 0017 SECURITY
+  // DEFINER helper: availabilities are RLS'd talent-own, so a direct EXISTS
+  // would silently stop boosting once the app runs as the non-owner role.
   text += ` ORDER BY available_tonight DESC,
-    EXISTS (
-      SELECT 1 FROM availabilities av
-      WHERE av.talent_id = talent_profiles.id
-        AND av.date = CURRENT_DATE
-        AND av.status = 'AVAILABLE'
-    ) DESC,
+    app_talent_available_on(talent_profiles.id, CURRENT_DATE) DESC,
     profile_completion_pct DESC NULLS LAST, created_at DESC`;
 
   const offset = (filters.page - 1) * TALENT_PAGE_SIZE;
