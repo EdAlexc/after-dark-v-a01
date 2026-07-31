@@ -4,6 +4,10 @@
     {
       "path": "/api/payouts/release",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/retention/purge",
+      "schedule": "30 9 * * *"
     }
   ]
 }

@@ -22,7 +22,7 @@ const deleteLimiter = getRateLimiter('account-delete', { windowMs: 60 * 60 * 100
 export const DELETE = withRoute('account.delete', async (request) => {
   // Data-subject rights survive suspension (P9): allowSuspended is only here.
   const user = await authGuard.requireSession({ allowSuspended: true });
-  enforceRateLimit(deleteLimiter, clientKey(request, user.id));
+  await enforceRateLimit(deleteLimiter, clientKey(request, user.id));
 
   const { password, confirm } = await parseBody(request, AccountDeleteSchema);
 

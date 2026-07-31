@@ -12,6 +12,7 @@ import {
 import { dollarsToCents } from '@/app/api/utils/money';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 const reviewLimiter = getRateLimiter('applications-review', {
   windowMs: 60 * 60 * 1000,
@@ -42,25 +43,30 @@ interface ApplicationRow {
  */
 export const PATCH = withRoute('applications.update', async (request, context) => {
   const user = await authGuard.requireRole('TALENT', 'VENUE');
-  enforceRateLimit(reviewLimiter, clientKey(request, user.id));
+  await enforceRateLimit(reviewLimiter, clientKey(request, user.id));
 
   const params = await context.params;
   const parsed = ApplicationIdSchema.safeParse(params?.id);
   if (!parsed.success) throw ApiError.notFound();
   const { status: nextStatus } = await parseBody(request, ApplicationStatusUpdateSchema);
 
-  const rows = (await sql`
-    SELECT a.id, a.gig_id, a.talent_id, a.status, a.proposed_rate_cents,
-           g.title AS gig_title, g.status AS gig_status, g.base_rate AS gig_base_rate,
-           g.start_time AS gig_start_time,
-           vp.user_id AS venue_user_id, tp.user_id AS talent_user_id
-    FROM applications a
-    JOIN gigs g ON g.id = a.gig_id
-    JOIN venue_profiles vp ON vp.id = g.venue_id
-    JOIN talent_profiles tp ON tp.id = a.talent_id
-    WHERE a.id = ${parsed.data}
-    LIMIT 1
-  `) as ApplicationRow[];
+  // RLS (S2): the row is only visible to its talent, the owning venue, or
+  // platform context — the same parties the app-level check below admits.
+  const rows = await withRlsContext<ApplicationRow[]>(
+    user,
+    sql`
+      SELECT a.id, a.gig_id, a.talent_id, a.status, a.proposed_rate_cents,
+             g.title AS gig_title, g.status AS gig_status, g.base_rate AS gig_base_rate,
+             g.start_time AS gig_start_time,
+             vp.user_id AS venue_user_id, tp.user_id AS talent_user_id
+      FROM applications a
+      JOIN gigs g ON g.id = a.gig_id
+      JOIN venue_profiles vp ON vp.id = g.venue_id
+      JOIN talent_profiles tp ON tp.id = a.talent_id
+      WHERE a.id = ${parsed.data}
+      LIMIT 1
+    `
+  );
   if (rows.length === 0) throw ApiError.notFound();
   const application = rows[0];
 
@@ -88,7 +94,9 @@ export const PATCH = withRoute('applications.update', async (request, context) =
     const agreedRateCents =
       application.proposed_rate_cents ?? dollarsToCents(application.gig_base_rate ?? 0);
 
-    const [updated] = await sql.transaction([
+    // Same atomic batch as before, now carrying the RLS context (S2) — the
+    // venue may update its own gig's applications/gig/shift rows.
+    const [updated] = await withRlsContext<[unknown[], unknown[], unknown[]]>(user, [
       sql`
         UPDATE applications SET status = 'HIRED', updated_at = NOW()
         WHERE id = ${application.id} AND status = ${application.status}
@@ -125,11 +133,14 @@ export const PATCH = withRoute('applications.update', async (request, context) =
     return Response.json({ application: { ...application, status: 'HIRED' } });
   }
 
-  const updated = (await sql`
-    UPDATE applications SET status = ${nextStatus}, updated_at = NOW()
-    WHERE id = ${application.id} AND status = ${application.status}
-    RETURNING *
-  `) as Array<Record<string, unknown>>;
+  const updated = await withRlsContext<Array<Record<string, unknown>>>(
+    user,
+    sql`
+      UPDATE applications SET status = ${nextStatus}, updated_at = NOW()
+      WHERE id = ${application.id} AND status = ${application.status}
+      RETURNING *
+    `
+  );
   if (updated.length === 0) {
     throw ApiError.badRequest('Application was modified concurrently — reload and retry');
   }

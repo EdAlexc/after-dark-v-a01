@@ -16,7 +16,7 @@ const uploadLimiter = getRateLimiter('media-upload', { windowMs: 60 * 60 * 1000,
  */
 export const POST = withRoute('media.upload', async (request) => {
   const user = await authGuard.requireSession();
-  enforceRateLimit(uploadLimiter, clientKey(request, user.id));
+  await enforceRateLimit(uploadLimiter, clientKey(request, user.id));
 
   const body = await parseBody(request, UploadSchema, { maxBytes: 8_000_000 });
 

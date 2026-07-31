@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({ sql: vi.fn() }));
+vi.mock('../sql', () => ({ default: mocks.sql }));
+
 import {
+  SharedWindowRateLimiter,
   SlidingWindowRateLimiter,
   clientKey,
   enforceRateLimit,
@@ -100,11 +105,87 @@ describe('SlidingWindowRateLimiter', () => {
   });
 });
 
+describe('SharedWindowRateLimiter (Postgres fixed window, S1)', () => {
+  beforeEach(() => {
+    mocks.sql.mockReset();
+  });
+
+  function upsertReturning(count: number, retryAfter = 30) {
+    mocks.sql.mockResolvedValueOnce([{ count, retry_after: retryAfter }]);
+  }
+
+  it('allows while the shared count is within max', async () => {
+    const limiter = new SharedWindowRateLimiter('t', { windowMs: 60_000, max: 3 });
+    upsertReturning(2);
+    const decision = await limiter.check('user:u1');
+    expect(decision).toEqual({ allowed: true, remaining: 1, retryAfterSeconds: 0 });
+  });
+
+  it('blocks past max with the window-derived retry-after', async () => {
+    const limiter = new SharedWindowRateLimiter('t', { windowMs: 60_000, max: 3 });
+    upsertReturning(4, 42);
+    const decision = await limiter.check('user:u1');
+    expect(decision).toEqual({ allowed: false, remaining: 0, retryAfterSeconds: 42 });
+  });
+
+  it('namespaces the bucket per limiter so limiters never share counters', async () => {
+    const limiter = new SharedWindowRateLimiter('signin', { windowMs: 60_000, max: 1 });
+    upsertReturning(1);
+    await limiter.check('ip:1.2.3.4');
+    // First template value is the bucket parameter.
+    const values = mocks.sql.mock.calls[0].slice(1);
+    expect(values[0]).toBe('signin:ip:1.2.3.4');
+  });
+
+  it('fails open (allowed) when the store errors, instead of 500ing the route', async () => {
+    const limiter = new SharedWindowRateLimiter('t', { windowMs: 60_000, max: 3 });
+    mocks.sql.mockRejectedValueOnce(new Error('connection refused'));
+    const decision = await limiter.check('user:u1');
+    expect(decision.allowed).toBe(true);
+  });
+
+  it('rejects invalid configuration like the in-memory limiter', () => {
+    expect(() => new SharedWindowRateLimiter('t', { windowMs: 0, max: 1 })).toThrow();
+    expect(() => new SharedWindowRateLimiter('t', { windowMs: 1000, max: 0 })).toThrow();
+  });
+});
+
 describe('getRateLimiter registry', () => {
+  const registryOf = () =>
+    (globalThis as unknown as { __afterdarkRateLimiters?: Map<string, unknown> })
+      .__afterdarkRateLimiters;
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('returns the same instance per name', () => {
     const a = getRateLimiter('test-registry', { windowMs: 1000, max: 1 });
     const b = getRateLimiter('test-registry', { windowMs: 9999, max: 99 });
     expect(a).toBe(b);
+  });
+
+  it('uses the in-memory store outside production (dev/test fallback)', () => {
+    registryOf()?.delete('test-backend-a');
+    const limiter = getRateLimiter('test-backend-a', { windowMs: 1000, max: 1 });
+    expect(limiter).toBeInstanceOf(SlidingWindowRateLimiter);
+  });
+
+  it('uses the shared Postgres store in production with a DATABASE_URL', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('DATABASE_URL', 'postgres://example');
+    registryOf()?.delete('test-backend-b');
+    const limiter = getRateLimiter('test-backend-b', { windowMs: 1000, max: 1 });
+    expect(limiter).toBeInstanceOf(SharedWindowRateLimiter);
+  });
+
+  it('honors the RATE_LIMIT_STORE=memory override even in production', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('DATABASE_URL', 'postgres://example');
+    vi.stubEnv('RATE_LIMIT_STORE', 'memory');
+    registryOf()?.delete('test-backend-c');
+    const limiter = getRateLimiter('test-backend-c', { windowMs: 1000, max: 1 });
+    expect(limiter).toBeInstanceOf(SlidingWindowRateLimiter);
   });
 });
 
@@ -126,17 +207,26 @@ describe('clientKey', () => {
 });
 
 describe('enforceRateLimit', () => {
-  it('throws ApiError 429 with Retry-After seconds when blocked', () => {
+  it('throws ApiError 429 with Retry-After seconds when blocked', async () => {
     const clock = fixedClock();
     const limiter = new SlidingWindowRateLimiter({ windowMs: 30_000, max: 1, now: clock.now });
-    enforceRateLimit(limiter, 'k');
+    await enforceRateLimit(limiter, 'k');
     try {
-      enforceRateLimit(limiter, 'k');
+      await enforceRateLimit(limiter, 'k');
       expect.unreachable('expected 429');
     } catch (err) {
       expect(err).toBeInstanceOf(ApiError);
       expect((err as ApiError).status).toBe(429);
       expect((err as ApiError).retryAfterSeconds).toBeGreaterThanOrEqual(1);
     }
+  });
+
+  it('awaits async (shared-store) decisions before deciding', async () => {
+    const limiter = new SharedWindowRateLimiter('t-enforce', { windowMs: 30_000, max: 1 });
+    mocks.sql.mockResolvedValueOnce([{ count: 5, retry_after: 7 }]);
+    await expect(enforceRateLimit(limiter, 'k')).rejects.toMatchObject({
+      status: 429,
+      retryAfterSeconds: 7,
+    });
   });
 });

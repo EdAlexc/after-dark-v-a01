@@ -4,6 +4,7 @@ import { auditLogger } from '@/app/api/utils/audit';
 import { parseQuery } from '@/app/api/utils/validation';
 import { AdminAuditQuerySchema } from '@/app/api/utils/schemas';
 import { withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 const PAGE_SIZE = 50;
 /** CSV export cap — keeps the handler bounded (<1s, §6.3) instead of async. */
@@ -32,7 +33,8 @@ export const GET = withRoute('admin.audit.list', async (request) => {
   const actionLike = action ? `%${action}%` : null;
 
   if (format === 'csv') {
-    const rows = (await sql`
+    // RLS (S2): audit_logs_admin_read keys on the ADMIN context.
+    const rows = await withRlsContext<Array<Record<string, unknown>>>(admin, sql`
       SELECT id, actor_id, action, entity_type, entity_id, metadata, created_at
       FROM audit_logs
       WHERE (${actorLike}::text IS NULL OR actor_id ILIKE ${actorLike})
@@ -40,7 +42,7 @@ export const GET = withRoute('admin.audit.list', async (request) => {
         AND (${entity_type ?? null}::text IS NULL OR entity_type = ${entity_type ?? null})
       ORDER BY created_at DESC
       LIMIT ${CSV_LIMIT}
-    `) as Array<Record<string, unknown>>;
+    `);
 
     await auditLogger.record({
       actorId: admin.id,
@@ -75,7 +77,7 @@ export const GET = withRoute('admin.audit.list', async (request) => {
   }
 
   const offset = (page - 1) * PAGE_SIZE;
-  const rows = (await sql`
+  const rows = await withRlsContext<Array<Record<string, unknown>>>(admin, sql`
     SELECT id, actor_id, action, entity_type, entity_id, metadata, created_at
     FROM audit_logs
     WHERE (${actorLike}::text IS NULL OR actor_id ILIKE ${actorLike})
@@ -83,7 +85,7 @@ export const GET = withRoute('admin.audit.list', async (request) => {
       AND (${entity_type ?? null}::text IS NULL OR entity_type = ${entity_type ?? null})
     ORDER BY created_at DESC
     LIMIT ${PAGE_SIZE + 1} OFFSET ${offset}
-  `) as Array<Record<string, unknown>>;
+  `);
 
   const hasMore = rows.length > PAGE_SIZE;
   return Response.json({ logs: rows.slice(0, PAGE_SIZE), page, hasMore });

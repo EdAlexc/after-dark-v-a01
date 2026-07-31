@@ -9,14 +9,22 @@
  *   emitted per-request by src/middleware.ts, which also forwards the nonce
  *   to Next.js via the request headers. The legacy 'unsafe-inline' script
  *   policy only remains as the no-nonce fallback path.
- * - frame-ancestors admits the create.xyz builder origins (the platform
- *   embeds the app in an iframe; cookies are SameSite=None for the same
- *   reason). Locking down to 'self' pre-GA: Technical Backlog #16.
+ * - Embed lockdown (S1, Backlog #16): frame-ancestors is 'self' by default —
+ *   the create.xyz builder origins are only admitted when
+ *   CREATE_BUILDER_EMBED=1 opts back in (src/lib/auth.ts relaxes cookie
+ *   SameSite under the same flag; the two must move together or the embed
+ *   half-works).
  * - HSTS is sent unconditionally; browsers ignore it over plain http.
  */
 
-/** @returns {string[]} configured create.xyz builder origins */
+/**
+ * create.xyz builder origins — admitted only under the explicit embed opt-in
+ * (off by default since S1; the builder pathway is dead weight for the
+ * deployed product).
+ * @returns {string[]}
+ */
 function createPlatformOrigins(env) {
+  if (!['1', 'true'].includes(env.CREATE_BUILDER_EMBED ?? '')) return [];
   return [
     env.NEXT_PUBLIC_CREATE_BASE_URL,
     env.NEXT_PUBLIC_CREATE_HOST ? `https://${env.NEXT_PUBLIC_CREATE_HOST}` : null,
@@ -38,6 +46,25 @@ function sentryIngestOrigin(env) {
 }
 
 /**
+ * img-src, pinned when the Blob store is keyed (S3, Backlog #10 / G11):
+ * exactly our store's host (derived from the token — CJS twin of
+ * media.ts#blobHostname), no `data:` (the inline write path is dead with the
+ * token set and the backfill moved old rows), no broad `https:` (third-party
+ * image loads were the G11 egress finding). Without the token, the dev/preview
+ * fallback keeps the historic permissive list so inline-stored images render.
+ * @returns {string}
+ */
+function imgSrc(env) {
+  const token = env.BLOB_READ_WRITE_TOKEN;
+  if (!token) return "img-src 'self' data: blob: https:";
+  const match = /^vercel_blob_rw_([a-z0-9]+)_/i.exec(token);
+  const host = match
+    ? `https://${match[1].toLowerCase()}.public.blob.vercel-storage.com`
+    : 'https://*.public.blob.vercel-storage.com';
+  return `img-src 'self' blob: ${host}`;
+}
+
+/**
  * @param {{ isDev?: boolean, env?: Record<string, string | undefined>, nonce?: string }} [options]
  * @returns {string} the Content-Security-Policy value
  */
@@ -56,8 +83,7 @@ function buildCsp({ isDev = false, env = process.env, nonce } = {}) {
     "default-src 'self'",
     scriptSrc,
     "style-src 'self' 'unsafe-inline'",
-    // Profile/gig media may be remote (base64 data URLs + https images today).
-    "img-src 'self' data: blob: https:",
+    imgSrc(env),
     "font-src 'self' data:",
     // The service worker (public/sw.js, P10.2). Explicit because
     // 'strict-dynamic' in script-src ignores host sources like 'self'.

@@ -16,6 +16,16 @@
  * returned as a data URL — same shape the schema stored pre-P4, so the
  * fallback needs no schema change. Either way the bytes stored are the
  * *processed* ones, never the originals.
+ *
+ * S3 (Backlog #10 remainder): once Blob is keyed, the inline path is DEAD —
+ * sanitizeMediaField re-homes even already-processed data URLs into Blob, the
+ * CSP drops `data:`/broad `https:` from img-src (security-headers.js pins to
+ * 'self' + blob: + the store's own host), and `yarn db:backfill-media` moves
+ * the pre-existing rows. AV-scanning stance, documented not widened: images
+ * are inert by construction — sharp re-encodes every pixel, so a payload
+ * hiding in the container/metadata does not survive — and uploads stay
+ * IMAGE-ONLY (no PDFs/documents anywhere, including message attachments)
+ * until a real AV step exists.
  */
 
 import sharp from 'sharp';
@@ -106,6 +116,23 @@ export async function storeImage(
   };
 }
 
+/** True when the Blob driver is active (BLOB_READ_WRITE_TOKEN present). */
+export function blobConfigured(): boolean {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+}
+
+/**
+ * The Blob store's public hostname, derived from the token
+ * (`vercel_blob_rw_<storeId>_<secret>` → `<storeid>.public.blob.vercel-storage.com`).
+ * Used to pin the CSP img-src to exactly our store (S3); null when the token
+ * is absent or shaped unexpectedly (CSP then falls back to the
+ * *.public.blob.vercel-storage.com wildcard — still no arbitrary https).
+ */
+export function blobHostname(token = process.env.BLOB_READ_WRITE_TOKEN): string | null {
+  const match = /^vercel_blob_rw_([a-z0-9]+)_/i.exec(token ?? '');
+  return match ? `${match[1].toLowerCase()}.public.blob.vercel-storage.com` : null;
+}
+
 /** True for values the pipeline has already produced (webp data URL or Blob URL). */
 export function isProcessedMedia(value: string): boolean {
   return (
@@ -115,9 +142,15 @@ export function isProcessedMedia(value: string): boolean {
 }
 
 /**
- * Runs profile media fields through the pipeline at write time. Values that
- * are already processed, empty, or plain https URLs (external portfolio
- * links) pass through untouched; raw base64 uploads get stripped/resized.
+ * Runs profile media fields through the pipeline at write time. Empty values
+ * and plain https URLs (external portfolio links) pass through untouched;
+ * raw base64 uploads get stripped/resized.
+ *
+ * Data-URL handling depends on the driver (S3): with Blob keyed, EVERY data
+ * URL — even an already-processed webp a client echoes back from an earlier
+ * save — is (re)processed and stored in Blob, so no new inline rows can ever
+ * be written and the pinned CSP (no `data:` in img-src) stays truthful.
+ * Without the token (dev fallback), processed values pass through as before.
  */
 export async function sanitizeMediaField(
   value: string | undefined,
@@ -126,7 +159,7 @@ export async function sanitizeMediaField(
 ): Promise<string | undefined> {
   if (value === undefined || value === '' ) return value;
   if (!value.startsWith('data:')) return value; // https URL — nothing embedded to strip
-  if (isProcessedMedia(value)) return value;
+  if (isProcessedMedia(value) && !blobConfigured()) return value;
   const processed = await processImage(value);
   const stored = await storeImage(processed, purpose, ownerId);
   return stored.url;

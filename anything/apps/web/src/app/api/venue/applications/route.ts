@@ -1,6 +1,7 @@
 import sql from '@/app/api/utils/sql';
 import { authGuard } from '@/app/api/utils/auth-guard';
 import { withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 /**
  * GET /api/venue/applications (P3.2) — every application to the calling
@@ -11,19 +12,23 @@ import { withRoute } from '@/app/api/utils/route-kit';
 export const GET = withRoute('venue.applications', async () => {
   const user = await authGuard.requireRole('VENUE');
 
-  const applications = await sql`
-    SELECT a.id, a.gig_id, a.status, a.proposed_rate_cents, a.cover_message,
-           a.created_at,
-           g.title AS gig_title, g.start_time, g.base_rate,
-           tp.stage_name, tp.primary_role, tp.neighborhood AS talent_neighborhood,
-           tp.hourly_rate_min, tp.hourly_rate_max, tp.avatar_url, tp.genres_vibes
-    FROM applications a
-    JOIN gigs g ON g.id = a.gig_id
-    JOIN venue_profiles vp ON vp.id = g.venue_id
-    JOIN talent_profiles tp ON tp.id = a.talent_id
-    WHERE vp.user_id = ${user.id}
-    ORDER BY (a.status = 'PENDING') DESC, a.created_at DESC
-    LIMIT 200
-  `;
+  // RLS (S2): applications_venue_review scopes rows to the caller's gigs.
+  const applications = await withRlsContext<Record<string, unknown>[]>(
+    user,
+    sql`
+      SELECT a.id, a.gig_id, a.status, a.proposed_rate_cents, a.cover_message,
+             a.created_at,
+             g.title AS gig_title, g.start_time, g.base_rate,
+             tp.stage_name, tp.primary_role, tp.neighborhood AS talent_neighborhood,
+             tp.hourly_rate_min, tp.hourly_rate_max, tp.avatar_url, tp.genres_vibes
+      FROM applications a
+      JOIN gigs g ON g.id = a.gig_id
+      JOIN venue_profiles vp ON vp.id = g.venue_id
+      JOIN talent_profiles tp ON tp.id = a.talent_id
+      WHERE vp.user_id = ${user.id}
+      ORDER BY (a.status = 'PENDING') DESC, a.created_at DESC
+      LIMIT 200
+    `
+  );
   return Response.json({ applications });
 });

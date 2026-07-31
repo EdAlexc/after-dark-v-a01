@@ -2,10 +2,12 @@
 
 > How to verify the app end-to-end: automated suites, manual flows, security probes, and the
 > shared preview accounts. Companion to [CLAUDE.md](CLAUDE.md) (architecture) and
-> [DEV_TIMELINE.MD](DEV_TIMELINE.MD) (status). Last full pass: **2026-07-30** (P9 admin &
-> trust — every check below was executed and green on that date; the moderation loop
-> [report → triage → suspend → reinstate → takedown → audit export] ran live against a
-> Neon branch on top of the P3–P8 marketplace loop).
+> [DEV_TIMELINE.MD](DEV_TIMELINE.MD) (status). Last full pass: **2026-07-31** (S1–S3
+> security slices — all automated gates green; migrations 0013/0014, the 19-check RLS
+> harness, the shared rate limiter, preview-credential rotation, and the retention purge
+> with legal holds were exercised live against a disposable Neon branch, including booting
+> the app AS the enforcing `afterdark_app` role and walking landing → venue dashboard
+> (drafts visible) → admin audit viewer in the browser).
 
 ---
 
@@ -32,17 +34,23 @@ One account per role instance, for the whole dev team. Created by
 `yarn db:preview-accounts` (idempotent; re-run to re-assert). They exist on the **production
 Neon DB** (project `after-dark`), so they work on the deployed site right now.
 
-| Role | Email | Password | What you can exercise |
-|---|---|---|---|
-| TALENT | `talent.preview@afterdark.dev` | `AfterDark-Talent-2026!` | Browse, apply/withdraw, messages + propose-rate, availability calendar, shift check-in/out, earnings, profile, settings |
-| VENUE | `venue.preview@afterdark.dev` | `AfterDark-Venue-2026!` | Venue dashboard (Open Gigs, Active Operations, Payouts Pending), create-gig, applicant shortlist/hire, messages + accept-rate, talent directory |
-| PARTY | `party.preview@afterdark.dev` | `AfterDark-Party-2026!` | Read-only discovery: landing, browse, gig detail. All principal writes are role-denied server-side |
-| ADMIN | `admin.preview@afterdark.dev` | `AfterDark-Admin-2026!` | `/dashboard/admin`: reports triage, suspend/reinstate, gig takedown, audit viewer + CSV export. Every action audited |
+**Passwords are not in this file or anywhere in git** (S1 credential hygiene — the old
+committed `AfterDark-*-2026!` passwords are rotated and dead). Each environment derives its
+own passwords from `PREVIEW_ACCOUNTS_SECRET` (see `.env.example`): run
+`yarn db:preview-accounts` with that secret set and the script prints the credentials —
+treat its output like the secret itself and share it over a secret channel, not chat
+history. Rotating the secret and re-running rotates every preview password at once (the
+script re-asserts the credential rows on each run).
+
+| Role | Email | What you can exercise |
+|---|---|---|
+| TALENT | `talent.preview@afterdark.dev` | Browse, apply/withdraw, messages + propose-rate, availability calendar, shift check-in/out, earnings, profile, settings |
+| VENUE | `venue.preview@afterdark.dev` | Venue dashboard (Open Gigs, Active Operations, Payouts Pending), create-gig, applicant shortlist/hire, messages + accept-rate, talent directory |
+| PARTY | `party.preview@afterdark.dev` | Read-only discovery: landing, browse, gig detail. All principal writes are role-denied server-side |
+| ADMIN | `admin.preview@afterdark.dev` | `/dashboard/admin`: reports triage, suspend/reinstate, gig takedown, audit viewer + CSV export. Every action audited |
 
 The venue account owns three starter gigs (2 published, 1 draft) so dashboards and browse are
-never empty. ⚠️ These are **shared alpha credentials committed to the repo** — rotate them
-(edit `scripts/create-preview-accounts.ts`, re-run, update this table) before any real user or
-real payment data enters the database.
+never empty.
 
 ### 2.1 Alpha tester briefing — read this before inviting anyone (§4.3 B3)
 
@@ -66,17 +74,22 @@ are not live (`src/lib/legal.ts` `ALPHA_NOTICE`), so the briefing and the produc
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 583 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 656 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
 ```
 
-(520 → 583 with P9: the authZ matrix grew to **274 generated tests** with 8 ADMIN_ONLY
-rows, plus suspension tests in the AuthGuard suite and an admin-routes edge-case suite
-[guardrails, triage transitions, moderation-read auditing, CSV escaping]. Local quirk: in a
-`.claude/worktrees/*` checkout oxlint needs `--no-ignore` because the parent repo's
-`.gitignore` ignores `.claude/`; CI checkouts are unaffected.)
+(520 → 583 with P9: the authZ matrix grew with 8 ADMIN_ONLY rows, plus suspension tests
+in the AuthGuard suite and an admin-routes edge-case suite [guardrails, triage
+transitions, moderation-read auditing, CSV escaping]. 583 → 656 with S1–S3, 2026-07-31:
+the shared-rate-limit backends [Postgres UPSERT semantics, fail-open, backend selection],
+the retention-purge suite [cron/admin auth, GLOBAL and USER legal-hold semantics, audit
+rows], the S1/S2 migration + grants structural suite, media S3 behavior [blobHostname,
+inline-path removal when Blob is keyed], the CSP embed-lockdown + img-src-pin cases, and
+a `retention.purge` authZ-matrix row — the matrix now generates **279 tests**. Local
+quirk: in a `.claude/worktrees/*` checkout oxlint needs `--no-ignore` because the parent
+repo's `.gitignore` ignores `.claude/`; CI checkouts are unaffected.)
 
 Coverage highlights by area:
 
@@ -89,7 +102,7 @@ Coverage highlights by area:
   idempotent PATCH, concurrent-update guard, UUID validation before SQL.
 - **Client money/time helpers** (`lib/gigs`): 5% fee math (net+fee=gross invariant), NUMERIC
   string parsing, HOT/NEW urgency windows, shift-hour math.
-- **AuthZ matrix** (`api/utils/authz-matrix.ts` + its suite, 231 tests): every route × every
+- **AuthZ matrix** (`api/utils/authz-matrix.ts` + its suite, 279 generated tests): every route × every
   actor (anon/TALENT/VENUE/PARTY/ADMIN) × own-vs-other-tenant, plus a **coverage gate** that
   fails CI when a `route.ts` has no matrix row. This is the artifact TENANT_GUARDRAIL §6.1
   asks for — read it first when reviewing any authZ question. New with P8: the `UNAVAILABLE`
@@ -386,19 +399,24 @@ headers, email, or phone — only `user.id` (scrubber: `src/lib/sentry-scrub.ts`
 **every P3–P8 migration (0007–0011) ships its tables' policies + GRANTs in the same file**
 (the P2.4 convention), so the cutover inherits the new tables with no extra step — the
 structural suite asserts each new table has RLS enabled.
-**As of 2026-07-30 these are proven to work** — but they are still inert in production,
-because the app connects as the table owner and owners bypass non-forced RLS. The full
-runbook, including why the cutover is gated on wiring rather than an env var, is
-[`docs/rls-cutover.md`](docs/rls-cutover.md).
+**As of 2026-07-31 (S2) the engineering side is complete**: `0014_rls_completion.sql`
+closes the policy gaps a full route audit found (SERVICE/ADMIN platform context, gig
+applicant/completed carve-outs, messages mark-read, erasure pseudonymization), and every
+governed route runs through `withRlsContext`. The policies stay inert in production only
+until the operator flips `DATABASE_URL` to the non-owner role — full runbook:
+[`docs/rls-cutover.md`](docs/rls-cutover.md). The 2026-07-31 dress rehearsal booted the
+app on a Neon branch **as `afterdark_app`** and walked landing → venue sign-in →
+dashboard-with-drafts (the canary) → admin audit viewer → purge-under-legal-hold, all
+green.
 
 Re-verify against any Neon branch:
 
 ```bash
-# 1. Create the role on the branch, then re-run migrations so 0006 GRANTs to it
+# 1. Create the role on the branch, then apply the GRANT set to it
 #    CREATE ROLE afterdark_app WITH LOGIN PASSWORD '…' NOBYPASSRLS;
-yarn db:migrate && yarn db:seed
+yarn db:migrate && yarn db:grants && yarn db:seed
 
-# 2. Prove isolation as the non-owner role (10 checks; exits non-zero on any failure)
+# 2. Prove isolation as the non-owner role (19 checks; exits non-zero on any failure)
 OWNER_URL=<owner conn> RLS_URL=<afterdark_app conn> yarn db:verify-rls
 ```
 
@@ -415,13 +433,19 @@ What it asserts, and why each matters:
 | `audit_logs` `UPDATE`/`DELETE` denied | Append-only by privilege, not merely by convention |
 | Role cannot run DDL | Blast radius of a compromised app credential |
 | Public talent directory still readable | The product still works under RLS |
+| Applicant reads the DRAFT gig behind their application; anon still can't | Deep links survive unpublish without leaking drafts (0014 carve-out) |
+| Recipient can mark the counterpart's messages read | 0008's FOR ALL policy blocked this; 0014 splits per command |
+| Participant cannot release a payout; SERVICE can | Escrow release is a system action, closed to user contexts |
+| User context cannot pseudonymize audit rows; SERVICE can | Erasure's one sanctioned audit rewrite, and nothing else |
+| User context cannot write `stripe_events`; SERVICE can | The webhook replay guard is service-internal |
 
 ⚠️ Never point this at the production branch: it inserts a second "rival" tenant on purpose.
 
 ## 8. Known gaps (do not report as regressions)
 
-- **P10.3/P10.4 remain** (shared rate-limit store; Lighthouse/k6/axe CI gates) — P10.1–P10.2
-  (manifest, service worker, offline fallback) landed 2026-07-31, see §9.
+- **P10.4 remains** (Lighthouse/k6/axe CI gates) — P10.3's shared rate-limit store landed
+  2026-07-31 with slice S1; P10.1–P10.2 (manifest, service worker, offline fallback)
+  landed 2026-07-31, see §9.
 - Admin CSV export is **bounded** (10k newest rows per download), not an async job — use
   filters to slice bigger windows; a queued export is post-alpha.
 - Suspension blocks the suspended user at the API layer with a 403 + reason; there is no

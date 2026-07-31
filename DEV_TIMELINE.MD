@@ -538,8 +538,13 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     (profiles, settings avatar, message attachments, `/api/upload`) re-encodes via sharp
     (EXIF/GPS stripped, ≤1600px, webp) and stores to Vercel Blob when
     `BLOB_READ_WRITE_TOKEN` is set (processed inline data-URL fallback otherwise).
-    **Remaining:** backfill pre-P4 base64 rows into object storage, tighten CSP `img-src`
-    once a CDN origin exists, AV scanning on user uploads incl. PDF tech riders.
+    **Remainder closed 2026-07-31 (slice S3):** `yarn db:backfill-media` moves inline
+    `data:` rows into Blob (`--verify` proves zero remain — run it after the B5 token is
+    set); with the token present the inline write path is dead (`sanitizeMediaField`
+    re-homes even processed data URLs) and CSP `img-src` pins to `'self' blob:` + the
+    store's own host (no more broad `https:` — the G11 egress fix). AV stance documented
+    in `media.ts`: images are inert (sharp re-encode) and uploads stay image-only (no
+    PDFs) until a real AV step exists — post-alpha.
 11. **Legacy dead code** — ✅ done (P0: `useUpload.ts`, `api/utils/upload.ts`,
     `useHandleStreamResponse.ts`, `api/vitest.config.ts`; P1 2026-07-30: off-spec talent
     create-gig page removed, sidebar nav updated).
@@ -553,9 +558,12 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     capture design; consider a simple `events` table now to avoid losing history.
 15. ~~**Rate-limit store**~~ — superseded by #21, now **scheduled as P10.3** (it must land
     before the k6 Apdex gate is meaningful).
-16. **iframe embedding posture**: cookies are `SameSite=None`; P0 set CSP `frame-ancestors` to
-    `'self'` + configured create.xyz origins (no `X-Frame-Options`, superseded by CSP). Before
-    GA, decide whether to keep the builder pathway or lock `frame-ancestors` to `'self'` only.
+16. ~~**iframe embedding posture**~~ — **DONE (2026-07-31, slice S1).** The builder embed is
+    opt-in now: without `CREATE_BUILDER_EMBED=1`, `frame-ancestors` is `'self'` (create.xyz
+    origins ignored even when configured) and cookies drop to `SameSite=Lax` (auth.ts reads
+    the same flag — additive config per the platform header). Setting the flag restores the
+    exact pre-S1 behavior. Verified live: header shows `frame-ancestors 'self'`; sign-in
+    works under Lax.
 17. ~~**2FA → better-auth twoFactor plugin**~~ — **DONE (2026-07-30, second pass).** Exactly
     the slice scoped above: migration `0005`, plugin + client plugin, `/account/two-factor`
     challenge page, settings card rebuild, legacy route/utils removed,
@@ -574,9 +582,15 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     `NEXT_PUBLIC_SENTRY_DSN` in Vercel to activate.
 20. ~~**oxlint in CI**~~ — **DONE (2026-07-30).** `yarn lint` in web (oxlint, deny-warnings,
     workspace config) + CI step; pre-existing warnings fixed.
-21. **Shared rate-limit store** (was #15's concern) — **scheduled as P10.3.** The in-memory
-    `SlidingWindowRateLimiter` is per-instance; back `getRateLimiter` with Upstash Redis or a
-    Postgres token-bucket before the load test, or the Apdex/429 numbers measure nothing.
+21. ~~**Shared rate-limit store**~~ — **DONE (2026-07-31, slice S1 / was P10.3).**
+    `getRateLimiter` now returns a Postgres-backed `SharedWindowRateLimiter`
+    (`rate_limit_counters`, migration 0013; one atomic UPSERT per check, fixed-window,
+    fail-open-with-loud-log) in production; in-memory remains the dev/test fallback
+    (`RATE_LIMIT_STORE` overrides). better-auth's credential-endpoint limits moved to
+    `storage: 'database'` (`"rateLimit"` table) in the same slice, so sign-in/2FA
+    throttles hold across instances too. Live-verified against a Neon branch as the
+    non-owner role (allow→allow→429 with Retry-After). The k6 multi-instance burst
+    remains part of the P10.4 gate.
 22. ~~**Auth on Vercel preview deployments**~~ — **DONE (2026-07-27).** `src/lib/
     deployment-origins.ts` derives this deployment's own origins from `VERCEL_URL`,
     `VERCEL_BRANCH_URL` and `VERCEL_PROJECT_PRODUCTION_URL`, and `auth.ts` spreads them into
@@ -593,14 +607,20 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     cheap (~16 path references across the 3 docs + CI); a full flatten to the repo root would
     remove the need for Vercel's Root Directory setting but forces the mobile-vs-PWA decision
     in #4 — revisit after P7 when that decision is actually made.
-25. **RLS activation** — **verified 2026-07-30, production cutover carried.** Policies
-    (`0004`) and least-privilege GRANTs (`0006`) ship, and `yarn db:verify-rls` proves they
-    enforce against a real non-owner role (10/10: drafts invisible by direct id, cross-tenant
-    UPDATE affects 0 rows, `audit_logs` immutable, no DDL). **Remaining:** create the role on
-    production, wire `withRlsContext` into the five routes that read/write RLS-governed tables,
-    then flip `DATABASE_URL` — in that order, because the driver is stateless per query and an
-    unwired cutover silently hides a venue's own drafts. Full runbook:
-    [`docs/rls-cutover.md`](docs/rls-cutover.md).
+25. **RLS activation** — **engineering complete 2026-07-31 (slice S2); only the operator
+    flip remains.** The 2026-07-31 route audit found the old "five routes" list was
+    P2-era-stale: RLS is enabled on every P3–P9 table, so **every** governed route is now
+    wired through `withRlsContext` (single query or atomic batch), system paths (escrow
+    cron, Stripe webhook, retention purge, erasure pseudonymization) run under a SERVICE
+    context, and migration `0014_rls_completion.sql` adds the policies the cutover
+    actually needs (platform ADMIN/SERVICE context; gig applicant/completed read
+    carve-outs via a SECURITY DEFINER helper — a naive EXISTS recurses, 42P17; messages
+    mark-read split; audit pseudonymize + service read; payout checkout INSERT).
+    `yarn db:verify-rls` now proves **19/19** against a real enforcing role, and the app
+    itself was booted on a Neon branch AS `afterdark_app`: venue dashboard shows its own
+    drafts (the canary), admin viewer reads the audit trail, purge + holds work.
+    **Remaining (operator, ~10 min):** create the role, `yarn db:grants`, flip
+    `DATABASE_URL`, re-verify. Full runbook: [`docs/rls-cutover.md`](docs/rls-cutover.md).
 26. **Legal copy needs counsel review.** The privacy policy and ToS shipped in P2 describe
     what the code actually does and satisfy G1 for alpha, but have not been reviewed by a
     lawyer. Required before general availability, along with executed DPAs (G10) and a DPIA
@@ -680,18 +700,17 @@ bypassed, lint reports 0 warnings, so CI goes green immediately.
 
 ### 4.4 Required for the formal alpha *exit* gate, but not for starting a closed alpha
 
-- **P10.3 shared rate-limit store** — in-memory limits don't hold across serverless
-  instances, so brute-force protection on login/2FA is porous. Acceptable risk *only* while
-  signups are invite-only; required before any open signup. (Also a prerequisite for
-  meaningful k6 numbers.)
+- ~~**P10.3 shared rate-limit store**~~ — ✅ **done 2026-07-31 (slice S1, Backlog #21)**:
+  Postgres-backed store shared across instances; k6 numbers are now meaningful.
 - **P10.4 CI gates** (Lighthouse CWV, k6 Apdex, axe) — these *are* the §7 alpha-exit
   checklist; a closed alpha can start while they land, but "alpha complete" cannot be
   declared without them.
-- **RLS production cutover** (Backlog #25) — defense-in-depth. The enforced layer today is
-  AuthGuard + the machine-checked authZ matrix (274 generated tests), which is real
-  protection; cutover order in `docs/rls-cutover.md`.
-- **G7 retention purge job** — the schedule is documented but nothing purges; at alpha data
-  volumes nothing exceeds retention windows for ~90 days, which bounds the deadline.
+- **RLS production cutover** (Backlog #25) — engineering ✅ done 2026-07-31 (slice S2);
+  the flip itself is a ~10-minute operator step (`docs/rls-cutover.md`). Until then the
+  enforced layer remains AuthGuard + the machine-checked authZ matrix.
+- ~~**G7 retention purge job**~~ — ✅ **done 2026-07-31 (slice S2)**: daily
+  `/api/retention/purge` cron (legal-hold aware via `legal_holds`, every run audited);
+  `docs/retention.md` §4–5 updated.
 - **Doc hygiene**: §1 of this file still contains stale P0-era lines (e.g. "New env var:
   `AUTH_SECRET_ENCRYPTION_KEY` is now **required**" — obsolete since migration 0005, and a
   "Still UI-with-mock-data" list describing pre-P3 reality). Anyone assessing state from §1
@@ -793,7 +812,8 @@ matter; redeploy once at the end (env changes apply to *new* deployments only).
 
 ### Security wave (do first, in this order)
 
-**S1 — Serverless security spine (~2–3 d)** — Backlog #21, #16 + credential hygiene
+**S1 — Serverless security spine (~2–3 d)** — Backlog #21, #16 + credential hygiene —
+✅ **landed 2026-07-31**
 - Shared rate-limit store (P10.3): back `getRateLimiter` with Upstash Redis or a Postgres
   token bucket **behind the existing interface** (call sites untouched; in-memory stays as
   the dev/test fallback). Per-instance limits are no limits on serverless fan-out.
@@ -806,7 +826,8 @@ matter; redeploy once at the end (env changes apply to *new* deployments only).
   blocked; gitleaks finds no credentials.
 
 **S2 — RLS cutover + retention purge (~2–3 d)** — Backlog #25 + G7 — *parallel with S1
-(no shared files)*
+(no shared files)* — ✅ **landed 2026-07-31** (all engineering + 19/19 verify on a real
+enforcing role; the `DATABASE_URL` flip is the documented ~10-min operator step)
 - Production cutover exactly per `docs/rls-cutover.md`: create the least-privilege role,
   wire `withRlsContext` into the five RLS-governed routes (no-op while owner-connected),
   flip `DATABASE_URL`, re-run verify.
@@ -816,6 +837,8 @@ matter; redeploy once at the end (env changes apply to *new* deployments only).
   test green; purge writes audit rows.
 
 **S3 — Media pipeline completion (~2 d)** — Backlog #10 remainder — *needs B5 (Blob token)*
+— ✅ **landed 2026-07-31** (code + CSP pin + backfill tool; run `yarn db:backfill-media
+--verify` once B5 sets the token to assert the zero-`data:`-rows gate on prod data)
 - Backfill pre-P4 base64 rows into Blob; delete the inline-data-URL read path after.
 - Tighten CSP `img-src` from `https:` to `'self' blob:` + the Blob host.
 - AV-scanning stance: images stay inert (sharp re-encode); messages remain image-only

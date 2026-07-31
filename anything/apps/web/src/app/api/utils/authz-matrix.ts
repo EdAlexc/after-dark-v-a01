@@ -519,6 +519,20 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
       ADMIN: 'ALLOW',
     },
   },
+  {
+    id: 'retention.purge',
+    route: 'retention/purge/route.ts',
+    method: 'POST',
+    summary: 'G7 retention purge (legal-hold aware) — ADMIN or CRON_SECRET bearer only (S2)',
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'FORBIDDEN',
+      VENUE: 'FORBIDDEN',
+      PARTY: 'FORBIDDEN',
+      ADMIN: 'ALLOW',
+    },
+    note: 'Deletes only expired sessions/tokens and stale rate-limit windows; every run audited.',
+  },
 
   // ─── Admin & trust (P9) — every row is ADMIN-only by construction ───────────
   {

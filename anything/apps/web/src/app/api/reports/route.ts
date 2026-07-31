@@ -4,6 +4,7 @@ import { auditLogger } from '@/app/api/utils/audit';
 import { parseBody } from '@/app/api/utils/validation';
 import { ReportCreateSchema } from '@/app/api/utils/schemas';
 import { withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext } from '@/app/api/utils/rls';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 
 const reportLimiter = getRateLimiter('reports-create', { windowMs: 60 * 60 * 1000, max: 10 });
@@ -15,15 +16,19 @@ const reportLimiter = getRateLimiter('reports-create', { windowMs: 60 * 60 * 100
  */
 export const POST = withRoute('reports.create', async (request) => {
   const user = await authGuard.requireSession();
-  enforceRateLimit(reportLimiter, clientKey(request, user.id));
+  await enforceRateLimit(reportLimiter, clientKey(request, user.id));
 
   const body = await parseBody(request, ReportCreateSchema);
 
-  const inserted = (await sql`
-    INSERT INTO reports (reporter_id, entity_type, entity_id, reason, severity)
-    VALUES (${user.id}, ${body.entity_type}, ${body.entity_id}, ${body.reason}, ${body.severity})
-    RETURNING id, status, severity, created_at
-  `) as Array<Record<string, unknown>>;
+  // RLS (S2): reports_create WITH CHECKs reporter_id = request context.
+  const inserted = await withRlsContext<Array<Record<string, unknown>>>(
+    user,
+    sql`
+      INSERT INTO reports (reporter_id, entity_type, entity_id, reason, severity)
+      VALUES (${user.id}, ${body.entity_type}, ${body.entity_id}, ${body.reason}, ${body.severity})
+      RETURNING id, status, severity, created_at
+    `
+  );
 
   await auditLogger.record({
     actorId: user.id,

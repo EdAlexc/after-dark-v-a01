@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ sql: vi.fn() }));
-vi.mock('@/app/api/utils/sql', () => ({ default: mocks.sql }));
+vi.mock('@/app/api/utils/sql', () => ({
+  default: Object.assign(mocks.sql, {
+    // Neon's transaction API (used via withRlsContext, S2): array of
+    // already-pending queries → array of results.
+    transaction: async (queries: Promise<unknown>[]) => Promise.all(queries),
+  }),
+}));
 
 import {
   EXPORT_ROW_LIMIT,

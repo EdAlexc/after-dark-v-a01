@@ -12,6 +12,7 @@ import {
 import { splitPayout } from '@/app/api/utils/money';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 const transitionLimiter = getRateLimiter('shifts-transition', {
   windowMs: 60 * 60 * 1000,
@@ -46,24 +47,29 @@ interface ShiftRow {
  */
 export const POST = withRoute('shifts.transition', async (request, context) => {
   const user = await authGuard.requireRole('TALENT', 'VENUE');
-  enforceRateLimit(transitionLimiter, clientKey(request, user.id));
+  await enforceRateLimit(transitionLimiter, clientKey(request, user.id));
 
   const params = await context.params;
   const parsed = ShiftIdSchema.safeParse(params?.id);
   if (!parsed.success) throw ApiError.notFound();
   const body = await parseBody(request, ShiftTransitionSchema);
 
-  const rows = (await sql`
-    SELECT s.id, s.gig_id, s.status, s.agreed_rate_cents, s.check_in_at, s.check_out_at,
-           s.call_time, g.title AS gig_title,
-           vp.user_id AS venue_user_id, tp.user_id AS talent_user_id
-    FROM shifts s
-    JOIN gigs g ON g.id = s.gig_id
-    JOIN venue_profiles vp ON vp.id = g.venue_id
-    JOIN talent_profiles tp ON tp.id = s.talent_id
-    WHERE s.id = ${parsed.data}
-    LIMIT 1
-  `) as ShiftRow[];
+  // RLS (S2): shift rows resolve only for their talent, their venue, or
+  // platform context — mirrored by the app-level check below.
+  const rows = await withRlsContext<ShiftRow[]>(
+    user,
+    sql`
+      SELECT s.id, s.gig_id, s.status, s.agreed_rate_cents, s.check_in_at, s.check_out_at,
+             s.call_time, g.title AS gig_title,
+             vp.user_id AS venue_user_id, tp.user_id AS talent_user_id
+      FROM shifts s
+      JOIN gigs g ON g.id = s.gig_id
+      JOIN venue_profiles vp ON vp.id = g.venue_id
+      JOIN talent_profiles tp ON tp.id = s.talent_id
+      WHERE s.id = ${parsed.data}
+      LIMIT 1
+    `
+  );
   if (rows.length === 0) throw ApiError.notFound();
   const shift = rows[0];
 
@@ -73,11 +79,14 @@ export const POST = withRoute('shifts.transition', async (request, context) => {
   const actor = isTalent ? 'TALENT' : 'VENUE';
 
   // Idempotency replay? Return the recorded outcome without re-applying.
-  const replay = (await sql`
-    SELECT to_status FROM shift_transitions
-    WHERE shift_id = ${shift.id} AND idempotency_key = ${body.idempotency_key}
-    LIMIT 1
-  `) as Array<{ to_status: ShiftStatus }>;
+  const replay = await withRlsContext<Array<{ to_status: ShiftStatus }>>(
+    user,
+    sql`
+      SELECT to_status FROM shift_transitions
+      WHERE shift_id = ${shift.id} AND idempotency_key = ${body.idempotency_key}
+      LIMIT 1
+    `
+  );
   if (replay.length > 0) {
     return Response.json({ shift: { ...shift, status: replay[0].to_status }, replayed: true });
   }
@@ -102,7 +111,7 @@ export const POST = withRoute('shifts.transition', async (request, context) => {
 
   // Transition + idempotency record commit atomically; the unique constraint
   // on (shift_id, key) is the backstop if two same-key requests race.
-  const [updated] = await sql.transaction([
+  const [updated] = await withRlsContext<[unknown[], unknown[]]>(user, [
     sql`
       UPDATE shifts
       SET status = ${body.to},
@@ -125,12 +134,16 @@ export const POST = withRoute('shifts.transition', async (request, context) => {
   // Checkout writes the ledger row (P8 picks it up for escrow release).
   if (body.to === 'CHECKED_OUT' && shiftPayCents !== null) {
     const split = splitPayout(shiftPayCents);
-    await sql`
-      INSERT INTO payouts (shift_id, gig_id, venue_user_id, talent_user_id,
-                           gross_cents, fee_cents, net_cents, status)
-      VALUES (${shift.id}, ${shift.gig_id}, ${shift.venue_user_id}, ${shift.talent_user_id},
-              ${split.grossCents}, ${split.feeCents}, ${split.netCents}, 'HELD')
-    `;
+    // RLS (S2): payouts_participant_insert admits the shift's own parties.
+    await withRlsContext(
+      user,
+      sql`
+        INSERT INTO payouts (shift_id, gig_id, venue_user_id, talent_user_id,
+                             gross_cents, fee_cents, net_cents, status)
+        VALUES (${shift.id}, ${shift.gig_id}, ${shift.venue_user_id}, ${shift.talent_user_id},
+                ${split.grossCents}, ${split.feeCents}, ${split.netCents}, 'HELD')
+      `
+    );
   }
 
   await auditLogger.record({

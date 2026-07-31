@@ -6,6 +6,7 @@ import { GigIdSchema, GigStatusUpdateSchema, type GigStatus } from '@/app/api/ut
 import { GIG_TRANSITIONS, canTransition } from '@/app/api/utils/gig-lifecycle';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
+import { withRlsContext, type RlsUser } from '@/app/api/utils/rls';
 
 const statusLimiter = getRateLimiter('gigs-status', { windowMs: 60 * 60 * 1000, max: 60 });
 
@@ -16,9 +17,14 @@ interface GigDetailRow {
   venue_user_id: string;
 }
 
-/** Loads a gig joined with its venue card. Returns null when absent. */
-async function loadGig(id: string): Promise<GigDetailRow | null> {
-  const rows = (await sql`
+/**
+ * Loads a gig joined with its venue card. Returns null when absent.
+ * RLS (S2): with a signed-in caller the read carries their context, so the
+ * owner/applicant policies apply post-cutover; anonymous reads rely on the
+ * public policies alone.
+ */
+async function loadGig(id: string, user?: RlsUser | null): Promise<GigDetailRow | null> {
+  const query = sql`
     SELECT g.*,
            vp.user_id AS venue_user_id,
            vp.venue_name, vp.neighborhood AS venue_neighborhood, vp.address,
@@ -31,7 +37,10 @@ async function loadGig(id: string): Promise<GigDetailRow | null> {
     JOIN venue_profiles vp ON g.venue_id = vp.id
     WHERE g.id = ${id}
     LIMIT 1
-  `) as GigDetailRow[];
+  `;
+  const rows = user
+    ? await withRlsContext<GigDetailRow[]>(user, query)
+    : ((await query) as GigDetailRow[]);
   return rows[0] ?? null;
 }
 
@@ -53,22 +62,25 @@ export const GET = withRoute('gigs.detail', async (_request, context) => {
   const parsed = GigIdSchema.safeParse(params?.id);
   if (!parsed.success) throw ApiError.notFound();
 
-  const row = await loadGig(parsed.data);
+  const user = await authGuard.optionalUser();
+  const row = await loadGig(parsed.data, user);
   if (!row) throw ApiError.notFound();
 
-  const user = await authGuard.optionalUser();
   const isOwner = user !== null && (user.id === row.venue_user_id || user.role === 'ADMIN');
 
   // A signed-in talent sees their own application state inline ("✓ Applied").
   let myApplication: Record<string, unknown> | null = null;
   if (user !== null && user.role === 'TALENT') {
-    const applicationRows = (await sql`
-      SELECT a.id, a.status, a.proposed_rate_cents, a.created_at
-      FROM applications a
-      JOIN talent_profiles tp ON tp.id = a.talent_id
-      WHERE a.gig_id = ${parsed.data} AND tp.user_id = ${user.id}
-      LIMIT 1
-    `) as Array<Record<string, unknown>>;
+    const applicationRows = await withRlsContext<Array<Record<string, unknown>>>(
+      user,
+      sql`
+        SELECT a.id, a.status, a.proposed_rate_cents, a.created_at
+        FROM applications a
+        JOIN talent_profiles tp ON tp.id = a.talent_id
+        WHERE a.gig_id = ${parsed.data} AND tp.user_id = ${user.id}
+        LIMIT 1
+      `
+    );
     myApplication = applicationRows[0] ?? null;
   }
 
@@ -85,14 +97,14 @@ export const GET = withRoute('gigs.detail', async (_request, context) => {
  */
 export const PATCH = withRoute('gigs.status', async (request, context) => {
   const user = await authGuard.requireRole('VENUE');
-  enforceRateLimit(statusLimiter, clientKey(request, user.id));
+  await enforceRateLimit(statusLimiter, clientKey(request, user.id));
 
   const params = await context.params;
   const parsed = GigIdSchema.safeParse(params?.id);
   if (!parsed.success) throw ApiError.notFound();
   const { status: nextStatus } = await parseBody(request, GigStatusUpdateSchema);
 
-  const row = await loadGig(parsed.data);
+  const row = await loadGig(parsed.data, user);
   if (!row) throw ApiError.notFound();
   // Tenant isolation: a non-owner venue gets the same 404 as a missing gig.
   if (user.role !== 'ADMIN' && row.venue_user_id !== user.id) throw ApiError.notFound();
@@ -109,11 +121,14 @@ export const PATCH = withRoute('gigs.status', async (request, context) => {
   }
 
   // Optimistic concurrency: the status must still be what we validated against.
-  const updated = await sql`
-    UPDATE gigs SET status = ${nextStatus}
-    WHERE id = ${parsed.data} AND status = ${currentStatus}
-    RETURNING *
-  `;
+  const updated = await withRlsContext<Record<string, unknown>[]>(
+    user,
+    sql`
+      UPDATE gigs SET status = ${nextStatus}
+      WHERE id = ${parsed.data} AND status = ${currentStatus}
+      RETURNING *
+    `
+  );
   if (updated.length === 0) {
     throw ApiError.badRequest('Gig was modified concurrently — reload and retry');
   }

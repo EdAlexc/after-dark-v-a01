@@ -5,6 +5,7 @@ import { notify } from '@/app/api/utils/notify';
 import { parseBody } from '@/app/api/utils/validation';
 import { AcceptRateSchema } from '@/app/api/utils/schemas';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext } from '@/app/api/utils/rls';
 import { z } from 'zod';
 
 const ConversationIdSchema = z.string().uuid();
@@ -28,15 +29,8 @@ export const POST = withRoute('conversations.accept-rate', async (request, conte
   if (!parsed.success) throw ApiError.notFound();
   const { message_id } = await parseBody(request, AcceptRateSchema);
 
-  const rows = (await sql`
-    SELECT c.id, c.gig_id, c.venue_user_id, c.counterpart_user_id,
-           m.id AS message_id, m.sender_id, m.kind, m.rate_cents
-    FROM conversations c
-    JOIN messages m ON m.conversation_id = c.id
-    WHERE c.id = ${parsed.data} AND m.id = ${message_id}
-      AND (c.venue_user_id = ${user.id} OR c.counterpart_user_id = ${user.id})
-    LIMIT 1
-  `) as Array<{
+  // RLS (S2): participant policies bound the read to the caller's threads.
+  const rows = await withRlsContext<Array<{
     id: string;
     gig_id: string | null;
     venue_user_id: string;
@@ -45,7 +39,18 @@ export const POST = withRoute('conversations.accept-rate', async (request, conte
     sender_id: string;
     kind: string;
     rate_cents: number | null;
-  }>;
+  }>>(
+    user,
+    sql`
+      SELECT c.id, c.gig_id, c.venue_user_id, c.counterpart_user_id,
+             m.id AS message_id, m.sender_id, m.kind, m.rate_cents
+      FROM conversations c
+      JOIN messages m ON m.conversation_id = c.id
+      WHERE c.id = ${parsed.data} AND m.id = ${message_id}
+        AND (c.venue_user_id = ${user.id} OR c.counterpart_user_id = ${user.id})
+      LIMIT 1
+    `
+  );
   if (rows.length === 0) throw ApiError.notFound();
   const row = rows[0];
 
@@ -63,15 +68,20 @@ export const POST = withRoute('conversations.accept-rate', async (request, conte
   const talentUserId =
     row.venue_user_id === user.id ? row.counterpart_user_id : user.id;
 
-  const updated = (await sql`
-    UPDATE applications a
-    SET proposed_rate_cents = ${row.rate_cents}, updated_at = NOW()
-    FROM talent_profiles tp
-    WHERE a.talent_id = tp.id AND tp.user_id = ${talentUserId}
-      AND a.gig_id = ${row.gig_id}
-      AND a.status IN ('PENDING', 'SHORTLISTED')
-    RETURNING a.id
-  `) as Array<{ id: string }>;
+  // Either side may accept: the talent updates their own application, the
+  // venue updates an application to their own gig (applications_venue_update).
+  const updated = await withRlsContext<Array<{ id: string }>>(
+    user,
+    sql`
+      UPDATE applications a
+      SET proposed_rate_cents = ${row.rate_cents}, updated_at = NOW()
+      FROM talent_profiles tp
+      WHERE a.talent_id = tp.id AND tp.user_id = ${talentUserId}
+        AND a.gig_id = ${row.gig_id}
+        AND a.status IN ('PENDING', 'SHORTLISTED')
+      RETURNING a.id
+    `
+  );
   if (updated.length === 0) {
     throw ApiError.badRequest(
       'No open application to apply this rate to — the talent must apply to the gig first'
@@ -79,10 +89,13 @@ export const POST = withRoute('conversations.accept-rate', async (request, conte
   }
 
   const dollars = (row.rate_cents / 100).toFixed(2);
-  await sql`
-    INSERT INTO messages (conversation_id, sender_id, content, kind)
-    VALUES (${row.id}, ${user.id}, ${'Rate of $' + dollars + '/hr accepted'}, 'SYSTEM')
-  `;
+  await withRlsContext(
+    user,
+    sql`
+      INSERT INTO messages (conversation_id, sender_id, content, kind)
+      VALUES (${row.id}, ${user.id}, ${'Rate of $' + dollars + '/hr accepted'}, 'SYSTEM')
+    `
+  );
 
   await auditLogger.record({
     actorId: user.id,

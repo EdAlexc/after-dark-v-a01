@@ -16,6 +16,7 @@
 
 import { createHmac } from 'node:crypto';
 import sql from './sql';
+import { serviceContext, withRlsContext } from './rls';
 
 /** Hard cap per collection so one account can't ask for an unbounded scan. */
 export const EXPORT_ROW_LIMIT = 5_000;
@@ -45,8 +46,12 @@ export interface AccountExport {
  * Deliberately omits: password hashes and 2FA secrets/backup codes (exporting
  * credential material would be a vulnerability, not a right), and internal
  * session tokens.
+ *
+ * RLS (S2): each governed read carries the subject's own context — the same
+ * per-user policies that protect these tables online also bound the export.
  */
 export async function collectAccountExport(userId: string): Promise<AccountExport> {
+  const subject = { id: userId };
   const [
     userRows,
     talentRows,
@@ -66,56 +71,56 @@ export async function collectAccountExport(userId: string): Promise<AccountExpor
     `,
     sql`SELECT * FROM talent_profiles WHERE user_id = ${userId} LIMIT 1`,
     sql`SELECT * FROM venue_profiles WHERE user_id = ${userId} LIMIT 1`,
-    sql`
+    withRlsContext(subject, sql`
       SELECT g.* FROM gigs g
       JOIN venue_profiles vp ON g.venue_id = vp.id
       WHERE vp.user_id = ${userId}
       ORDER BY g.created_at DESC
       LIMIT ${EXPORT_ROW_LIMIT}
-    `,
-    sql`
+    `),
+    withRlsContext(subject, sql`
       SELECT a.* FROM applications a
       JOIN talent_profiles tp ON tp.id = a.talent_id
       WHERE tp.user_id = ${userId}
       ORDER BY a.created_at DESC
       LIMIT ${EXPORT_ROW_LIMIT}
-    `,
+    `),
     // Messages the user AUTHORED — the counterpart's words are their PII.
-    sql`
+    withRlsContext(subject, sql`
       SELECT m.conversation_id, m.content, m.kind, m.rate_cents, m.attachment_url, m.created_at
       FROM messages m
       WHERE m.sender_id = ${userId}
       ORDER BY m.created_at DESC
       LIMIT ${EXPORT_ROW_LIMIT}
-    `,
-    sql`
+    `),
+    withRlsContext(subject, sql`
       SELECT av.date, av.time_slot, av.status, av.notes
       FROM availabilities av
       JOIN talent_profiles tp ON tp.id = av.talent_id
       WHERE tp.user_id = ${userId}
       ORDER BY av.date DESC
       LIMIT ${EXPORT_ROW_LIMIT}
-    `,
-    sql`
+    `),
+    withRlsContext(subject, sql`
       SELECT s.* FROM shifts s
       JOIN talent_profiles tp ON tp.id = s.talent_id
       WHERE tp.user_id = ${userId}
       ORDER BY s.created_at DESC
       LIMIT ${EXPORT_ROW_LIMIT}
-    `,
-    sql`
+    `),
+    withRlsContext(subject, sql`
       SELECT id, gross_cents, fee_cents, net_cents, status, created_at, released_at
       FROM payouts
       WHERE talent_user_id = ${userId} OR venue_user_id = ${userId}
       ORDER BY created_at DESC
       LIMIT ${EXPORT_ROW_LIMIT}
-    `,
-    sql`
+    `),
+    withRlsContext(subject, sql`
       SELECT action, entity_type, entity_id, metadata, created_at
       FROM audit_logs WHERE actor_id = ${userId}
       ORDER BY created_at DESC
       LIMIT ${EXPORT_ROW_LIMIT}
-    `,
+    `),
   ]);
 
   return {
@@ -170,11 +175,18 @@ export interface DeletionResult {
 export async function deleteAccountData(userId: string): Promise<DeletionResult> {
   const pseudonym = pseudonymizeActorId(userId);
 
-  const pseudonymized = (await sql`
-    UPDATE audit_logs SET actor_id = ${pseudonym}
-    WHERE actor_id = ${userId}
-    RETURNING id
-  `) as Array<{ id: number }>;
+  // RLS (S2): the audit trail is append-only to every user context; the one
+  // sanctioned rewrite — replacing the actor id with its pseudonym during
+  // erasure — runs as SERVICE (policy audit_logs_service_pseudonymize, and a
+  // column-scoped GRANT keeps everything but actor_id immutable).
+  const pseudonymized = await withRlsContext<Array<{ id: number }>>(
+    serviceContext('system:erasure'),
+    sql`
+      UPDATE audit_logs SET actor_id = ${pseudonym}
+      WHERE actor_id = ${userId}
+      RETURNING id
+    `
+  );
 
   const deleted = (await sql`
     DELETE FROM "user" WHERE id = ${userId} RETURNING id

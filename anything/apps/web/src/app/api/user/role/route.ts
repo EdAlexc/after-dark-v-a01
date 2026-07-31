@@ -15,7 +15,7 @@ const roleLimiter = getRateLimiter('user-role', { windowMs: 60 * 60 * 1000, max:
  */
 export const POST = withRoute('user.role.set', async (request) => {
   const user = await authGuard.requireSession();
-  enforceRateLimit(roleLimiter, clientKey(request, user.id));
+  await enforceRateLimit(roleLimiter, clientKey(request, user.id));
 
   const { role, stageName, venueName, neighborhood } = await parseBody(
     request,

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Proves the RLS policies in migrations/0004_rls.sql actually enforce
- * (TENANT_GUARDRAIL §6.2, DEV_TIMELINE P2.4).
+ * Proves the RLS policies in migrations/0004_rls.sql + 0014_rls_completion.sql
+ * actually enforce (TENANT_GUARDRAIL §6.2, DEV_TIMELINE P2.4 / slice S2).
  *
  * Why this exists as a script rather than a vitest case: RLS can only be
  * observed against a **real Postgres connection using a non-owner role**.
@@ -12,8 +12,9 @@
  * Usage (never against production):
  *
  *   1. Create a Neon branch and apply migrations to it.
- *   2. Create the role, then re-run `yarn db:migrate` so 0006 GRANTs to it:
+ *   2. Create the role, then apply the GRANT set:
  *        CREATE ROLE afterdark_app WITH LOGIN PASSWORD '…' NOBYPASSRLS;
+ *        DATABASE_URL=<owner conn> yarn db:grants
  *   3. Seed it: `yarn db:seed`
  *   4. Run:
  *        OWNER_URL=<owner conn>  RLS_URL=<afterdark_app conn>  yarn db:verify-rls
@@ -81,11 +82,14 @@ check(
   `current_user=${who.u} bypassrls=${who.bypass}`
 );
 
-// 1. No request context → only world-readable rows.
+// 1. No request context → only marketplace-visible rows. Since 0014,
+// FILLED/COMPLETED join PUBLISHED as world-readable (venue "gigs hosted"
+// counts + applicant deep links); DRAFT/CANCELLED must never appear.
+const MARKETPLACE_VISIBLE = ['PUBLISHED', 'FILLED', 'COMPLETED'];
 const noCtx = await sql`SELECT status, count(*)::int AS n FROM gigs GROUP BY status`;
 check(
-  'context-less read exposes only PUBLISHED gigs',
-  noCtx.every((row) => row.status === 'PUBLISHED'),
+  'context-less read exposes no DRAFT/CANCELLED gigs',
+  noCtx.every((row) => MARKETPLACE_VISIBLE.includes(row.status)),
   `saw: ${noCtx.map((r) => `${r.status}×${r.n}`).join(', ') || 'none'}`
 );
 
@@ -142,6 +146,170 @@ check('app role cannot run DDL', ddlBlocked);
 // 9. The app must still work: public surfaces stay readable.
 const [talent] = await sql`SELECT count(*)::int AS n FROM talent_profiles`;
 check('public talent directory still readable', talent.n > 0, `rows=${talent.n}`);
+
+// ─── 0014 completion policies (slice S2) ─────────────────────────────────────
+
+/** Seeds the fixtures the 0014 checks attack: an applicant on the rival's
+ * draft, a thread with an unread message, a HELD payout, an audit row. */
+async function ensureCompletionFixtures() {
+  await owner`
+    INSERT INTO "user" (id, name, email, "emailVerified", role)
+    VALUES ('rls-applicant-user', 'Verify Talent', 'rls-applicant@afterdark.test', false, 'TALENT')
+    ON CONFLICT (id) DO NOTHING
+  `;
+  const tp = await owner`
+    INSERT INTO talent_profiles (user_id, stage_name)
+    VALUES ('rls-applicant-user', 'Verify Talent')
+    ON CONFLICT (user_id) DO UPDATE SET stage_name = EXCLUDED.stage_name
+    RETURNING id
+  `;
+  await owner`
+    INSERT INTO applications (gig_id, talent_id, cover_message)
+    VALUES (${rivalGigId}, ${tp[0].id}, 'rls-verify')
+    ON CONFLICT (gig_id, talent_id) DO NOTHING
+  `;
+  const conversation = await owner`
+    INSERT INTO conversations (venue_user_id, counterpart_user_id, kind)
+    VALUES (${venueUser}, 'rls-applicant-user', 'GIG')
+    ON CONFLICT DO NOTHING
+    RETURNING id
+  `;
+  const conversationId =
+    conversation[0]?.id ??
+    (
+      await owner`
+        SELECT id FROM conversations
+        WHERE venue_user_id = ${venueUser} AND counterpart_user_id = 'rls-applicant-user'
+        LIMIT 1
+      `
+    )[0].id;
+  await owner`
+    INSERT INTO messages (conversation_id, sender_id, content)
+    SELECT ${conversationId}, 'rls-applicant-user', 'unread probe'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM messages WHERE conversation_id = ${conversationId} AND content = 'unread probe'
+    )
+  `;
+  // Re-arm the probe on re-runs: the mark-read check consumed it last time.
+  await owner`
+    UPDATE messages SET read_at = NULL
+    WHERE conversation_id = ${conversationId} AND content = 'unread probe'
+  `;
+  const payout = await owner`
+    INSERT INTO payouts (venue_user_id, talent_user_id, gross_cents, fee_cents, net_cents, status)
+    SELECT ${venueUser}, 'rls-applicant-user', 10000, 500, 9500, 'HELD'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM payouts WHERE talent_user_id = 'rls-applicant-user' AND status = 'HELD'
+    )
+    RETURNING id
+  `;
+  const payoutId =
+    payout[0]?.id ??
+    (
+      await owner`
+        SELECT id FROM payouts WHERE talent_user_id = 'rls-applicant-user' AND status = 'HELD' LIMIT 1
+      `
+    )[0].id;
+  await owner`
+    INSERT INTO audit_logs (actor_id, action, entity_type)
+    SELECT 'rls-erasure-subject', 'rls.verify', 'test'
+    WHERE NOT EXISTS (SELECT 1 FROM audit_logs WHERE actor_id = 'rls-erasure-subject')
+  `;
+  return { conversationId, payoutId };
+}
+
+const fixtures = await ensureCompletionFixtures();
+
+// 10. Applicant carve-out: an applicant reads the gig behind their
+// application even while it is a DRAFT (deep links survive unpublish).
+const asApplicant = await sql.transaction([
+  sql`SELECT set_config('app.user_id', 'rls-applicant-user', true)`,
+  sql`SELECT id FROM gigs WHERE id = ${rivalGigId}`,
+]);
+check('applicant CAN read the draft gig behind their application', asApplicant[1].length === 1);
+
+// 11. …while a context-less read of the same draft still finds nothing.
+const draftNoCtx = await sql`SELECT id FROM gigs WHERE id = ${rivalGigId}`;
+check('the same draft stays invisible without the applicant context', draftNoCtx.length === 0);
+
+// 12. Mark-read: the RECIPIENT may set read_at on the counterpart's messages
+// (0008's FOR ALL policy blocked this; 0014 splits the commands).
+const markRead = await sql.transaction([
+  sql`SELECT set_config('app.user_id', ${venueUser}, true)`,
+  sql`
+    UPDATE messages SET read_at = NOW()
+    WHERE conversation_id = ${fixtures.conversationId}
+      AND sender_id <> ${venueUser} AND read_at IS NULL
+    RETURNING id
+  `,
+]);
+check('recipient can mark the counterpart’s messages read', markRead[1].length >= 1, `rows=${markRead[1].length}`);
+
+// 13. Escrow release: no user context may UPDATE payouts…
+const payoutAsUser = await sql.transaction([
+  sql`SELECT set_config('app.user_id', ${venueUser}, true)`,
+  sql`UPDATE payouts SET status = 'RELEASED' WHERE id = ${fixtures.payoutId} RETURNING id`,
+]);
+check('a participant cannot release their own payout', payoutAsUser[1].length === 0);
+
+// 14. …but SERVICE context (the cron) can.
+const payoutAsService = await sql.transaction([
+  sql`SELECT set_config('app.role', 'SERVICE', true)`,
+  sql`
+    UPDATE payouts SET status = 'RELEASED', released_at = NOW()
+    WHERE id = ${fixtures.payoutId} AND status = 'HELD'
+    RETURNING id
+  `,
+]);
+check('SERVICE context releases the HELD payout', payoutAsService[1].length === 1);
+
+// 15. Erasure pseudonymization: user context cannot rewrite actor ids…
+const pseudonymAsUser = await sql.transaction([
+  sql`SELECT set_config('app.user_id', ${venueUser}, true)`,
+  sql`
+    UPDATE audit_logs SET actor_id = 'deleted:probe'
+    WHERE actor_id = 'rls-erasure-subject' RETURNING id
+  `,
+]);
+check('a user context cannot pseudonymize audit rows', pseudonymAsUser[1].length === 0);
+
+// 16. …but SERVICE can, and ONLY the actor_id column is writable at all
+// (check 6 above already proved UPDATEs of other columns die at the GRANT).
+const pseudonymAsService = await sql.transaction([
+  sql`SELECT set_config('app.role', 'SERVICE', true)`,
+  sql`
+    UPDATE audit_logs SET actor_id = 'deleted:rls-verified'
+    WHERE actor_id = 'rls-erasure-subject' RETURNING id
+  `,
+]);
+check('SERVICE context pseudonymizes the audit trail', pseudonymAsService[1].length === 1);
+
+// 17. stripe_events is deny-by-default to users, open to SERVICE (webhook).
+let stripeUserBlocked = false;
+try {
+  await sql.transaction([
+    sql`SELECT set_config('app.user_id', ${venueUser}, true)`,
+    sql`INSERT INTO stripe_events (id, type) VALUES ('evt_rls_user_probe', 'probe')`,
+  ]);
+} catch (error) {
+  stripeUserBlocked = /row-level security|permission denied/i.test(error.message);
+}
+check('a user context cannot write webhook replay-guard rows', stripeUserBlocked);
+let stripeServiceOk = false;
+let stripeServiceDetail;
+try {
+  await sql.transaction([
+    sql`SELECT set_config('app.role', 'SERVICE', true)`,
+    sql`
+      INSERT INTO stripe_events (id, type) VALUES ('evt_rls_service_probe', 'probe')
+      ON CONFLICT (id) DO NOTHING
+    `,
+  ]);
+  stripeServiceOk = true;
+} catch (error) {
+  stripeServiceDetail = error.message.split('\n')[0];
+}
+check('SERVICE context records webhook events', stripeServiceOk, stripeServiceDetail);
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} isolation checks passed`);

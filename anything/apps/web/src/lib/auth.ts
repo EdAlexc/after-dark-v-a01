@@ -78,6 +78,18 @@ const socialProviders = {
     : {}),
 };
 
+// S1 embed lockdown (Backlog #16): the create.xyz builder iframe is dead
+// weight for the deployed product, so its accommodations are opt-in now.
+// With the embed OFF (default), CSP frame-ancestors is 'self'
+// (security-headers.js) — no iframe can carry the app — so SameSite=None
+// serves no one and 'lax' closes the residual CSRF surface. Setting
+// CREATE_BUILDER_EMBED=1 restores the exact pre-S1 cookie + CSP behavior the
+// platform header describes (sameSite:'none' for iframes).
+const builderEmbedEnabled = ['1', 'true'].includes(
+  process.env.CREATE_BUILDER_EMBED ?? ''
+);
+const cookieSameSite = builderEmbedEnabled ? ('none' as const) : ('lax' as const);
+
 async function verifyCompatiblePassword({
   hash,
   password,
@@ -125,7 +137,8 @@ export const auth = betterAuth({
   advanced: {
     cookiePrefix: 'better-auth',
     defaultCookieAttributes: {
-      sameSite: 'none', // Required for iframes
+      // 'none' only when the builder embed is opted in (see cookieSameSite).
+      sameSite: cookieSameSite,
       secure: true,
       httpOnly: true,
       path: '/',
@@ -133,7 +146,7 @@ export const auth = betterAuth({
     cookies: {
       sessionToken: {
         attributes: {
-          sameSite: 'none', // Required for iframes
+          sameSite: cookieSameSite,
           secure: true,
         },
       },
@@ -146,10 +159,13 @@ export const auth = betterAuth({
     },
   },
   // Additive hardening (safe per the header contract: config tuning only).
-  // Throttles credential endpoints against brute force (OWASP A07). Memory
-  // storage = per-instance; shared store is tracked in the Technical Backlog.
+  // Throttles credential endpoints against brute force (OWASP A07). S1
+  // (Backlog #21): storage moved from per-instance memory to the database
+  // ("rateLimit" table, migration 0013) so the limits hold across serverless
+  // fan-out.
   rateLimit: {
     enabled: process.env.NODE_ENV === 'production',
+    storage: 'database',
     window: 60,
     max: 60,
     customRules: {

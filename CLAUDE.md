@@ -39,18 +39,22 @@ yarn dev                    # Next.js dev server on port 4000
 yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
 yarn lint                   # oxlint (workspace .oxlintrc.json), warnings fail
-yarn test                   # vitest run (245 tests as of the 2FA-plugin migration)
+yarn test                   # vitest run (656 tests as of S1–S3)
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
+yarn db:grants              # (re)apply scripts/grants.sql to the afterdark_app role (owner conn; S2)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
-yarn db:preview-accounts    # shared talent/venue/party preview accounts (TESTING.md §2; idempotent)
-yarn db:verify-rls          # proves RLS isolation against a non-owner role (never run on prod)
+yarn db:preview-accounts    # shared preview accounts; passwords derived from PREVIEW_ACCOUNTS_SECRET (S1)
+yarn db:verify-rls          # proves RLS isolation against a non-owner role (never run on prod; 19 checks)
+yarn db:backfill-media      # move inline data: images into Blob; --verify asserts zero remain (S3)
 yarn pwa:icons              # regenerate public/icons/* deterministically from vector art (P10.1)
 ```
 
 - **Required env**: `DATABASE_URL` (Neon Postgres) and `BETTER_AUTH_SECRET` (signs sessions
   **and encrypts 2FA enrollments** — rotating it invalidates them; `openssl rand -base64 32`).
   `AUTH_SECRET_ENCRYPTION_KEY` is obsolete since migration 0005 (harmless if set). Optional:
-  `BETTER_AUTH_URL`,
+  `BETTER_AUTH_URL`, `CREATE_BUILDER_EMBED` (S1 — builder iframe + SameSite=None are
+  opt-in now, off by default), `RATE_LIMIT_STORE` (S1 — rate-limiter backend override),
+  `PREVIEW_ACCOUNTS_SECRET` (S1 — preview passwords derive from it, never committed),
   `GOOGLE_CLIENT_ID/SECRET`, `APPLE_CLIENT_ID/SECRET/APP_BUNDLE_IDENTIFIER`,
   `EXPO_PUBLIC_PROXY_BASE_URL`, `NEXT_PUBLIC_CREATE_*`, `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN`
   (error tracking — no-op unset). See `apps/web/.env.example`; no real `.env` is committed.
@@ -59,8 +63,12 @@ yarn pwa:icons              # regenerate public/icons/* deterministically from v
   the full lifecycle (P1); `0004_rls.sql` ships RLS policies (verified enforcing — see
   `yarn db:verify-rls` — but inert until the connection role changes, Backlog #25);
   `0005_two_factor_plugin.sql` adds the better-auth twoFactor schema; `0006_compliance_spine.sql`
-  adds age gating + least-privilege GRANTs (P2). The runner records applied files in
-  `_migrations`.
+  adds age gating + least-privilege GRANTs (P2); `0007`–`0012` add the P3–P9 marketplace
+  tables with their RLS policies in-file; `0013_shared_rate_limits.sql` adds the S1 shared
+  rate-limit stores; `0014_rls_completion.sql` adds the S2 cutover policy set (SERVICE/ADMIN
+  platform context, gig read carve-outs, messages per-command policies, `legal_holds`). The
+  runner records applied files in `_migrations`; because it is forward-only, role GRANTs are
+  re-asserted via `yarn db:grants` (`scripts/grants.sql` is the living set).
 - Web tests: Vitest (`vitest.config.mts`). Shared logic + every route has an edge-case suite
   under `__tests__/`. `yarn test` is wired and gated in CI (`.github/workflows/ci.yml`).
 - Platform files marked `DO NOT REWRITE` (`src/lib/auth.ts`, `src/app/api/auth/[...all]/route.ts`)
@@ -145,9 +153,14 @@ shares the workspace root — see Technical Backlog #23 to scope installs to `we
   `revalidateTag()` is a no-op); it is unused by the Vercel pipeline.
 - **Security/observability layers added since the audit**: middleware (auth gate + per-request
   **nonce CSP** — the root layout is `force-dynamic` because prerendered HTML can't carry a
-  nonce), RBAC guard, zod validation, rate limiting, security headers, structured logging +
-  audit trail, optional **Sentry** (PII-scrubbed, no-op without DSN), dormant RLS policies,
-  migrations + tests (P0–P1).
+  nonce), RBAC guard, zod validation, **shared Postgres rate limiting** (S1 — holds across
+  serverless instances; in-memory dev/test fallback), security headers with the S1 embed
+  lockdown (`frame-ancestors 'self'`, cookies `SameSite=Lax` unless `CREATE_BUILDER_EMBED`)
+  and the S3 `img-src` pin (Blob host only when the token is set), structured logging +
+  audit trail, optional **Sentry** (PII-scrubbed, no-op without DSN), RLS policies **wired
+  through `withRlsContext` on every governed route** (S2 — dormant until the operator flips
+  `DATABASE_URL`, runbook in `docs/rls-cutover.md`), a daily legal-hold-aware **retention
+  purge** (S2), migrations + tests (P0–P1, S1–S3).
 - **PWA (P10.1–P10.2, 2026-07-31)**: `manifest.webmanifest` + maskable icons (regenerate via
   `yarn pwa:icons`); dependency-free `public/sw.js` (never intercepts `/api`, navigations
   network-only with `public/offline.html` fallback, `/_next/static` cache-first, purge on
@@ -201,7 +214,8 @@ idempotent transition), **`/api/conversations`** (GET/POST),
 **`/api/conversations/[id]/accept-rate`** (POST), **`/api/notifications`** (GET/POST
 mark-read), **`/api/reports`** (POST), **`/api/availability`** (GET month/PUT day),
 **`/api/upload`** (POST, P4 pipeline), **`/api/payouts/release`** (POST admin|cron, GET
-cron), **`/api/stripe/connect`** (GET status/POST onboard — 503 without keys),
+cron), **`/api/retention/purge`** (POST admin|cron, GET cron — G7 purge, legal-hold aware),
+**`/api/stripe/connect`** (GET status/POST onboard — 503 without keys),
 **`/api/stripe/webhook`** (POST, signature + replay guard), **`/api/admin/overview`**,
 **`/api/admin/reports`** (+`/[id]` GET detail w/ audited moderation reads, PATCH triage),
 **`/api/admin/users`** (+`/[id]` PATCH suspend/unsuspend), **`/api/admin/gigs`** (+`/[id]`
@@ -386,7 +400,8 @@ Verified findings (2026-07-24), ordered by severity — full remediation & test 
    constrain target origin when feasible).
 6. **No security headers** (CSP, HSTS, X-Frame-Options, Referrer-Policy…), `typescript.
    ignoreBuildErrors: true`, cookies `SameSite=None` platform-wide (`next.config.js`,
-   `src/lib/auth.ts`).
+   `src/lib/auth.ts`). *(Headers fixed in P0/P1; the `SameSite=None` remainder closed in
+   S1 — Lax by default, `None` only under the `CREATE_BUILDER_EMBED` opt-in.)*
 7. **No input validation layer** (zod absent in web), **no rate limiting** (login, 2FA,
    password change unthrottled), **no CSRF tokens** beyond better-auth `trustedOrigins`.
 8. **PII in DB as base64 images**; no upload size/MIME enforcement.

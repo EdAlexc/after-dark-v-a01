@@ -4,6 +4,7 @@ import { auditLogger } from '@/app/api/utils/audit';
 import { getStripe, stripeEnabled } from '@/lib/stripe';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 const connectLimiter = getRateLimiter('stripe-connect', { windowMs: 60 * 60 * 1000, max: 10 });
 
@@ -14,10 +15,14 @@ const connectLimiter = getRateLimiter('stripe-connect', { windowMs: 60 * 60 * 10
 export const GET = withRoute('stripe.connect.status', async () => {
   const user = await authGuard.requireRole('TALENT', 'VENUE');
 
-  const rows = (await sql`
-    SELECT stripe_account_id, onboarded FROM stripe_accounts
-    WHERE user_id = ${user.id} LIMIT 1
-  `) as Array<{ stripe_account_id: string; onboarded: boolean }>;
+  // RLS (S2): stripe_accounts_own scopes the row to the request context.
+  const rows = await withRlsContext<Array<{ stripe_account_id: string; onboarded: boolean }>>(
+    user,
+    sql`
+      SELECT stripe_account_id, onboarded FROM stripe_accounts
+      WHERE user_id = ${user.id} LIMIT 1
+    `
+  );
 
   return Response.json({
     configured: stripeEnabled(),
@@ -33,16 +38,19 @@ export const GET = withRoute('stripe.connect.status', async () => {
  */
 export const POST = withRoute('stripe.connect.start', async (request) => {
   const user = await authGuard.requireRole('TALENT', 'VENUE');
-  enforceRateLimit(connectLimiter, clientKey(request, user.id));
+  await enforceRateLimit(connectLimiter, clientKey(request, user.id));
 
   if (!stripeEnabled()) {
     throw new ApiError(503, 'Payments are not live yet — Stripe is not configured');
   }
   const stripe = getStripe();
 
-  const existing = (await sql`
-    SELECT stripe_account_id FROM stripe_accounts WHERE user_id = ${user.id} LIMIT 1
-  `) as Array<{ stripe_account_id: string }>;
+  const existing = await withRlsContext<Array<{ stripe_account_id: string }>>(
+    user,
+    sql`
+      SELECT stripe_account_id FROM stripe_accounts WHERE user_id = ${user.id} LIMIT 1
+    `
+  );
 
   let accountId = existing[0]?.stripe_account_id;
   if (!accountId) {
@@ -52,11 +60,14 @@ export const POST = withRoute('stripe.connect.start', async (request) => {
       metadata: { afterdark_user_id: user.id },
     });
     accountId = account.id;
-    await sql`
-      INSERT INTO stripe_accounts (user_id, stripe_account_id)
-      VALUES (${user.id}, ${accountId})
-      ON CONFLICT (user_id) DO NOTHING
-    `;
+    await withRlsContext(
+      user,
+      sql`
+        INSERT INTO stripe_accounts (user_id, stripe_account_id)
+        VALUES (${user.id}, ${accountId})
+        ON CONFLICT (user_id) DO NOTHING
+      `
+    );
     await auditLogger.record({
       actorId: user.id,
       action: 'stripe.account_created',
