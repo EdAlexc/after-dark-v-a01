@@ -9,6 +9,7 @@ import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rat
 import { withRlsContext, type RlsUser } from '@/app/api/utils/rls';
 import { track } from '@/app/api/utils/events';
 import { isHotWindow, pushHotGigToTalent } from '@/app/api/utils/push';
+import { geocodeAddress } from '@/app/api/utils/geocode';
 
 const statusLimiter = getRateLimiter('gigs-status', { windowMs: 60 * 60 * 1000, max: 60 });
 
@@ -29,7 +30,12 @@ async function loadGig(id: string, user?: RlsUser | null): Promise<GigDetailRow 
   const query = sql`
     SELECT g.*,
            vp.user_id AS venue_user_id,
-           vp.venue_name, vp.neighborhood AS venue_neighborhood, vp.address,
+           vp.venue_name, vp.neighborhood AS venue_neighborhood,
+           -- S10: gigs now carry their own address; the venue's is the
+           -- display/geocode fallback (COALESCE keeps the UI's gig.address
+           -- meaning "where this gig happens").
+           COALESCE(g.address, vp.address) AS address,
+           vp.address AS venue_address,
            vp.description AS venue_description, vp.venue_type, vp.capacity,
            vp.rating AS venue_rating, vp.avatar_url AS venue_avatar_url,
            (SELECT COUNT(*)::int FROM gigs g2
@@ -154,6 +160,18 @@ export const PATCH = withRoute('gigs.status', async (request, context) => {
   // S9: Hot Tonight push (id-only payload; no-op without VAPID keys).
   if (nextStatus === 'PUBLISHED' && isHotWindow(row.start_time as string | null)) {
     await pushHotGigToTalent(parsed.data);
+  }
+  // S10: drafts skip geocoding; the publish instant earns the pin. `address`
+  // is already COALESCE(gig's own, venue profile's) from loadGig.
+  if (nextStatus === 'PUBLISHED' && row.lat == null) {
+    const address = row.address as string | null;
+    const point = address ? await geocodeAddress(address) : null;
+    if (point) {
+      await withRlsContext(
+        user,
+        sql`UPDATE gigs SET lat = ${point.lat}, lng = ${point.lng} WHERE id = ${parsed.data}`
+      );
+    }
   }
 
   return Response.json(toPublicGig({ ...row, ...updated[0] } as GigDetailRow, true));

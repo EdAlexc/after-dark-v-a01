@@ -32,7 +32,8 @@ function likePatterns(items: string[]): string[] {
 export function buildGigsListQuery(filters: GigListQuery): BuiltQuery {
   let text = `
     SELECT g.*, vp.venue_name, vp.neighborhood AS venue_neighborhood,
-           vp.address, vp.avatar_url AS venue_avatar_url, vp.rating as venue_rating
+           COALESCE(g.address, vp.address) AS address,
+           vp.avatar_url AS venue_avatar_url, vp.rating as venue_rating
     FROM gigs g
     JOIN venue_profiles vp ON g.venue_id = vp.id
     WHERE g.status = $1

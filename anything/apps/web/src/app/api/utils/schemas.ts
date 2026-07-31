@@ -95,6 +95,9 @@ export const GigCreateSchema = z
     title: shortText(120).min(3),
     role_needed: shortText(80),
     description: shortText(5000).optional().default(''),
+    /** Gig venue address (S10) — geocoded server-side; falls back to the
+     *  venue profile's address when omitted. */
+    address: shortText(200).optional(),
     start_time: timestamp,
     end_time: timestamp,
     base_rate: rate,

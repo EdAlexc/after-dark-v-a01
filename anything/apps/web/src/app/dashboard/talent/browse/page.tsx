@@ -24,7 +24,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
+
+// MapLibre touches `window` at module scope — client-only load (S10).
+const GigsMap = dynamic(() => import('@/components/GigsMap'), { ssr: false });
 import {
   type ApiGig,
   type GigListResponse,
@@ -537,34 +541,8 @@ export default function BrowseGigsPage() {
                 )}
               </>
             ) : (
-              /* Map view placeholder (post-alpha, Technical Backlog #1) */
-              <div className="h-full min-h-[500px] rounded-2xl bg-[#1A1A1A] border border-white/5 flex flex-col items-center justify-center gap-4">
-                <Map className="w-12 h-12 text-white/10" />
-                <div className="text-center">
-                  <p className="text-white/40 font-semibold">Map View</p>
-                  <p className="text-white/20 text-sm mt-1">Coming soon — use List for now</p>
-                </div>
-                <div className="flex flex-wrap gap-3 mt-4 px-8">
-                  {filtered.slice(0, 4).map((gig) => (
-                    <Link
-                      key={gig.id}
-                      href={`/gigs/${gig.id}`}
-                      className="flex items-center gap-2 bg-[#1E1E1E] border border-white/10 px-3 py-2 rounded-xl hover:border-[#00FFCC]/30 transition-colors"
-                    >
-                      <div
-                        className={cn(
-                          'w-2 h-2 rounded-full',
-                          gigUrgency(gig) === 'HOT' ? 'bg-red-400' : 'bg-[#00FFCC]'
-                        )}
-                      />
-                      <span className="text-xs font-bold text-white">
-                        {gig.venue_name ?? gig.title}
-                      </span>
-                      <span className="text-xs text-white/40">{formatRate(gig)}</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
+              /* Map view (S10 / Backlog #1) — real pins for geocoded gigs */
+              <GigsMap gigs={filtered} />
             )}
           </div>
 
