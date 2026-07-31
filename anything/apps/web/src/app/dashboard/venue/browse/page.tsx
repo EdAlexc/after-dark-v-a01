@@ -40,6 +40,10 @@ interface ApiTalent {
   hourly_rate_max: string | number | null;
   avatar_url: string | null;
   profile_completion_pct: number | null;
+  /** S8 aggregates — server-computed, never client input. */
+  rating: string | number | null;
+  rating_count: number | null;
+  trust_score: number | null;
   created_at: string;
 }
 
@@ -154,7 +158,7 @@ function TalentCard({
               </button>
             </div>
 
-            {/* Location + rate */}
+            {/* Location + rate + S8 review aggregate */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/40">
               {talent.neighborhood && (
                 <span className="flex items-center gap-1">
@@ -166,6 +170,12 @@ function TalentCard({
                 <span className="flex items-center gap-1">
                   <DollarSign className="w-3 h-3" />
                   <span className="font-bold text-white/60">{band}</span>/hr
+                </span>
+              )}
+              {talent.rating != null && (talent.rating_count ?? 0) > 0 && (
+                <span className="flex items-center gap-1 text-yellow-400">
+                  ★ {Number(talent.rating).toFixed(1)}
+                  <span className="text-white/30">({talent.rating_count})</span>
                 </span>
               )}
             </div>
@@ -200,12 +210,25 @@ function TalentCard({
                   <MessageSquare className="w-3.5 h-3.5" /> Contact
                 </Button>
               </Link>
-              {typeof talent.profile_completion_pct === 'number' &&
+              {typeof talent.trust_score === 'number' ? (
+                <span
+                  className={cn(
+                    'text-[10px] font-bold px-2 py-0.5 rounded-lg border',
+                    talent.trust_score >= 70
+                      ? 'text-[#00FFCC]/80 bg-[#00FFCC]/5 border-[#00FFCC]/15'
+                      : 'text-white/50 bg-white/5 border-white/10'
+                  )}
+                >
+                  Trust {talent.trust_score}
+                </span>
+              ) : (
+                typeof talent.profile_completion_pct === 'number' &&
                 talent.profile_completion_pct >= 80 && (
                   <span className="text-[10px] font-bold text-[#00FFCC]/70 bg-[#00FFCC]/5 border border-[#00FFCC]/15 px-2 py-0.5 rounded-lg">
                     Complete Profile
                   </span>
-                )}
+                )
+              )}
             </div>
           </div>
         </div>

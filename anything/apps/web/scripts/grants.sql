@@ -24,12 +24,17 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   payouts, stripe_accounts, stripe_events,
   legal_holds,
   events,
+  reviews,
   rate_limit_counters, "rateLimit",
   "user", "session", "account", "verification", "twoFactor"
   TO afterdark_app;
 
 -- Event capture (0016) is append-only history — never rewritten.
 REVOKE UPDATE, DELETE ON events FROM afterdark_app;
+
+-- Reviews (0018) are immutable once posted; DELETE stays for moderation
+-- takedowns (policy-gated to platform context).
+REVOKE UPDATE ON reviews FROM afterdark_app;
 
 -- audit_logs is append-only by policy; append-only by privilege too — except
 -- the erasure pseudonym rewrite, which is column-scoped to actor_id (0014)

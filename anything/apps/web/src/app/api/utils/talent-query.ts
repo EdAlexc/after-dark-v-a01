@@ -28,7 +28,8 @@ export function buildTalentListQuery(filters: TalentListQuery): BuiltQuery {
   let text = `
     SELECT id, stage_name, pronouns, neighborhood, bio, primary_role,
            genres_vibes, hourly_rate_min, hourly_rate_max, avatar_url,
-           profile_completion_pct, available_tonight, created_at
+           profile_completion_pct, available_tonight, created_at,
+           rating, rating_count, trust_score
     FROM talent_profiles
     WHERE stage_name IS NOT NULL AND stage_name <> ''
   `;

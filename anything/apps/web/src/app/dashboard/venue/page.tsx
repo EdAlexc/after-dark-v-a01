@@ -28,6 +28,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import ReviewDialog from '@/components/ReviewDialog';
 import { cn } from '@/lib/utils';
 import { type ApiGig, formatDate, formatRate, formatTimeRange } from '@/lib/gigs';
 
@@ -685,6 +686,22 @@ export default function VenueDashboard() {
                             <p className="text-[11px] text-[#00FFCC] flex items-center gap-1.5">
                               <CheckCircle2 className="w-3 h-3" /> Payout released.
                             </p>
+                          )}
+                          {(shift.status === 'CHECKED_OUT' || shift.status === 'PAID') && (
+                            /* S8: shift-scoped review of the talent */
+                            <ReviewDialog
+                              shiftId={shift.id}
+                              counterpartLabel={shift.stage_name ?? 'this talent'}
+                              trigger={
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="w-full text-xs font-bold border-yellow-400/30 text-yellow-400 hover:bg-yellow-400/10"
+                                >
+                                  ★ Rate Talent
+                                </Button>
+                              }
+                            />
                           )}
                         </CardContent>
                       </Card>

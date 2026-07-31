@@ -441,6 +441,36 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     expect: AUTHENTICATED_SELF,
   },
 
+  // ─── Reviews & trust (S8) ───────────────────────────────────────────────────
+  {
+    id: 'reviews.list',
+    route: 'reviews/route.ts',
+    method: 'GET',
+    summary: 'Public reviews + aggregate for a venue or talent (marketplace content)',
+    expect: PUBLIC,
+    note: 'Authors appear as public stage/venue names; reviewer user ids never leave the server.',
+  },
+  {
+    id: 'reviews.create',
+    route: 'reviews/route.ts',
+    method: 'POST',
+    summary: 'Review the counterparty of a CHECKED_OUT shift (direction derived server-side)',
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'ALLOW', // reviews the venue of their own completed shift
+      VENUE: 'ALLOW', // reviews the talent on their own completed shift
+      PARTY: 'FORBIDDEN',
+      ADMIN: 'ALLOW',
+    },
+    expectCrossTenant: {
+      // A stranger to the shift — talent, venue, or admin — must not even
+      // learn it exists. Admins moderate reviews via reports, not authorship.
+      TALENT: 'NOT_FOUND',
+      VENUE: 'NOT_FOUND',
+      ADMIN: 'NOT_FOUND',
+    },
+  },
+
   // ─── Availability (P6) ──────────────────────────────────────────────────────
   {
     id: 'availability.get',

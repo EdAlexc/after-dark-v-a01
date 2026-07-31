@@ -309,11 +309,29 @@ export const AcceptRateSchema = z.object({
 });
 
 export const ReportCreateSchema = z.object({
-  entity_type: z.enum(['conversation', 'user', 'gig']),
+  entity_type: z.enum(['conversation', 'user', 'gig', 'review']),
   entity_id: shortText(64).min(1),
   reason: shortText(2000).min(3),
   severity: z.enum(['LOW', 'MEDIUM', 'HIGH']).optional().default('MEDIUM'),
 });
+
+// ─── Reviews & trust (S8) ────────────────────────────────────────────────────
+
+export const ReviewCreateSchema = z.object({
+  shift_id: z.string().uuid(),
+  rating: z.number().int().min(1).max(5),
+  comment: shortText(1000).optional().default(''),
+});
+
+/** Public review listing — exactly one subject. */
+export const ReviewsListQuerySchema = z
+  .object({
+    venue_id: z.string().uuid().optional(),
+    talent_id: z.string().uuid().optional(),
+  })
+  .refine((query) => Boolean(query.venue_id) !== Boolean(query.talent_id), {
+    message: 'exactly one of venue_id or talent_id is required',
+  });
 
 // ─── Availability (P6) ────────────────────────────────────────────────────────
 
