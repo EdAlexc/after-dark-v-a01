@@ -106,3 +106,31 @@ describe('0011_payments.sql (P8)', () => {
     expect(sql).toContain('GRANT UPDATE (status, stripe_charge_id, stripe_transfer_id, released_at)');
   });
 });
+
+describe('0012_admin_trust.sql (P9)', () => {
+  const sql = read('0012_admin_trust.sql');
+
+  it('adds suspension columns and a partial index for the admin table', () => {
+    expect(sql).toContain('ADD COLUMN IF NOT EXISTS "suspended_at" TIMESTAMPTZ');
+    expect(sql).toContain('ADD COLUMN IF NOT EXISTS "suspended_reason" TEXT');
+    expect(sql).toContain('idx_user_suspended');
+    expect(sql).toContain('WHERE suspended_at IS NOT NULL');
+  });
+
+  it('adds triage bookkeeping with SET NULL reviewer (survives admin erasure)', () => {
+    expect(sql).toContain('reviewed_by');
+    expect(sql).toContain('ON DELETE SET NULL');
+    expect(sql).toContain('reviewed_at');
+    expect(sql).toContain('resolution_note');
+    expect(sql).toContain('idx_reports_triage');
+  });
+
+  it('is idempotent (every DDL statement is IF NOT EXISTS)', () => {
+    const statements = sql
+      .split('\n')
+      .filter((line) => /^(ALTER TABLE|CREATE INDEX)/.test(line.trim()));
+    for (const statement of statements) {
+      expect(statement).toContain('IF NOT EXISTS');
+    }
+  });
+});

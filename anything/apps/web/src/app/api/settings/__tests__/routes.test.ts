@@ -40,7 +40,7 @@ beforeEach(() => {
   // return a row; `[]` now means "deleted account" → 401.
   mocks.sql.mockImplementation(async (first: unknown) => {
     const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
-    return text.includes('SELECT role FROM "user"') ? [{ role: 'TALENT' }] : [];
+    return text.includes('SELECT role, suspended_at') ? [{ role: 'TALENT' }] : [];
   });
 });
 

@@ -569,11 +569,10 @@ function SettingsInner() {
   // never resolved during hydration on this page (nonce-CSP + force-dynamic
   // setup), leaving the whole settings tree permanently suspended — every
   // control dead and the settings query never firing.
-  const [role, setRole] = useState<'talent' | 'venue'>('talent');
+  const [role, setRole] = useState<'talent' | 'venue' | 'admin'>('talent');
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('role') === 'venue') {
-      setRole('venue');
-    }
+    const param = new URLSearchParams(window.location.search).get('role');
+    if (param === 'venue' || param === 'admin') setRole(param);
   }, []);
 
   const qc = useQueryClient();

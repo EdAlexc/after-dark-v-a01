@@ -78,6 +78,14 @@ const PUBLIC: Record<Actor, Outcome> = {
   ADMIN: 'ALLOW',
 };
 
+const ADMIN_ONLY: Record<Actor, Outcome> = {
+  anon: 'UNAUTHENTICATED',
+  TALENT: 'FORBIDDEN',
+  VENUE: 'FORBIDDEN',
+  PARTY: 'FORBIDDEN',
+  ADMIN: 'ALLOW',
+};
+
 const AUTHENTICATED_SELF: Record<Actor, Outcome> = {
   anon: 'UNAUTHENTICATED',
   TALENT: 'ALLOW',
@@ -510,6 +518,68 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
       PARTY: 'FORBIDDEN',
       ADMIN: 'ALLOW',
     },
+  },
+
+  // ─── Admin & trust (P9) — every row is ADMIN-only by construction ───────────
+  {
+    id: 'admin.overview',
+    route: 'admin/overview/route.ts',
+    method: 'GET',
+    summary: 'KPI aggregates (users/reports/gigs/payouts/live shifts)',
+    expect: ADMIN_ONLY,
+  },
+  {
+    id: 'admin.reports.list',
+    route: 'admin/reports/route.ts',
+    method: 'GET',
+    summary: 'Moderation triage queue',
+    expect: ADMIN_ONLY,
+  },
+  {
+    id: 'admin.reports.update',
+    route: 'admin/reports/[id]/route.ts',
+    method: 'PATCH',
+    summary: 'Triage transition OPEN→REVIEWING→CLOSED (audited; detail GET logs message reads)',
+    expect: ADMIN_ONLY,
+    expectCrossTenant: { ADMIN: 'ALLOW' },
+    note: 'Reports have no owner tenant — ADMIN acts on any; everyone else is denied before the id resolves.',
+  },
+  {
+    id: 'admin.users.list',
+    route: 'admin/users/route.ts',
+    method: 'GET',
+    summary: 'User management table (search/role/flagged filters)',
+    expect: ADMIN_ONLY,
+  },
+  {
+    id: 'admin.users.update',
+    route: 'admin/users/[id]/route.ts',
+    method: 'PATCH',
+    summary: 'Suspend/unsuspend (audited; cannot target self or other ADMINs)',
+    expect: ADMIN_ONLY,
+    expectCrossTenant: { ADMIN: 'ALLOW' },
+  },
+  {
+    id: 'admin.gigs.list',
+    route: 'admin/gigs/route.ts',
+    method: 'GET',
+    summary: 'Cross-tenant gig management view',
+    expect: ADMIN_ONLY,
+  },
+  {
+    id: 'admin.gigs.update',
+    route: 'admin/gigs/[id]/route.ts',
+    method: 'PATCH',
+    summary: 'Moderation takedown → CANCELLED only (audited, venue notified)',
+    expect: ADMIN_ONLY,
+    expectCrossTenant: { ADMIN: 'ALLOW' },
+  },
+  {
+    id: 'admin.audit.list',
+    route: 'admin/audit-logs/route.ts',
+    method: 'GET',
+    summary: 'Audit-log viewer + bounded CSV export (export itself audited)',
+    expect: ADMIN_ONLY,
   },
 
   // ─── Platform / vendor routes (declared, not behaviorally asserted) ─────────

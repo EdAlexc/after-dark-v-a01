@@ -20,7 +20,7 @@ interface PreviewAccount {
   email: string;
   password: string;
   name: string;
-  role: 'TALENT' | 'VENUE' | 'PARTY';
+  role: 'TALENT' | 'VENUE' | 'PARTY' | 'ADMIN';
 }
 
 export const PREVIEW_ACCOUNTS: PreviewAccount[] = [
@@ -41,6 +41,14 @@ export const PREVIEW_ACCOUNTS: PreviewAccount[] = [
     password: 'AfterDark-Party-2026!',
     name: 'Jordan Nightowl',
     role: 'PARTY',
+  },
+  {
+    // ADMIN is granted out-of-band only (CLAUDE.md §7 finding 1) — this
+    // script IS the out-of-band channel: it runs with direct DB access.
+    email: 'admin.preview@afterdark.dev',
+    password: 'AfterDark-Admin-2026!',
+    name: 'Night Shift (Admin)',
+    role: 'ADMIN',
   },
 ];
 
@@ -68,7 +76,7 @@ async function ensureUser(account: PreviewAccount): Promise<string> {
 }
 
 async function main() {
-  const [talent, venue, party] = PREVIEW_ACCOUNTS;
+  const [talent, venue, party, admin] = PREVIEW_ACCOUNTS;
 
   const talentId = await ensureUser(talent);
   await sql`
@@ -87,6 +95,8 @@ async function main() {
   const venueProfileId = venueRows[0].id;
 
   await ensureUser(party);
+  // ADMIN needs no profile row — the role itself is the capability (P9).
+  await ensureUser(admin);
   // PARTY is read-only discovery (CLAUDE.md §6.3): no profile row by design.
 
   const gigCount = (await sql`

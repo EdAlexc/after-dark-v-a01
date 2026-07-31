@@ -34,7 +34,7 @@ beforeEach(() => {
   // requireSession verifies the account still exists (see auth-guard).
   mocks.sql.mockImplementation(async (first: unknown) => {
     const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
-    return text.includes('SELECT role FROM "user"') ? [{ role: null }] : [];
+    return text.includes('SELECT role, suspended_at') ? [{ role: null }] : [];
   });
 });
 
@@ -74,7 +74,7 @@ describe('POST /api/user/role', () => {
   it('sets VENUE and upserts the venue profile when one already exists', async () => {
     mocks.sql.mockImplementation(async (first: unknown) => {
       const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
-      if (text.includes('SELECT role FROM "user"')) return [{ role: null }];
+      if (text.includes('SELECT role, suspended_at')) return [{ role: null }];
       if (text.includes('SELECT id FROM venue_profiles')) return [{ id: 'vp1' }];
       return [];
     });

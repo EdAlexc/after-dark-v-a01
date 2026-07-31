@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type DashboardRole = 'talent' | 'venue';
+export type DashboardRole = 'talent' | 'venue' | 'admin';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,6 +95,33 @@ const TALENT_NAV: SidebarItem[] = [
     label: 'My Profile',
     href: '/dashboard/talent/profile',
     icon: <User className="w-5 h-5" />,
+  },
+];
+
+const ADMIN_NAV: SidebarItem[] = [
+  {
+    kind: 'link',
+    label: 'Moderation',
+    href: '/dashboard/admin',
+    icon: <LayoutDashboard className="w-5 h-5" />,
+  },
+  {
+    kind: 'link',
+    label: 'Reports',
+    href: '/dashboard/admin#reports',
+    icon: <Users className="w-5 h-5" />,
+  },
+  {
+    kind: 'link',
+    label: 'Users & Gigs',
+    href: '/dashboard/admin#management',
+    icon: <Briefcase className="w-5 h-5" />,
+  },
+  {
+    kind: 'link',
+    label: 'Audit Log',
+    href: '/dashboard/admin#audit',
+    icon: <Calendar className="w-5 h-5" />,
   },
 ];
 
@@ -399,7 +426,9 @@ export default function DashboardSidebar({ role, userName }: DashboardSidebarPro
   // Real identity from the session — no more hardcoded demo names (Backlog #12).
   const { data: session } = authClient.useSession();
   const displayName =
-    userName ?? session?.user?.name ?? (role === 'talent' ? 'Talent' : 'Venue');
+    userName ??
+    session?.user?.name ??
+    (role === 'talent' ? 'Talent' : role === 'admin' ? 'Admin' : 'Venue');
 
   // Real unread-message badge (P3.4/P5 — finishes Backlog #12): total unread
   // across the caller's conversations, polled gently.
@@ -418,7 +447,9 @@ export default function DashboardSidebar({ role, userName }: DashboardSidebarPro
     0
   );
 
-  const navItems = (role === 'talent' ? TALENT_NAV : VENUE_NAV).map((item) =>
+  const navItems = (
+    role === 'talent' ? TALENT_NAV : role === 'admin' ? ADMIN_NAV : VENUE_NAV
+  ).map((item) =>
     item.kind === 'link' && item.label === 'Messages'
       ? { ...item, badge: unreadMessages > 0 ? unreadMessages : undefined }
       : item

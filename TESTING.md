@@ -2,9 +2,10 @@
 
 > How to verify the app end-to-end: automated suites, manual flows, security probes, and the
 > shared preview accounts. Companion to [CLAUDE.md](CLAUDE.md) (architecture) and
-> [DEV_TIMELINE.MD](DEV_TIMELINE.MD) (status). Last full pass: **2026-07-30** (P3–P8
-> marketplace loop — every check below was executed and green on that date; the full
-> apply → hire → check-in/out → payout → release loop ran against a Neon branch).
+> [DEV_TIMELINE.MD](DEV_TIMELINE.MD) (status). Last full pass: **2026-07-30** (P9 admin &
+> trust — every check below was executed and green on that date; the moderation loop
+> [report → triage → suspend → reinstate → takedown → audit export] ran live against a
+> Neon branch on top of the P3–P8 marketplace loop).
 
 ---
 
@@ -17,9 +18,12 @@ Tonight", legal pages, 18+/21+ age gating, self-serve data export + account dele
 new with P3–P8 — **applications (apply → shortlist → hire → withdraw), in-app notifications,
 messaging with rate negotiation, availability calendar + Available Tonight, shifts with
 idempotent check-in/out, and the payout ledger with 24h escrow release** (Stripe transfers
-key-gated; the ledger advances without keys). The **only surface still on sample data** is the
-venue "Gig Calendar" page (`/dashboard/venue/schedule` — not a PRD screen). Admin (P9) and
-PWA (P10) don't exist yet. Full matrix: CLAUDE.md §4.
+key-gated; the ledger advances without keys). New with P9: **admin
+moderation** — reports triage, account suspension (enforced platform-wide by AuthGuard),
+gig takedowns, the audit-log viewer + CSV export, and KPI cards, all on `/dashboard/admin`.
+The **only surface still on sample data** is the venue "Gig Calendar" page
+(`/dashboard/venue/schedule` — not a PRD screen). PWA (P10) doesn't exist yet. Full
+matrix: CLAUDE.md §4.
 
 ## 2. Shared preview accounts (deployed site + any DB seeded with them)
 
@@ -32,6 +36,7 @@ Neon DB** (project `after-dark`), so they work on the deployed site right now.
 | TALENT | `talent.preview@afterdark.dev` | `AfterDark-Talent-2026!` | Browse, apply/withdraw, messages + propose-rate, availability calendar, shift check-in/out, earnings, profile, settings |
 | VENUE | `venue.preview@afterdark.dev` | `AfterDark-Venue-2026!` | Venue dashboard (Open Gigs, Active Operations, Payouts Pending), create-gig, applicant shortlist/hire, messages + accept-rate, talent directory |
 | PARTY | `party.preview@afterdark.dev` | `AfterDark-Party-2026!` | Read-only discovery: landing, browse, gig detail. All principal writes are role-denied server-side |
+| ADMIN | `admin.preview@afterdark.dev` | `AfterDark-Admin-2026!` | `/dashboard/admin`: reports triage, suspend/reinstate, gig takedown, audit viewer + CSV export. Every action audited |
 
 The venue account owns three starter gigs (2 published, 1 draft) so dashboards and browse are
 never empty. ⚠️ These are **shared alpha credentials committed to the repo** — rotate them
@@ -43,14 +48,15 @@ real payment data enters the database.
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 520 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 583 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
 ```
 
-(373 → 520 with P3–P8: the authZ matrix grew to **231 generated tests** as ~21 routes were
-added, plus new suites for marketplace logic and the 0007–0011 migrations. Local quirk: in a
+(520 → 583 with P9: the authZ matrix grew to **274 generated tests** with 8 ADMIN_ONLY
+rows, plus suspension tests in the AuthGuard suite and an admin-routes edge-case suite
+[guardrails, triage transitions, moderation-read auditing, CSV escaping]. Local quirk: in a
 `.claude/worktrees/*` checkout oxlint needs `--no-ignore` because the parent repo's
 `.gitignore` ignores `.claude/`; CI checkouts are unaffected.)
 
@@ -263,6 +269,37 @@ API shape so it can be scripted.
   `BLOB_READ_WRITE_TOKEN` the value is a processed `data:image/webp` URL; with it, a Blob
   URL. Oversized/wrong-MIME uploads → 400 with a clear message.
 
+**Admin & trust (P9 — the moderation loop, verified 2026-07-30)**
+
+Sign in as `admin.preview@…` → `/dashboard/admin`. Every write below lands in the audit
+rail on the right of the page as you do it.
+
+1. **KPI cards** show real aggregates (total users + suspended count, active disputes with
+   a HIGH chip when any, escrow total from the payout ledger, live-shift count, Stripe
+   configured flag).
+2. **Triage**: file a report first (any account: Messages → Report, or
+   `POST /api/reports`). It appears in Reports Triage, open-first/HIGH-first. Review →
+   REVIEWING, Close (+resolution note) → CLOSED. Re-closing is a no-op 200; reopening a
+   CLOSED report → 400 (terminal). Opening a **conversation** report's detail
+   (`GET /api/admin/reports/[id]`) returns the last messages **and writes an
+   `admin.moderation.messages_read` audit event** — check the rail.
+3. **Suspension canary (the important one)**: suspend the talent preview account with a
+   reason. From the talent's still-valid session, every API call must now return **403
+   with that reason** (`{"error":"Account suspended: …"}`), immediately — no re-login
+   needed. Two carve-outs must keep working while suspended: `GET /api/account/export`
+   (200) and `DELETE /api/account` — **GDPR rights survive moderation**. Reinstate →
+   everything back to 200.
+4. **Guardrails**: suspending yourself → 400; suspending another ADMIN → 403; suspending
+   without a reason → 400.
+5. **Takedown**: Users & Gigs → Gigs tab → Take Down. Gig flips to CANCELLED (replay =
+   idempotent 200), the venue receives a `gig.removed` notification with the reason, and
+   the admin PATCH schema only accepts CANCELLED — `{"status":"PUBLISHED"}` → 400.
+6. **Audit export**: Export Audit Log downloads a CSV (`Content-Disposition: attachment`,
+   RFC-4180 escaping, capped at the 10k newest rows) and the export itself appears in the
+   audit log (`admin.audit.export`).
+7. **Gate**: as talent/venue/party, every `/api/admin/*` → 403 and `/dashboard/admin`
+   renders the "Admin access required" card. Anonymous → 401.
+
 ## 6. API security probes (run against local or a preview deploy)
 
 All executed 2026-07-30 with these exact results:
@@ -308,6 +345,11 @@ curl -s $BASE/api/stripe/connect                    # (authed) → {"configured"
 # Cross-tenant: a rival venue PATCHing someone else's application/shift → 404 (not 403);
 # a talent reading another talent's applications gets only their own rows (list is
 # session-scoped — there is no id parameter to tamper with).
+# P9 admin surface (all executed 2026-07-30):
+curl -s -o /dev/null -w '%{http_code}\n' $BASE/api/admin/overview              # → 401 anon
+#   talent/venue/party session → 403 · ADMIN → 200
+#   suspended user, any authed endpoint → 403 "Account suspended: <reason>"
+#   suspended user, /api/account/export → 200 (GDPR carve-out)
 ```
 
 **CSP**: `curl -sI $BASE/ | grep -i content-security-policy` → `script-src 'self' 'nonce-…'
@@ -359,8 +401,11 @@ What it asserts, and why each matters:
 
 ## 8. Known gaps (do not report as regressions)
 
-- **Admin (P9) and PWA/service-worker (P10) do not exist yet** — the ADMIN role works at the
-  API layer (matrix-verified) but has no UI.
+- **PWA/service-worker (P10) does not exist yet** — last slice before alpha.
+- Admin CSV export is **bounded** (10k newest rows per download), not an async job — use
+  filters to slice bigger windows; a queued export is post-alpha.
+- Suspension blocks the suspended user at the API layer with a 403 + reason; there is no
+  dedicated "your account is suspended" page — dashboards surface the 403 toasts.
 - **Stripe has no keys configured anywhere** — `/api/stripe/*` 503s by design and payout
   release advances the ledger without transfers. See DEV_TIMELINE P8 honest-status for the
   first-key checklist. Money movement is therefore untested against real Stripe test-mode.

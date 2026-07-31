@@ -23,7 +23,7 @@ function put(body: unknown): Request {
 function sqlWithRole(role: string | null, hasProfile = false) {
   mocks.sql.mockImplementation(async (first: unknown, ...rest: unknown[]) => {
     const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
-    if (text.includes('SELECT role FROM "user"')) return [{ role }];
+    if (text.includes('SELECT role, suspended_at')) return [{ role }];
     if (text.includes('FROM talent_profiles') && text.includes('SELECT id'))
       return hasProfile ? [{ id: 'tp1' }] : [];
     if (text.startsWith('UPDATE "talent_profiles"')) {
@@ -50,7 +50,7 @@ describe('GET /api/talent/profile', () => {
     // profile query is what returns nothing here.
     mocks.sql.mockImplementation(async (first: unknown) => {
       const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
-      return text.includes('SELECT role FROM "user"') ? [{ role: 'TALENT' }] : [];
+      return text.includes('SELECT role, suspended_at') ? [{ role: 'TALENT' }] : [];
     });
     const res = await GET(new Request('http://t.local'), {});
     await expect(res.json()).resolves.toEqual({ profile: null });
@@ -100,7 +100,7 @@ describe('PUT /api/talent/profile', () => {
     // the body only and wrote 0%. The route must merge body over the row.
     mocks.sql.mockImplementation(async (first: unknown) => {
       const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
-      if (text.includes('SELECT role FROM "user"')) return [{ role: 'TALENT' }];
+      if (text.includes('SELECT role, suspended_at')) return [{ role: 'TALENT' }];
       if (text.includes('FROM talent_profiles') && text.includes('SELECT id'))
         return [
           {

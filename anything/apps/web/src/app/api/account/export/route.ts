@@ -17,7 +17,8 @@ import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rat
 const exportLimiter = getRateLimiter('account-export', { windowMs: 60 * 60 * 1000, max: 5 });
 
 export const GET = withRoute('account.export', async (request) => {
-  const user = await authGuard.requireSession();
+  // Data-subject rights survive suspension (P9): allowSuspended is only here.
+  const user = await authGuard.requireSession({ allowSuspended: true });
   enforceRateLimit(exportLimiter, clientKey(request, user.id));
 
   const data = await collectAccountExport(user.id);
