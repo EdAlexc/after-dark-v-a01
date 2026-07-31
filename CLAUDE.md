@@ -39,7 +39,7 @@ yarn dev                    # Next.js dev server on port 4000
 yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
 yarn lint                   # oxlint (workspace .oxlintrc.json), warnings fail
-yarn test                   # vitest run (656 tests as of S1–S3)
+yarn test                   # vitest run (791 tests as of S4–S10)
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:grants              # (re)apply scripts/grants.sql to the afterdark_app role (owner conn; S2)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
@@ -57,7 +57,9 @@ yarn pwa:icons              # regenerate public/icons/* deterministically from v
   `PREVIEW_ACCOUNTS_SECRET` (S1 — preview passwords derive from it, never committed),
   `GOOGLE_CLIENT_ID/SECRET`, `APPLE_CLIENT_ID/SECRET/APP_BUNDLE_IDENTIFIER`,
   `EXPO_PUBLIC_PROXY_BASE_URL`, `NEXT_PUBLIC_CREATE_*`, `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN`
-  (error tracking — no-op unset). See `apps/web/.env.example`; no real `.env` is committed.
+  (error tracking — no-op unset), `WEB_PUSH_VAPID_PUBLIC_KEY/PRIVATE_KEY/SUBJECT`
+  (S9 — hot-gig Web Push; whole surface inert without the pair),
+  `STREAM_MAX_MS`/`STREAM_TICK_MS` (S9 — SSE window/tick tuning). See `apps/web/.env.example`; no real `.env` is committed.
 - **Migrations live in `apps/web/migrations/`** (P0). `0001_baseline.sql` reproduces §6.1;
   `0002_audit_logs.sql` adds the audit trail; `0003_gig_lifecycle.sql` widens gig status to
   the full lifecycle (P1); `0004_rls.sql` ships RLS policies (verified enforcing — see
@@ -165,7 +167,8 @@ shares the workspace root — see Technical Backlog #23 to scope installs to `we
   `yarn pwa:icons`); dependency-free `public/sw.js` (never intercepts `/api`, navigations
   network-only with `public/offline.html` fallback, `/_next/static` cache-first, purge on
   logout via `src/lib/pwa.ts`); CSP `worker-src 'self'`. Verification: TESTING.md §9.
-- **Absent**: Stripe keys (code shipped key-gated), WebSockets/SSE.
+- **Absent**: Stripe keys (code shipped key-gated), WebSockets (SSE landed in S9;
+  Web Push is key-gated on the `WEB_PUSH_VAPID_*` pair).
 
 ## 4. Spec-vs-code audit (feature matrix)
 
@@ -178,13 +181,13 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Onboarding (role select + basics) | — | `src/app/onboarding/page.tsx` → `/api/user/role` | ✅ (but accepts `ADMIN` — see §7) |
 | Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | ✅ real `GET /api/gigs` (P1.1): validated filters, pagination, HOT/NEW badges; multi-select refines client-side (Backlog #26) |
 | Browse talent (venue directory) | — | `dashboard/venue/browse/page.tsx` | ✅ real public `GET /api/talent` (P1.1); saved-talent list is client-local |
-| Browse gigs: map view (3.2) | p2 | — | ❌ no map integration |
+| Browse gigs: map view (3.2) | p2 | `components/GigsMap.tsx` in browse | ✅ MapLibre + OSM tiles (S10); pins = server-geocoded PUBLISHED gigs; escaped popups → `/gigs/[id]` |
 | Gig details + application + 5% fee estimator (3.2) | p4 | `gigs/[id]/page.tsx` → `/api/gigs/[id]` + `/apply` | ✅ detail + estimator (P1.2) + live apply/withdraw w/ proposed rate, ✓-Applied states, Inquire→thread (P3/P5); visible to applicants after FILLED |
 | Availability calendar, 3 slots (3.2) | p7 | `dashboard/talent/schedule/page.tsx` → `/api/availability` | ✅ real month grid + 3-slot editor + notes + Available Tonight + shift-conflict dots (P6) |
 | Talent dashboard: stats, applications, upcoming, check-in (3.2) | p8 | `dashboard/talent/page.tsx` | ✅ real earnings (payout ledger), applications, bookings w/ On-My-Way/Check-In/Out, Hot Tonight rail (P3/P7/P8) |
 | Talent public profile editor (3.2) | p9 | `dashboard/talent/profile/page.tsx` → `/api/talent/profile` | ✅ real; media now EXIF-stripped/resized via P4 (Blob when keyed, processed-inline fallback) |
-| Venue dashboard: metrics, open gigs, live ops (3.3) | p10 | `dashboard/venue/page.tsx` | ✅ Open Gigs w/ lifecycle + real applicant counts; **Active Operations** = real shifts w/ check-in/out; **Payouts Pending** from ledger; time-to-hire still muted |
-| Create gig wizard (3.3) | p3 | `dashboard/venue/create-gig/page.tsx` → POST `/api/gigs` | ✅ persists; "Live Analytics" candidates are mock |
+| Venue dashboard: metrics, open gigs, live ops (3.3) | p10 | `dashboard/venue/page.tsx` | ✅ Open Gigs w/ lifecycle + real applicant counts; **Active Operations** = real shifts w/ check-in/out; **Payouts Pending** from ledger; time-to-hire + filling-rate trends real from the S6 event capture (`/api/venue/stats`) |
+| Create gig wizard (3.3) | p3 | `dashboard/venue/create-gig/page.tsx` → POST `/api/gigs` | ✅ persists; **Live Analysis real** (S7): `/api/gigs/match-preview` candidate counts × availability probe + pricing percentiles |
 | Applicant tracking: shortlist/hire (3.3) | p10 | `dashboard/{talent,venue}/applicants/page.tsx` | ✅ real; Shortlist/Hire/Pass/Reconsider; hire = atomic app→HIRED + gig→FILLED + shift INSERT (P3) |
 | Messages: 2-pane chat, attachments, propose-rate (3.4) | p6 | `components/MessagesView.tsx` | ✅ real threads (polling), RATE_PROPOSAL + accept-rate→application, image attachments (P4), gig-in-focus rail, report→`reports` (P5) |
 | Live ops check-in/check-out (2.A/2.B) | p8, p10 | `/api/shifts/[id]` + dashboards | ✅ actor-scoped transitions, idempotency keys on a DB UNIQUE, checkout creates HELD payout (P7) |
@@ -192,7 +195,7 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Admin moderation: disputes, audit logs, verification (3.4) | p1 | `dashboard/admin` + `/api/admin/*` | ✅ triage, suspend/reinstate (AuthGuard-enforced platform-wide), takedowns, audit viewer + CSV, KPI cards (P9) |
 | Reports/disputes (schema §4) | p1 | `/api/reports` + admin triage | ✅ report → triage → REVIEWING/CLOSED w/ notes; moderation reads audited (P9) |
 | Notifications (bell/badges in every wireframe) | p1–p10 | `components/NotificationsBell.tsx` → `/api/notifications` | ✅ real bell + unread sidebar badges; emitted by applications/messages/shifts/payouts (P3.4) |
-| Global search "gigs or talent" (top bar) | p1–p10 | — | ❌ |
+| Global search "gigs or talent" (top bar) | p1–p10 | `components/GlobalSearch.tsx` + `/search` | ✅ Postgres FTS `/api/search` (S5); mounted on landing nav, sidebar, mobile drawer; URL-addressable results page |
 | Venue↔external calendar & ticketing integrations (2.B) | — | — | ❌ (post-alpha candidate) |
 | Settings (profile, password, 2FA) | — | `dashboard/settings/*` + `/api/settings*` | ✅ real (2FA = better-auth twoFactor plugin since 0005) |
 | Legal surface: privacy, ToS, contact (footer, GDPR G1) | p1–p10 footer | `src/app/legal/*`, `src/app/contact` | ✅ real routes, versioned via `lib/legal.ts` (P2.1) |
@@ -223,6 +226,11 @@ PATCH takedown), **`/api/admin/audit-logs`** (JSON + audited CSV export), `/api/
 `/api/venue/profile`, `/api/settings`, `/api/settings/change-password`,
 `/api/account/export`, `/api/account` (DELETE), `/api/account/age-confirm`,
 `/api/auth/two-factor/*` (better-auth twoFactor plugin),
+**`/api/search`** (GET public FTS, S5), **`/api/venue/stats`** (GET venue KPI
+aggregates, S6), **`/api/gigs/match-preview`** (GET venue Live Analysis, S7),
+**`/api/reviews`** (GET public list/aggregate, POST shift-scoped review, S8),
+**`/api/stream`** (GET SSE invalidation stream, S9), **`/api/push/subscribe`**
+(GET/POST/DELETE Web Push opt-in, S9 — 503 without VAPID keys),
 `/api/__create/check-social-secrets` (dev only). Every route is declared in
 `api/utils/authz-matrix.ts`; CI fails if one is missing.
 
