@@ -212,6 +212,7 @@ export default function VenueSchedulePage() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={prevMonth}
+                  aria-label="Previous month"
                   className="w-8 h-8 rounded-lg bg-[#1E1E1E] border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
                 >
                   <ChevronLeft className="w-4 h-4 text-white/60" />
@@ -221,6 +222,7 @@ export default function VenueSchedulePage() {
                 </h2>
                 <button
                   onClick={nextMonth}
+                  aria-label="Next month"
                   className="w-8 h-8 rounded-lg bg-[#1E1E1E] border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
                 >
                   <ChevronRight className="w-4 h-4 text-white/60" />

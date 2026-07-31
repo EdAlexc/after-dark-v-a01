@@ -17,6 +17,13 @@ import { Pool, neonConfig } from '@neondatabase/serverless';
 import { selectPending } from './migrate-core.mjs';
 
 neonConfig.webSocketConstructor = ws;
+// P10.4: CI runs against a vanilla Postgres behind the local Neon proxy
+// (mirrors src/app/api/utils/neon-local.ts — this file can't import TS).
+if (process.env.NEON_LOCAL_PROXY === '1') {
+  neonConfig.fetchEndpoint = (host) => `http://${host}:4444/sql`;
+  neonConfig.useSecureWebSocket = false;
+  neonConfig.wsProxy = (host) => `${host}:4444/v2`;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');

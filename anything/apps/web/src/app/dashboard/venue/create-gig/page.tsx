@@ -320,7 +320,7 @@ export default function CreateGigPage() {
             <p className="text-xs text-white/40">Fill in details to attract top talent</p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
+            <button aria-label="Notifications" className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
               <Bell className="w-4 h-4 text-white/60" />
             </button>
             <div className="w-9 h-9 rounded-xl bg-[#00FFCC]/20 border border-[#00FFCC]/30 flex items-center justify-center">
@@ -361,6 +361,7 @@ export default function CreateGigPage() {
                         <select
                           value={form.role_needed}
                           onChange={(e) => update('role_needed', e.target.value)}
+                          aria-label="Role needed"
                           className={cn(inputClass, 'appearance-none pr-10 cursor-pointer')}
                         >
                           <option value="">Select a role…</option>

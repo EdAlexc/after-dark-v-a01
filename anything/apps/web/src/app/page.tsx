@@ -61,8 +61,10 @@ export default function LandingPage() {
 
       {/* Hero Section */}
       <section className="relative h-screen flex items-center justify-center overflow-hidden">
-        {/* Background Image */}
-        <div className="absolute inset-0 bg-[url('https://raw.createusercontent.com/08a22b5a-871d-4fc0-89ba-eddb675f2450/')] bg-cover bg-center">
+        {/* Background image — self-hosted 11 KB webp (P10.4). The old
+            create.xyz-hosted hero blew the §3.2 image budget AND was already
+            blocked by the S3 img-src CSP pin in production (G11 egress). */}
+        <div className="absolute inset-0 bg-[url('/hero-nyc.webp')] bg-cover bg-center">
           <div className="absolute inset-0 bg-gradient-to-b from-[#121212]/60 via-[#121212]/80 to-[#121212]"></div>
         </div>
 

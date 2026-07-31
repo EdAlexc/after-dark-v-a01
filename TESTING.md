@@ -547,3 +547,33 @@ prod — the loop below is repeatable):
 9. **Suspended surface (S4)**: suspend a preview account from the admin dashboard → its
    next dashboard visit lands on `/account/suspended` showing the reason; the settings
    page stays reachable and data export still returns 200 (GDPR carve-out).
+
+
+## 11. P10.4 alpha gates (added 2026-07-31)
+
+CI runs the `alpha-gates` job on every PR: a vanilla Postgres + the local Neon-protocol
+proxy (`NEON_LOCAL_PROXY=1` — see `api/utils/neon-local.ts`) host a fully migrated,
+seeded, built app, then three gates run against it. **No database secrets exist in CI**;
+auth + preview-account secrets are generated per run.
+
+- **Gate 1 — axe smoke** (`yarn gate:axe`): the 10 wireframe screens under their natural
+  actors; any `critical` violation fails, `serious` prints as warnings (Backlog #13's
+  deep pass ratchets those, plus contrast/target-size).
+- **Gate 2 — Lighthouse** (`yarn gate:lhci`): §3.2's 5 URLs in 3 passes (public /
+  talent-authed / venue-authed via a real session cookie in extraHeaders).
+  Enforced today: CLS ≤ 0.1, TTFB ≤ 800 ms, image ≤ 500 KB/route, a11y score ≥ 0.8.
+  Warn until the RSC refactor: LCP/FCP/TBT/JS-weight (levels + rationale in
+  `lighthouserc.cjs` — flip them to `error` in that refactor's PR).
+- **Gate 3 — k6** (`k6 run k6/alpha-gates.js`): §3.4's scenario shapes at smoke scale —
+  browse surge, message poll fan-out, and the fixed-key check-in double-tap (idempotency
+  replay asserted live). Thresholds: **Apdex ≥ 0.85 @ T=300 ms**, error rate < 1%.
+
+**Local run**: start a production server (`yarn build && yarn start -p 4000`) against a
+disposable Neon branch with preview accounts provisioned, export
+`BASE_URL`/`PREVIEW_ACCOUNTS_SECRET`, then run the three commands above.
+
+**Full load lab (pre-release, manual)**: §3.4's real scale — 50→500 VUs, 15 min steady
+state, the noisy-neighbor and 2 h soak scenarios — is deliberately NOT in CI. Run it
+against a dedicated Neon branch before opening signup; note shift transitions are
+rate-limited 60/h/user, so scenario #4 at full scale needs one venue account per 50
+check-ins (or a temporary `RATE_LIMIT_STORE=memory` on the app under test).

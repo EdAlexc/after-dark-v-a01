@@ -211,6 +211,7 @@ export default function TalentSchedulePage() {
                     </div>
                   </div>
                   <Switch
+                    aria-label="Available Tonight boost"
                     checked={profileData?.profile?.available_tonight ?? false}
                     onCheckedChange={(value) => toggleTonight.mutate(value)}
                     className="data-[state=checked]:bg-[#00FFCC]"
@@ -233,6 +234,7 @@ export default function TalentSchedulePage() {
                     </div>
                   </div>
                   <Switch
+                    aria-label="Hot gig push alerts"
                     checked={pushStatus?.subscribed ?? false}
                     disabled={pushStatus?.enabled === false || pushToggle.isPending}
                     onCheckedChange={(value) => pushToggle.mutate(value)}
@@ -253,6 +255,7 @@ export default function TalentSchedulePage() {
                         onClick={() =>
                           setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))
                         }
+                        aria-label="Previous month"
                         className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"
                       >
                         <ChevronLeft className="w-4 h-4 text-white/60" />
@@ -261,6 +264,7 @@ export default function TalentSchedulePage() {
                         onClick={() =>
                           setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))
                         }
+                        aria-label="Next month"
                         className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"
                       >
                         <ChevronRight className="w-4 h-4 text-white/60" />

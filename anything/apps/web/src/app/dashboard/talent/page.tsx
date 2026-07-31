@@ -270,7 +270,7 @@ export default function TalentDashboard() {
                 <p className="text-sm font-bold text-[#00FFCC] mb-2">
                   Complete your profile to unlock more gigs
                 </p>
-                <Progress value={completion} className="h-1.5 bg-white/10" />
+                <Progress value={completion} aria-label="Profile completion" className="h-1.5 bg-white/10" />
                 <p className="text-xs text-white/40 mt-1.5">
                   {completion}% complete — filled-out profiles get shortlisted more often
                 </p>
