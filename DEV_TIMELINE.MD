@@ -782,7 +782,7 @@ matter; redeploy once at the end (env changes apply to *new* deployments only).
 
 ---
 
-## 5. Post-alpha slice plan — 2026-07-31
+## 5. Backlog Development Slices — 2026-07-31
 
 > Every **open** Technical Backlog item (§3) and carry-over, divided into shippable slices.
 > Optimization order, applied in this priority: **security** (debt and exposure first),
@@ -890,20 +890,84 @@ TanStack Query keys*
 - **#26 GA legal track** — counsel review, executed DPAs (G10), DPIA (G13): external,
   runs parallel to any slice, gates **GA** not development.
 
-### Dependency graph
+Rough serial total: **~4–5 focused weeks** for S1–S10; the dependency chart below cuts it
+to ~3 when the parallel tracks run concurrently. First tester feedback should be allowed
+to reorder the functionality wave — the security wave is not negotiable.
 
-```
-S1 (rate-limit + embed) ──► P10.4 gates ──► open signup / alpha exit
-S2 (RLS + purge)      — parallel with S1
-S3 (media)            — after B5 ops           S4 (cosmetics) — anytime, 1 day
-S5 (search) ─┐
-S6 (events) ─┼─► S7 (matching)                 S10 (map, builds A10 guard) — independent
-S8 (reviews) ┘  (S5/S6/S8 mutually parallel — no shared tables)
-S9 (realtime) — after alpha feedback stabilizes polling pain points
-S11 (platform) — opportunistic; #24 strictly after the #4 decision
-Parked: #2/#3 (product definition), #26 (legal, gates GA)
+### Logic dependency chart
+
+Boxes in the same wave with no connecting edge are **mutually parallel** (they share no
+tables or files). Dashed edges are replacements, not build dependencies.
+
+```mermaid
+flowchart TD
+    subgraph SEC["Security wave — first, non-negotiable"]
+        S1["S1 · shared rate limits<br/>+ embed lockdown + credential rotation"]
+        S2["S2 · RLS cutover<br/>+ G7 retention purge"]
+        S3["S3 · media completion<br/>(base64 backfill → CSP pin)"]
+    end
+
+    subgraph FUN["Functionality wave — cohesion-grouped"]
+        S4["S4 · honest-alpha cosmetics (~1 d)"]
+        S5["S5 · search + multi-filters<br/>+ availability boost"]
+        S6["S6 · events table → real venue KPIs"]
+        S7["S7 · matching engine<br/>(real Live Analytics)"]
+        S8["S8 · reviews & trust score"]
+        S9["S9 · SSE + Web Push"]
+        S10["S10 · map view<br/>(builds the A10 SSRF guard)"]
+    end
+
+    subgraph PLAT["Platform wave — opportunistic"]
+        S11["S11 · install scoping · #9 closure"]
+        M4["#4 mobile decision"] --> M24["#24 repo flatten"]
+    end
+
+    OPS[("B5 Blob token<br/>(operator step, §4.6)")] --> S3
+    S1 --> P104["P10.4 · Lighthouse / k6 / axe CI gates"]
+    P104 --> EXIT(["alpha exit gate / open signup"])
+    EXIT -.able to reorder FUN.-> S9
+
+    S6 --> S7
+    S4 -.placeholder replaced by.-> S7
+    S4 -.stub replaced by.-> S5
+
+    S10 -- "A10 guard reused by" --> PARKED["parked: #2 calendar/ticketing · #3 promoter<br/>(need product definition first)"]
+    LEGAL["#26 legal track · counsel / DPAs / DPIA<br/>(runs parallel to everything)"] --> GA(["GA gate"])
 ```
 
-Rough serial total: **~4–5 focused weeks** for S1–S10; the graph above cuts it to ~3 when
-the parallel tracks run concurrently. First tester feedback should be allowed to reorder
-the functionality wave — the security wave is not negotiable.
+---
+
+## 6. Environment Variables — 2026-07-31
+
+> The complete env contract, cross-checked against `apps/web/.env.example` and every
+> `process.env.*` read in `src/` + `scripts/`. "Sensitive" = store as a **Sensitive**
+> (encrypted, never client-exposed) variable in Vercel and never commit or log it;
+> "Public" = shipped to the browser bundle (`NEXT_PUBLIC_*`) or non-secret config — safe
+> in logs, still managed via env. Set everything for **Production + Preview** unless
+> noted. Env changes only apply to *new* deployments — redeploy after editing.
+
+| Env Variable | Where/How to find it | How to rotate | How often to rotate | Use | Sensitive or Public |
+|---|---|---|---|---|---|
+| `DATABASE_URL` | Neon console → project `after-dark` → Connect → **pooled** string (`…-pooler…?sslmode=require`). Read by `api/utils/sql.ts`, `scripts/migrate.mjs`, seed/preview scripts | Neon console → Roles → reset password (or switch to the least-privilege role per `docs/rls-cutover.md`, slice S2) → update Vercel env → redeploy | On compromise or staff change; changes once at the S2 RLS cutover | Every DB read/write | **Sensitive** |
+| `BETTER_AUTH_SECRET` | Generate: `openssl rand -base64 32`. Read by `src/lib/auth.ts` | New value → Vercel env → redeploy. ⚠ Invalidates **every session and every 2FA enrollment** (users re-enroll) | Only on compromise (P1 incident, see `docs/incident-runbook.md` §3) — deliberately not routine because of the 2FA cost | Signs session cookies **and** encrypts 2FA TOTP secrets/backup codes at rest | **Sensitive** |
+| `BETTER_AUTH_URL` | The canonical app origin (production domain; `http://localhost:4000` locally). Read by `auth.ts` as a trusted origin | Change only on domain move | n/a | CSRF trusted-origin + canonical URL | Public |
+| `CRON_SECRET` | Generate + set without shell echo: `openssl rand -hex 32 \| tr -d '\n' \| vercel env add CRON_SECRET production`. Read by `/api/payouts/release`; Vercel Cron sends it as the bearer automatically | Same command with `vercel env rm CRON_SECRET production` first; redeploy (cron picks up the new value on the next run) | ~Quarterly, or on leak | Authenticates the scheduled escrow-release cron (daily 09:00 UTC, `vercel.json`) | **Sensitive** |
+| `BLOB_READ_WRITE_TOKEN` | **Injected by Vercel** when the Blob store is connected (Dashboard → Storage → Blob → Connect Project); locally via `vercel env pull`. Read by `api/utils/media.ts` (`@vercel/blob`) | Vercel Dashboard → the store → Tokens → cycle (or disconnect/reconnect the project) | On leak; otherwise Vercel-managed | P4 media storage — uploaded images land in Blob instead of inline `data:` URLs in Postgres | **Sensitive** |
+| `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | Sentry → Project Settings → Client Keys (DSN); same value in both. Read by `instrumentation.ts` / `instrumentation-client.ts`; the public one is client-bundled and its origin auto-joins CSP `connect-src` (`security-headers.js`) | Sentry → Client Keys → revoke key + create new → update both vars | Only on abuse (DSNs are designed to be client-visible ingest addresses) | Error tracking (server/edge + browser); all events pass `src/lib/sentry-scrub.ts` | Public by design (low sensitivity — don't advertise, but not a secret) |
+| `STRIPE_SECRET_KEY` | Stripe Dashboard → Developers → API keys. **Use `sk_test_…` until GA.** Read by `src/lib/stripe.ts` — its absence 503-gates the whole `/api/stripe/*` surface | Stripe Dashboard → roll key (supports overlap window) → update env → redeploy | On compromise or staff change; Stripe supports scheduled rolls | Stripe Connect onboarding + transfers (P8) | **Sensitive** (highest — money) |
+| `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard → Webhooks → endpoint for `/api/stripe/webhook` → signing secret (`whsec_…`); locally from `stripe listen`. Read by the webhook route (`constructEventAsync`) | Roll the endpoint's signing secret in the dashboard → update env | When rotating the endpoint or on compromise | Webhook signature verification + replay guard | **Sensitive** |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client. Read by `auth.ts` (social sign-in self-activates when both are set) | Console supports two active secrets: add new → deploy → delete old (zero-downtime) | Secret: on compromise (no expiry) | Google sign-in | ID: Public · Secret: **Sensitive** |
+| `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET` / `APPLE_APP_BUNDLE_IDENTIFIER` | Apple Developer portal → Certificates, IDs & Profiles → Services ID. The client secret is a **self-signed JWT generated from your `.p8` key, valid ≤ 6 months** | Regenerate the JWT from the `.p8` signing key → update env | **≤ every 6 months — hard expiry** (calendar it; sign-in breaks silently when it lapses) | Apple sign-in | IDs: Public · Secret: **Sensitive** |
+| `NEXT_PUBLIC_CREATE_BASE_URL` / `NEXT_PUBLIC_CREATE_HOST` / `NEXT_PUBLIC_CREATE_ENV` / `NEXT_PUBLIC_PROJECT_GROUP_ID` / `NEXT_PUBLIC_CREATE_AUTH_PROVIDERS` | create.xyz platform values (inherited from the export). Read by `security-headers.js` (frame-ancestors/connect-src) and platform glue | n/a — config, not credentials | n/a — slice **S1 makes them off-by-default** (builder embed becomes opt-in) | create.xyz builder iframe embedding + CSP origins | Public (client-bundled) |
+| `EXPO_PUBLIC_PROXY_BASE_URL` | Mobile auth-bridge base URL (unused until the Backlog #4 decision) | n/a | n/a | Expo scaffold auth bridge | Public |
+| `VERCEL_URL` / `VERCEL_BRANCH_URL` / `VERCEL_PROJECT_PRODUCTION_URL` / `VERCEL_ENV` | **System-injected by Vercel** — nothing to set; requires "Automatically expose System Environment Variables" (on by default). Read by `src/lib/deployment-origins.ts` (preview-deploy trusted origins) and Sentry env tagging | n/a | n/a | Per-deploy trusted origins so preview sign-in passes CSRF | Public |
+| `RLS_URL` / `OWNER_URL` | Two connection strings for a **disposable Neon branch**, passed inline when running `yarn db:verify-rls` (`scripts/verify-rls.mjs`). Never set in Vercel | Delete the branch after the run | Ephemeral per run | RLS verification harness (never against prod) | **Sensitive** (but ephemeral, local-only) |
+| `FORCE_SEED` | Manual flag for `scripts/seed.ts` (which refuses prod without it). Never set in Vercel | n/a | n/a | Seed-script safety interlock | Public (a flag, not a secret) |
+| `AUTH_SECRET_ENCRYPTION_KEY` | **Obsolete** since migration 0005 (hand-rolled 2FA replaced by the better-auth twoFactor plugin). Harmless if still set — delete on sight | Delete, don't rotate | n/a | None (legacy) | — |
+
+**House rules:** secrets enter Vercel via piped stdin (`… \| vercel env add NAME production`)
+or the dashboard's Sensitive type — never shell args (history), never `NEXT_PUBLIC_*`,
+never logged (`api/utils/logger.ts` redacts, but don't test it). Local dev uses
+`.env.local` (gitignored; `vercel env pull` syncs it). Any **new** variable must be added
+to `apps/web/.env.example` *and* this table in the same PR — they are the same contract in
+two audiences.
