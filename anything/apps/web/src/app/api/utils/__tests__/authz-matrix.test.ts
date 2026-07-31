@@ -299,6 +299,7 @@ const REQUEST_BODY: Record<string, unknown | ((actor: Actor) => unknown)> = {
 /** Query strings for GET routes whose schema requires one. */
 const REQUEST_QUERY: Record<string, string> = {
   'availability.get': '?month=2026-08',
+  'search.list': '?q=matrix',
 };
 
 function buildRequest(row: MatrixRow, actor: Actor): Request {

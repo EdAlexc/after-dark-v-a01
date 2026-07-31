@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import GlobalSearch from '@/components/GlobalSearch';
 
 export type DashboardRole = 'talent' | 'venue' | 'admin';
 
@@ -315,6 +316,11 @@ function MobileDrawer({
           </div>
         </div>
 
+        {/* Global search (S5) */}
+        <div className="px-3 pb-2 flex-shrink-0">
+          <GlobalSearch compact />
+        </div>
+
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
           {navItems.map((item) => {
@@ -582,6 +588,13 @@ export default function DashboardSidebar({ role, userName }: DashboardSidebarPro
                 <p className="text-[10px] text-white/40 mt-0.5 capitalize">{role}</p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Global search (S5) — every dashboard screen gets the top-bar search. */}
+        {!collapsed && (
+          <div className="px-3 pb-2">
+            <GlobalSearch compact />
           </div>
         )}
 

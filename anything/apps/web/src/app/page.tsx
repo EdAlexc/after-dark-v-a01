@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { PostGigButton } from '@/components/PostGigButton';
 import { FeaturedTonight } from '@/components/FeaturedTonight';
+import GlobalSearch from '@/components/GlobalSearch';
 import {
   Music,
   Wine,
@@ -38,6 +39,8 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            {/* Global search (S5) — the wireframes' top-bar control, now real. */}
+            <GlobalSearch className="hidden lg:block w-72" compact />
             <Link
               href="/account/signin"
               className="text-sm font-medium hover:text-[#00FFCC] transition-colors"

@@ -55,34 +55,28 @@ interface BrowseFilters {
 }
 
 /**
- * Server-side filtering via the validated /api/gigs query params. The API
- * takes a single neighborhood/role, so multi-selects send the sole selection
- * when there is exactly one and refine client-side otherwise.
+ * Server-side filtering via the validated /api/gigs query params. Since S5
+ * (Backlog #27) multi-selects go server-side too, as CSV `neighborhoods`/
+ * `roles` params — the page no longer refines them client-side, so results
+ * paginate correctly.
  */
 function gigsQueryString(filters: BrowseFilters): string {
   const params = new URLSearchParams();
   if (filters.tonightOnly) params.set('tonightOnly', 'true');
   if (filters.payRange[0] > PAY_RANGE_DEFAULT[0]) params.set('minRate', String(filters.payRange[0]));
   if (filters.payRange[1] < PAY_RANGE_DEFAULT[1]) params.set('maxRate', String(filters.payRange[1]));
-  if (filters.neighborhoods.length === 1) params.set('neighborhood', filters.neighborhoods[0]);
-  if (filters.roles.length === 1) params.set('role', filters.roles[0]);
+  if (filters.neighborhoods.length > 0) params.set('neighborhoods', filters.neighborhoods.join(','));
+  if (filters.roles.length > 0) params.set('roles', filters.roles.join(','));
   if (filters.page > 1) params.set('page', String(filters.page));
   return params.toString();
 }
 
-function matchesClientFilters(gig: ApiGig, filters: BrowseFilters, search: string): boolean {
+/** Free-text quick filter within the fetched page (the box above the list). */
+function matchesClientFilters(gig: ApiGig, _filters: BrowseFilters, search: string): boolean {
+  if (!search) return true;
   const haystack =
     `${gig.title} ${gig.venue_name ?? ''} ${gig.role_needed ?? ''} ${gig.venue_neighborhood ?? ''}`.toLowerCase();
-  if (search && !haystack.includes(search.toLowerCase())) return false;
-  if (filters.neighborhoods.length > 1) {
-    const hood = (gig.venue_neighborhood ?? gig.address ?? '').toLowerCase();
-    if (!filters.neighborhoods.some((n) => hood.includes(n.toLowerCase()))) return false;
-  }
-  if (filters.roles.length > 1) {
-    const role = (gig.role_needed ?? '').toLowerCase();
-    if (!filters.roles.some((r) => role.includes(r.toLowerCase()))) return false;
-  }
-  return true;
+  return haystack.includes(search.toLowerCase());
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────

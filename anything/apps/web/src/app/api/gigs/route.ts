@@ -14,7 +14,7 @@ const createLimiter = getRateLimiter('gigs-create', { windowMs: 60 * 60 * 1000, 
 export const GET = withRoute('gigs.list', async (request) => {
   const filters = parseQuery(request.url, GigListQuerySchema);
   const { text, values } = buildGigsListQuery(filters);
-  const rows = await sql(text, values as (string | number)[]);
+  const rows = await sql(text, values);
   // The builder over-fetches by one row so hasMore needs no COUNT query.
   const hasMore = rows.length > GIG_PAGE_SIZE;
   const gigs = hasMore ? rows.slice(0, GIG_PAGE_SIZE) : rows;

@@ -129,6 +129,14 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     note: 'Selects no auth-table columns; PARTY discovery depends on this staying public.',
   },
   {
+    id: 'search.list',
+    route: 'search/route.ts',
+    method: 'GET',
+    summary: 'Global FTS search — PUBLISHED gigs + public talent columns only (S5)',
+    expect: PUBLIC,
+    note: 'Term feeds plainto_tsquery only; same projection as the public listings; rate-limited.',
+  },
+  {
     id: 'gigs.detail',
     route: 'gigs/[id]/route.ts',
     method: 'GET',

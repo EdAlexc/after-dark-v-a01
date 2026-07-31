@@ -37,6 +37,26 @@ const socialLinks = z
   .record(shortText(40), z.string().trim().max(300))
   .refine((obj) => Object.keys(obj).length <= 12, { message: 'too many entries' });
 
+/**
+ * Comma-separated multi-value query param (S5 / Backlog #27) — parseQuery is
+ * single-valued, so lists ride as CSV: `roles=DJ,Bartender`. Items are
+ * trimmed, empties dropped, count and length bounded.
+ */
+const csvList = (maxItems: number, maxItemLength: number) =>
+  z
+    .string()
+    .max(maxItems * (maxItemLength + 1))
+    .transform((value) =>
+      value
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+    )
+    .refine((items) => items.length <= maxItems, { message: `at most ${maxItems} values` })
+    .refine((items) => items.every((item) => item.length <= maxItemLength), {
+      message: `each value must be ≤ ${maxItemLength} characters`,
+    });
+
 // ─── Roles / onboarding ───────────────────────────────────────────────────────
 
 /** Self-service roles. ADMIN is intentionally absent (privilege-escalation fix). */
@@ -110,6 +130,10 @@ export const GigListQuerySchema = z
   .object({
     neighborhood: shortText(80).optional(),
     role: shortText(80).optional(),
+    /** Multi-value variants (S5, CSV). When present they supersede the
+     *  single-value params — the UI sends one form or the other. */
+    neighborhoods: csvList(10, 80).optional(),
+    roles: csvList(10, 80).optional(),
     minRate: rate.optional(),
     maxRate: rate.optional(),
     tonightOnly: z
@@ -132,6 +156,8 @@ export const TalentListQuerySchema = z
   .object({
     neighborhood: shortText(80).optional(),
     role: shortText(80).optional(),
+    neighborhoods: csvList(10, 80).optional(),
+    roles: csvList(10, 80).optional(),
     minRate: rate.optional(),
     maxRate: rate.optional(),
     page,
@@ -141,6 +167,19 @@ export const TalentListQuerySchema = z
       query.minRate === undefined || query.maxRate === undefined || query.minRate <= query.maxRate,
     { message: 'minRate must be ≤ maxRate', path: ['minRate'] }
   );
+
+// ─── Global search (S5 / Backlog #7) ─────────────────────────────────────────
+
+/**
+ * Public search over gigs + talent. The term feeds `plainto_tsquery` ONLY —
+ * never raw tsquery syntax — so no query-language injection is possible.
+ */
+export const SearchQuerySchema = z.object({
+  q: z.string().trim().min(2, 'query too short').max(120),
+  /** Restrict to one entity type; omitted = both. */
+  type: z.enum(['gigs', 'talent']).optional(),
+  limit: z.coerce.number().int().min(1).max(20).optional().default(8),
+});
 
 // ─── Profiles ─────────────────────────────────────────────────────────────────
 
@@ -361,3 +400,4 @@ export type GigCreate = z.infer<typeof GigCreateSchema>;
 export type GigListQuery = z.infer<typeof GigListQuerySchema>;
 export type GigStatus = z.infer<typeof GigStatusSchema>;
 export type TalentListQuery = z.infer<typeof TalentListQuerySchema>;
+export type SearchQuery = z.infer<typeof SearchQuerySchema>;

@@ -225,13 +225,14 @@ export default function VenueBrowsePage() {
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
-  // Same param strategy as gig browse: single selections filter server-side
-  // via the validated /api/talent params, multi-selects refine client-side.
+  // Same param strategy as gig browse (S5/#27): selections filter server-side
+  // via the validated /api/talent params; multi-selects ride as CSV lists.
   const params = new URLSearchParams();
   if (rateRange[0] > RATE_RANGE_DEFAULT[0]) params.set('minRate', String(rateRange[0]));
   if (rateRange[1] < RATE_RANGE_DEFAULT[1]) params.set('maxRate', String(rateRange[1]));
-  if (selectedRoles.length === 1) params.set('role', selectedRoles[0]);
-  if (selectedNeighborhoods.length === 1) params.set('neighborhood', selectedNeighborhoods[0]);
+  if (selectedRoles.length > 0) params.set('roles', selectedRoles.join(','));
+  if (selectedNeighborhoods.length > 0)
+    params.set('neighborhoods', selectedNeighborhoods.join(','));
   if (page > 1) params.set('page', String(page));
   const queryString = params.toString();
 
@@ -247,19 +248,13 @@ export default function VenueBrowsePage() {
 
   const allTalent = useMemo(() => data?.talent ?? [], [data]);
 
+  // Multi-selects are server-side since S5 — only the free-text quick filter
+  // still refines within the fetched page.
   const filtered = allTalent.filter((t) => {
+    if (!search) return true;
     const haystack =
       `${t.stage_name} ${t.primary_role ?? ''} ${(t.genres_vibes ?? []).join(' ')}`.toLowerCase();
-    if (search && !haystack.includes(search.toLowerCase())) return false;
-    if (selectedRoles.length > 1) {
-      const role = (t.primary_role ?? '').toLowerCase();
-      if (!selectedRoles.some((r) => role.includes(r.toLowerCase()))) return false;
-    }
-    if (selectedNeighborhoods.length > 1) {
-      const hood = (t.neighborhood ?? '').toLowerCase();
-      if (!selectedNeighborhoods.some((n) => hood.includes(n.toLowerCase()))) return false;
-    }
-    return true;
+    return haystack.includes(search.toLowerCase());
   });
 
   const toggleRole = (r: string) => {

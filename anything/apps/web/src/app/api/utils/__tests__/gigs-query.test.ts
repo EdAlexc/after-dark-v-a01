@@ -83,4 +83,40 @@ describe('buildGigsListQuery', () => {
     const without = buildGigsListQuery(EMPTY);
     expect(without.text).not.toContain('base_rate');
   });
+
+  // ─── Multi-value filters (S5 / #27) ────────────────────────────────────────
+  it('sends multi-value filters as ONE array param via LIKE ANY (no per-item text)', () => {
+    const { text, values } = buildGigsListQuery(
+      GigListQuerySchema.parse({ neighborhoods: 'SoHo, Tribeca', roles: 'DJ,Bartender' })
+    );
+    expect(text).toContain('LOWER(vp.neighborhood) LIKE ANY($2)');
+    expect(text).toContain('LOWER(g.role_needed) LIKE ANY($3)');
+    expect(values[1]).toEqual(['%soho%', '%tribeca%']);
+    expect(values[2]).toEqual(['%dj%', '%bartender%']);
+  });
+
+  it('multi-value params supersede the single-value ones', () => {
+    const { text, values } = buildGigsListQuery(
+      GigListQuerySchema.parse({ neighborhoods: 'LES', neighborhood: 'Chelsea' })
+    );
+    expect(text).toContain('LIKE ANY($2)');
+    expect(values[1]).toEqual(['%les%']);
+    expect(values).not.toContain('%Chelsea%');
+  });
+
+  it('never interpolates multi-value input into SQL text (SQLi regression)', () => {
+    const payload = "'; DROP TABLE gigs; --";
+    const { text, values } = buildGigsListQuery(
+      GigListQuerySchema.parse({ roles: payload.slice(0, 80) })
+    );
+    expect(text).not.toContain(payload);
+    expect(values[1]).toEqual([`%${payload.slice(0, 80).toLowerCase()}%`]);
+    expect(text).not.toContain(';');
+  });
+
+  it('rejects oversized value lists at the schema layer', () => {
+    const tooMany = Array.from({ length: 11 }, (_, i) => `n${i}`).join(',');
+    expect(GigListQuerySchema.safeParse({ neighborhoods: tooMany }).success).toBe(false);
+    expect(GigListQuerySchema.safeParse({ roles: 'x'.repeat(81) }).success).toBe(false);
+  });
 });

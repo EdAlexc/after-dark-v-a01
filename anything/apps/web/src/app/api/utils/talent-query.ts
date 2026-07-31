@@ -16,7 +16,12 @@ export const TALENT_PAGE_SIZE = 12;
 
 export interface BuiltQuery {
   text: string;
-  values: (string | number)[];
+  values: (string | number | string[])[];
+}
+
+/** See gigs-query.ts — one array param of lowercased LIKE patterns. */
+function likePatterns(items: string[]): string[] {
+  return items.map((item) => `%${item.toLowerCase()}%`);
 }
 
 export function buildTalentListQuery(filters: TalentListQuery): BuiltQuery {
@@ -27,15 +32,24 @@ export function buildTalentListQuery(filters: TalentListQuery): BuiltQuery {
     FROM talent_profiles
     WHERE stage_name IS NOT NULL AND stage_name <> ''
   `;
-  const values: (string | number)[] = [];
+  const values: (string | number | string[])[] = [];
   let index = 1;
 
-  if (filters.neighborhood) {
+  // Multi-value filters (S5 / #27) supersede the single-value params.
+  if (filters.neighborhoods && filters.neighborhoods.length > 0) {
+    text += ` AND LOWER(neighborhood) LIKE ANY($${index})`;
+    values.push(likePatterns(filters.neighborhoods));
+    index++;
+  } else if (filters.neighborhood) {
     text += ` AND LOWER(neighborhood) LIKE LOWER($${index})`;
     values.push(`%${filters.neighborhood}%`);
     index++;
   }
-  if (filters.role) {
+  if (filters.roles && filters.roles.length > 0) {
+    text += ` AND LOWER(primary_role) LIKE ANY($${index})`;
+    values.push(likePatterns(filters.roles));
+    index++;
+  } else if (filters.role) {
     text += ` AND LOWER(primary_role) LIKE LOWER($${index})`;
     values.push(`%${filters.role}%`);
     index++;
@@ -52,9 +66,18 @@ export function buildTalentListQuery(filters: TalentListQuery): BuiltQuery {
     index++;
   }
 
-  // Available-tonight boost first (P6), then most complete profiles — the
-  // closest thing to "quality" pre-reviews.
-  text += ` ORDER BY available_tonight DESC, profile_completion_pct DESC NULLS LAST, created_at DESC`;
+  // Ranking (P6 + S5/#28): Available-tonight boost first, then talent with an
+  // open AVAILABLE slot today (probe rides 0009's UNIQUE(talent_id, date,
+  // time_slot) index), then most complete profiles — the closest thing to
+  // "quality" pre-reviews.
+  text += ` ORDER BY available_tonight DESC,
+    EXISTS (
+      SELECT 1 FROM availabilities av
+      WHERE av.talent_id = talent_profiles.id
+        AND av.date = CURRENT_DATE
+        AND av.status = 'AVAILABLE'
+    ) DESC,
+    profile_completion_pct DESC NULLS LAST, created_at DESC`;
 
   const offset = (filters.page - 1) * TALENT_PAGE_SIZE;
   text += ` LIMIT $${index} OFFSET $${index + 1}`;
