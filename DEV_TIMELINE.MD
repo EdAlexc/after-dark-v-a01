@@ -511,6 +511,9 @@ Items noted during the audit that are **not** required for the alpha gate but mu
 > **2026-07-31:** every item below was re-evaluated for alpha necessity — verdicts and
 > reasoning in §4.5. Three items changed status: #10 (partially alpha-blocking), #16
 > (recommended before distribution), #21 (conditional on signup model).
+> **Later the same day:** every open item was assigned to a post-alpha development slice —
+> the slice plan, ordering rationale (security → functionality → modularity), and
+> dependency graph live in **§5**.
 
 1. **Map view** (browse pins + gig-detail map, wireframe p2/p4) — needs geocoding + lat/lng on
    gigs; consider MapLibre + OSM tiles to avoid key management.
@@ -776,3 +779,131 @@ matter; redeploy once at the end (env changes apply to *new* deployments only).
 > directly testable (`test/service-worker.test.ts` drives the real file in a sandbox),
 > and it avoids coupling the build to bundler-integration churn. If precache manifests of
 > hashed assets ever become necessary, migrate to Serwist then.
+
+---
+
+## 5. Post-alpha slice plan — 2026-07-31
+
+> Every **open** Technical Backlog item (§3) and carry-over, divided into shippable slices.
+> Optimization order, applied in this priority: **security** (debt and exposure first),
+> then **functionality** (user-visible value in cohesion groups), then **modularity**
+> (each slice owns its tables/files; parallel tracks share nothing; infra swaps hide
+> behind existing interfaces). The §2.0 definition of done and §2.1 sizing rules
+> (≤ ~3 days, independently shippable, revertable) apply to every slice unchanged.
+
+### Security wave (do first, in this order)
+
+**S1 — Serverless security spine (~2–3 d)** — Backlog #21, #16 + credential hygiene
+- Shared rate-limit store (P10.3): back `getRateLimiter` with Upstash Redis or a Postgres
+  token bucket **behind the existing interface** (call sites untouched; in-memory stays as
+  the dev/test fallback). Per-instance limits are no limits on serverless fan-out.
+- Embed lockdown (#16): `frame-ancestors 'self'` (create.xyz origins become env-gated
+  opt-in, off by default), and revisit platform-wide `SameSite=None` → `Lax` now that the
+  builder pathway is dead weight.
+- Rotate the committed shared preview credentials (TESTING.md §2 warning) — generated
+  per-environment, not in git.
+- *Security gate:* k6 auth burst across ≥2 instances holds 429s; clickjacking probe
+  blocked; gitleaks finds no credentials.
+
+**S2 — RLS cutover + retention purge (~2–3 d)** — Backlog #25 + G7 — *parallel with S1
+(no shared files)*
+- Production cutover exactly per `docs/rls-cutover.md`: create the least-privilege role,
+  wire `withRlsContext` into the five RLS-governed routes (no-op while owner-connected),
+  flip `DATABASE_URL`, re-run verify.
+- G7 retention purge job: a `CRON_SECRET`-authed endpoint on the daily cron (Hobby-compatible),
+  purging per `docs/retention.md` §1, **honoring §5 legal holds**; every purge audited.
+- *Security gate:* `yarn db:verify-rls` green against the production role; purge-with-hold
+  test green; purge writes audit rows.
+
+**S3 — Media pipeline completion (~2 d)** — Backlog #10 remainder — *needs B5 (Blob token)*
+- Backfill pre-P4 base64 rows into Blob; delete the inline-data-URL read path after.
+- Tighten CSP `img-src` from `https:` to `'self' blob:` + the Blob host.
+- AV-scanning stance: images stay inert (sharp re-encode); messages remain image-only
+  until an AV step exists — document, don't widen.
+- *Security gate:* zero `data:` rows remain; G11 egress audit re-run; CSP pinned.
+
+**P10.4 (not backlog, the alpha exit gate) slots here** — after S1, because the k6 Apdex
+numbers are meaningless until rate limits are shared. Lighthouse budgets + k6 scenarios +
+axe smoke on the 10 screens, all in CI. The a11y **deep** pass (#13 — keyboard calendar,
+contrast sweep, reduced-motion) is a follow-on slice once the axe baseline exists.
+
+### Functionality wave (cohesion-grouped; parallel tracks marked)
+
+**S4 — Honest-alpha cosmetics (~1 d)** — §4.5 caveats — *anytime, even before S1*
+- Label/hide the mock "Live Analytics" rail (until S7 makes it real); hide or stub the
+  decorative global-search box (until S5); venue "Gig Calendar" page wired to
+  `/api/venue/gigs` or dropped; minimal "account suspended" page.
+
+**S5 — Search & discovery (~3–4 d)** — Backlog #7, #27, #28 — *one slice because all
+three live in `gigs-query.ts`/`talent-query.ts` + browse UIs (modularity by cohesion)*
+- `/api/search` on Postgres FTS (gigs title/description + talent stage-name/bio public
+  columns only), wired to the top bar; multi-value filters via `= ANY($n)`; availability
+  boost in browse ordering.
+- *Security gate:* `plainto_tsquery` only (no raw tsquery injection), public-column
+  projection, rate-limited, authZ-matrix rows on day one.
+
+**S6 — Events & real venue KPIs (~2–3 d)** — Backlog #14
+- Append-only `events` table + `track()` helper; un-mute avg-time-to-hire and
+  filling-rate trends from real aggregates. No PII in payloads; RLS policy in-file.
+
+**S7 — Matching engine (~3 d)** — Backlog #6 — *after S6 (reads its aggregates); replaces
+the S4 placeholder*
+- Real create-gig "Live Analysis": candidate counts from availabilities × role × rate
+  overlap; pricing hint from published-gig percentiles. Aggregate/public data only
+  pre-hire.
+
+**S8 — Trust & reviews (~4–5 d)** — Backlog #8 — *own slice: new user-content tables =
+own blast radius*
+- `reviews` (shift-scoped: counterparties only, post-CHECKED_OUT, one per direction),
+  venue rating aggregation, talent trust-score v1; ID-verification = vendor decision doc
+  only.
+- *Security gate:* XSS-inert rendering, write-gated to real counterparties, rate-limited,
+  report-to-triage wired, scores computed server-side.
+
+**S9 — Realtime & push (~4–5 d)** — Backlog #5 — *transport swap hidden behind existing
+TanStack Query keys*
+- SSE for messages/live-ops (replaces 5 s polling); Web Push opt-in for Hot Tonight
+  (extends `sw.js` — push handler must not cache; §6.6 tests extended; needs VAPID keys
+  ops).
+- *Security gate:* SSE authed per-connection; push payloads are id-only (fetch on open).
+
+**S10 — Map view (~2–3 d)** — Backlog #1 — *independent; parallel with S5+*
+- `lat/lng` migration, geocode-on-create, MapLibre + OSM tiles (no key management).
+- *Security gate:* geocoding is the app's **first server-side fetch of user-influenced
+  input — build the A10 SSRF guard here** (allowlist, private-range deny, timeouts);
+  #2's integrations will reuse it.
+
+### Modularity / platform wave (opportunistic — schedule into gaps)
+
+**S11 — Deploy & repo hygiene** — Backlog #23, #4→#24, #9
+- `installCommand: yarn workspaces focus web` (#23; verify on a preview first).
+- Mobile decision (#4: PWA-only vs Expo) — a product call; **then** #24 (flatten
+  `anything/`, which also removes the Vercel Root Directory footgun) in the shape that
+  decision dictates. #9 (`revalidateTag` no-op): close as moot-on-Vercel with a decision
+  note unless ISR is ever adopted.
+
+### Parked (blocked on definitions external to the repo)
+
+- **#2 external calendar/ticketing** and **#3 promoter payment triangle** — need product
+  definition first; both inherit the S10 SSRF guard and (for #3) a payments-grade
+  review like P8's.
+- **#26 GA legal track** — counsel review, executed DPAs (G10), DPIA (G13): external,
+  runs parallel to any slice, gates **GA** not development.
+
+### Dependency graph
+
+```
+S1 (rate-limit + embed) ──► P10.4 gates ──► open signup / alpha exit
+S2 (RLS + purge)      — parallel with S1
+S3 (media)            — after B5 ops           S4 (cosmetics) — anytime, 1 day
+S5 (search) ─┐
+S6 (events) ─┼─► S7 (matching)                 S10 (map, builds A10 guard) — independent
+S8 (reviews) ┘  (S5/S6/S8 mutually parallel — no shared tables)
+S9 (realtime) — after alpha feedback stabilizes polling pain points
+S11 (platform) — opportunistic; #24 strictly after the #4 decision
+Parked: #2/#3 (product definition), #26 (legal, gates GA)
+```
+
+Rough serial total: **~4–5 focused weeks** for S1–S10; the graph above cuts it to ~3 when
+the parallel tracks run concurrently. First tester feedback should be allowed to reorder
+the functionality wave — the security wave is not negotiable.
