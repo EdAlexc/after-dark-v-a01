@@ -18,6 +18,9 @@ export interface ApiGig {
   age_requirement?: number | null;
   status: 'DRAFT' | 'PUBLISHED' | 'FILLED' | 'COMPLETED' | 'CANCELLED';
   created_at: string;
+  /** S10 map pin — written only by the server-side geocoder. */
+  lat?: number | null;
+  lng?: number | null;
   // Joined venue card fields (public listing / detail).
   venue_name?: string | null;
   venue_neighborhood?: string | null;

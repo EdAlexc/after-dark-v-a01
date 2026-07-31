@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { Toaster } from 'sonner';
 import { useEffect, useState } from 'react';
 import { registerServiceWorker } from '@/lib/pwa';
+import RealtimeInvalidator from '@/components/RealtimeInvalidator';
 
 // Create a client that persists across re-renders
 function makeQueryClient() {
@@ -43,6 +44,8 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {/* S9: SSE → query invalidation for signed-in tabs (no-op signed out). */}
+      <RealtimeInvalidator />
       {children}
       <Toaster position="bottom-right" />
     </QueryClientProvider>

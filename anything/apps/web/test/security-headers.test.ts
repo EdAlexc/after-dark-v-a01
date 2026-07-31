@@ -75,7 +75,10 @@ describe('buildCsp', () => {
       env: { BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_Abc123XYZ_secretpart' },
     });
     const img = csp.match(/img-src[^;]*/)?.[0] ?? '';
-    expect(img).toBe("img-src 'self' blob: https://abc123xyz.public.blob.vercel-storage.com");
+    // Exact pin: our Blob store + the S10 map tile origin, nothing else.
+    expect(img).toBe(
+      "img-src 'self' blob: https://abc123xyz.public.blob.vercel-storage.com https://tile.openstreetmap.org"
+    );
     expect(img).not.toContain('data:');
     expect(img).not.toContain(' https: ');
   });

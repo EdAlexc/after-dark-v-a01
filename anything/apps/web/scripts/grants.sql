@@ -23,9 +23,19 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   shifts, shift_transitions,
   payouts, stripe_accounts, stripe_events,
   legal_holds,
+  events,
+  reviews,
+  push_subscriptions,
   rate_limit_counters, "rateLimit",
   "user", "session", "account", "verification", "twoFactor"
   TO afterdark_app;
+
+-- Event capture (0016) is append-only history — never rewritten.
+REVOKE UPDATE, DELETE ON events FROM afterdark_app;
+
+-- Reviews (0018) are immutable once posted; DELETE stays for moderation
+-- takedowns (policy-gated to platform context).
+REVOKE UPDATE ON reviews FROM afterdark_app;
 
 -- audit_logs is append-only by policy; append-only by privilege too — except
 -- the erasure pseudonym rewrite, which is column-scoped to actor_id (0014)
@@ -46,6 +56,11 @@ REVOKE UPDATE, DELETE ON stripe_events FROM afterdark_app;
 -- The RLS applicant carve-out helper (0014) — SECURITY DEFINER, so EXECUTE
 -- is the only privilege the app role needs.
 GRANT EXECUTE ON FUNCTION app_user_has_application(UUID) TO afterdark_app;
+
+-- The availability yes/no probe (0017) — same doctrine: boolean-only definer
+-- so the browse boost and match counts survive the cutover without widening
+-- calendar visibility.
+GRANT EXECUTE ON FUNCTION app_talent_available_on(UUID, DATE) TO afterdark_app;
 
 -- Identity sequences (audit_logs.id, payouts.id).
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO afterdark_app;

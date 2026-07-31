@@ -501,3 +501,49 @@ Manual, against a **production build or deployed preview** (the worker is produc
 6. **Update flow**: deploy a change, reload twice — the new worker takes over without a
    stale bundle lingering (skipWaiting + clients.claim; bump `VERSION` in `sw.js` if cached
    asset behavior ever changes).
+
+## 10. S4–S10 functionality wave (added 2026-07-31)
+
+Automated coverage: 791 vitest tests including the generated authZ matrix rows for every
+new route (`search.list`, `venue.stats`, `gigs.match-preview`, `reviews.list/create`,
+`stream.events`, `push.status/subscribe/unsubscribe`), the SQLi/plainto invariants for
+the search and match builders, the A10 SSRF guard spec (`safe-fetch.test.ts`), the S6
+`track()` isolation/PII tests, trust-score properties, and the sw.js push handlers.
+
+Manual verification (all executed live 2026-07-31 against a disposable Neon branch off
+prod — the loop below is repeatable):
+
+1. **Global search (S5)**: type ≥2 chars in the landing-nav or sidebar box → dropdown
+   groups Gigs/Talent from `/api/search`; Enter → `/search?q=…` (refresh-stable; `type=`
+   chips filter). Hostile input (`'; DROP TABLE gigs; --`) returns empty results, no 500.
+2. **Multi-filters (S5)**: select 2+ neighborhoods/roles in either browse rail → the
+   request carries CSV `neighborhoods`/`roles` params and the result set (not the client)
+   narrows; pagination stays consistent.
+3. **Venue KPIs (S6)**: publish and (later) fill gigs → `events` rows appear
+   (`kind='gig.published'|'gig.filled'`, no PII in payload); the venue dashboard's Avg
+   Time to Hire un-mutes once a publish→fill pair exists; Filling Rate gains the
+   month-over-month trend once both 30-day windows have data.
+4. **Live Analysis (S7)**: create-gig wizard, pick a role → real match count, available
+   tonight/on-date, top candidates with score + rate band, "going rate" percentiles once
+   ≥3 similar gigs exist. A "DJ" profile must match a "DJ / Producer" gig (bidirectional
+   role match — regression from live verification).
+5. **Reviews (S8)**: only after CHECK-OUT do "Rate Venue"/"Rate Talent" appear; a second
+   review of the same shift from the same side 400s ("already reviewed"); the counterpart
+   profile's ★ aggregate and (talent) Trust badge update in the same request; review
+   comments render as text (paste `<img src=x onerror=alert(1)>` — must show literally).
+6. **Realtime (S9)**: two browsers, one thread — a message in one appears in the other
+   within ~4 s without a manual refresh; DevTools shows `/api/stream` reconnecting every
+   ~50 s (each connect re-authenticates; signed-out tabs get 401, suspended 403).
+7. **Web Push (S9)**: without VAPID keys the schedule-page toggle is disabled and POST
+   `/api/push/subscribe` answers 503. With keys: opt in, publish a gig starting <24 h →
+   a generic "Hot gig tonight" notification (payload is id-only — inspect in DevTools);
+   clicking deep-links `/gigs/[id]`.
+8. **Map (S10)**: publish a gig with a real address → response carries lat/lng (server
+   geocoded); browse → Map shows the pin ("N gigs on the map" chip counts pinned vs
+   unpinned); popup links to the gig. CSP: only `tile.openstreetmap.org` appears as an
+   extra img/connect origin. SSRF probe: the geocoder must refuse any host that is not
+   `nominatim.openstreetmap.org` and any private-range resolution (unit-tested; do not
+   probe prod with live internal addresses).
+9. **Suspended surface (S4)**: suspend a preview account from the admin dashboard → its
+   next dashboard visit lands on `/account/suspended` showing the reason; the settings
+   page stays reachable and data export still returns 200 (GDPR carve-out).

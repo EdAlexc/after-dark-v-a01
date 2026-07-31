@@ -72,7 +72,7 @@ export function MessagesView({ role }: { role: 'talent' | 'venue' }) {
       if (!res.ok) throw new Error('Failed to load conversations');
       return res.json() as Promise<{ conversations: Conversation[] }>;
     },
-    refetchInterval: 10_000,
+    refetchInterval: 30_000, // fallback — SSE invalidation (S9) drives freshness
   });
   const conversations = useMemo(() => listData?.conversations ?? [], [listData]);
   const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null;
@@ -90,7 +90,7 @@ export function MessagesView({ role }: { role: 'talent' | 'venue' }) {
       if (!res.ok) throw new Error('Failed to load messages');
       return res.json() as Promise<{ messages: Message[] }>;
     },
-    refetchInterval: 5_000,
+    refetchInterval: 30_000, // fallback — SSE invalidation (S9) drives freshness
   });
   const messages = threadData?.messages ?? [];
 

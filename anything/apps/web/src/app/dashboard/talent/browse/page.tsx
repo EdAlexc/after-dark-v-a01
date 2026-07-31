@@ -24,7 +24,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
+
+// MapLibre touches `window` at module scope — client-only load (S10).
+const GigsMap = dynamic(() => import('@/components/GigsMap'), { ssr: false });
 import {
   type ApiGig,
   type GigListResponse,
@@ -55,34 +59,28 @@ interface BrowseFilters {
 }
 
 /**
- * Server-side filtering via the validated /api/gigs query params. The API
- * takes a single neighborhood/role, so multi-selects send the sole selection
- * when there is exactly one and refine client-side otherwise.
+ * Server-side filtering via the validated /api/gigs query params. Since S5
+ * (Backlog #27) multi-selects go server-side too, as CSV `neighborhoods`/
+ * `roles` params — the page no longer refines them client-side, so results
+ * paginate correctly.
  */
 function gigsQueryString(filters: BrowseFilters): string {
   const params = new URLSearchParams();
   if (filters.tonightOnly) params.set('tonightOnly', 'true');
   if (filters.payRange[0] > PAY_RANGE_DEFAULT[0]) params.set('minRate', String(filters.payRange[0]));
   if (filters.payRange[1] < PAY_RANGE_DEFAULT[1]) params.set('maxRate', String(filters.payRange[1]));
-  if (filters.neighborhoods.length === 1) params.set('neighborhood', filters.neighborhoods[0]);
-  if (filters.roles.length === 1) params.set('role', filters.roles[0]);
+  if (filters.neighborhoods.length > 0) params.set('neighborhoods', filters.neighborhoods.join(','));
+  if (filters.roles.length > 0) params.set('roles', filters.roles.join(','));
   if (filters.page > 1) params.set('page', String(filters.page));
   return params.toString();
 }
 
-function matchesClientFilters(gig: ApiGig, filters: BrowseFilters, search: string): boolean {
+/** Free-text quick filter within the fetched page (the box above the list). */
+function matchesClientFilters(gig: ApiGig, _filters: BrowseFilters, search: string): boolean {
+  if (!search) return true;
   const haystack =
     `${gig.title} ${gig.venue_name ?? ''} ${gig.role_needed ?? ''} ${gig.venue_neighborhood ?? ''}`.toLowerCase();
-  if (search && !haystack.includes(search.toLowerCase())) return false;
-  if (filters.neighborhoods.length > 1) {
-    const hood = (gig.venue_neighborhood ?? gig.address ?? '').toLowerCase();
-    if (!filters.neighborhoods.some((n) => hood.includes(n.toLowerCase()))) return false;
-  }
-  if (filters.roles.length > 1) {
-    const role = (gig.role_needed ?? '').toLowerCase();
-    if (!filters.roles.some((r) => role.includes(r.toLowerCase()))) return false;
-  }
-  return true;
+  return haystack.includes(search.toLowerCase());
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -543,34 +541,8 @@ export default function BrowseGigsPage() {
                 )}
               </>
             ) : (
-              /* Map view placeholder (post-alpha, Technical Backlog #1) */
-              <div className="h-full min-h-[500px] rounded-2xl bg-[#1A1A1A] border border-white/5 flex flex-col items-center justify-center gap-4">
-                <Map className="w-12 h-12 text-white/10" />
-                <div className="text-center">
-                  <p className="text-white/40 font-semibold">Map View</p>
-                  <p className="text-white/20 text-sm mt-1">Coming soon — use List for now</p>
-                </div>
-                <div className="flex flex-wrap gap-3 mt-4 px-8">
-                  {filtered.slice(0, 4).map((gig) => (
-                    <Link
-                      key={gig.id}
-                      href={`/gigs/${gig.id}`}
-                      className="flex items-center gap-2 bg-[#1E1E1E] border border-white/10 px-3 py-2 rounded-xl hover:border-[#00FFCC]/30 transition-colors"
-                    >
-                      <div
-                        className={cn(
-                          'w-2 h-2 rounded-full',
-                          gigUrgency(gig) === 'HOT' ? 'bg-red-400' : 'bg-[#00FFCC]'
-                        )}
-                      />
-                      <span className="text-xs font-bold text-white">
-                        {gig.venue_name ?? gig.title}
-                      </span>
-                      <span className="text-xs text-white/40">{formatRate(gig)}</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
+              /* Map view (S10 / Backlog #1) — real pins for geocoded gigs */
+              <GigsMap gigs={filtered} />
             )}
           </div>
 

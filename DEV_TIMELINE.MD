@@ -8,6 +8,43 @@
 
 ## 1. Current status — YOU ARE HERE
 
+- **Date:** 2026-07-31 (late) · **Branch:** `claude/backlog-slices-4-10-b73087` (worktree
+  off `main`; S1–S3 merged in PR #15)
+- **Functionality wave S4–S10 delivered this session (2026-07-31 — closes Backlog #1,
+  #5, #6, #7, #8 core, #14, #27, #28; 791 tests green; migrations 0015–0020 applied to a
+  disposable Neon branch off prod and the loop browser-verified end-to-end):**
+  - **S4 honest-alpha cosmetics**: venue Gig Calendar real (was a hardcoded mock month),
+    mock Live Analytics labeled (interim), dead Analytics sidebar link removed, fake
+    auto-saved text real, `/account/suspended` surface + AuthGuard-aware `/api/session`
+    (403 + reason) + sidebar redirect (settings exempt so GDPR self-service stays open).
+  - **S5 search & discovery**: `/api/search` Postgres FTS (plainto_tsquery only, public
+    columns, rate-limited; 0015 GIN indexes) + GlobalSearch dropdown (landing/sidebar/
+    drawer) + URL-addressable `/search`; multi-value browse filters as CSV → `LIKE ANY`
+    (#27); availability boost in talent ordering (#28) via the 0017 definer probe.
+  - **S6 events & KPIs**: append-only `events` (0016, RLS in-file, REVOKE UPDATE/DELETE,
+    no PII) + `track()`; emitters on publish/fill/cancel/apply; `/api/venue/stats` powers
+    real Avg-Time-to-Hire + Filling-Rate trends on the venue dashboard.
+  - **S7 matching engine**: `/api/gigs/match-preview` — real Live Analysis (counts ×
+    role/rate/availability, top-4 public cards w/ transparent score, pricing percentiles);
+    availability yes/no ONLY via `app_talent_available_on` SECURITY DEFINER (0017) so the
+    private calendar never leaks and the S5 boost survives the RLS cutover.
+  - **S8 trust & reviews**: `reviews` shift-scoped one-per-direction (0018), POST gated to
+    real counterparties post-CHECKED_OUT w/ server-derived direction; venue rating +
+    talent trust score v1 recomputed server-side under SERVICE context; ReviewDialog on
+    both dashboards; ★/Trust badges in the directory; reports accept `review`;
+    `docs/id-verification.md` ADR (Stripe Identity, post-alpha).
+  - **S9 realtime & push**: `/api/stream` SSE (per-connection auth, ≤50 s windows,
+    KEYS-ONLY invalidate frames) + RealtimeInvalidator behind the existing TanStack keys;
+    Web Push opt-in (0019, VAPID-key-gated, id-only payloads, capped fan-out, sw.js
+    push/notificationclick handlers that never fetch/cache).
+  - **S10 map + A10 guard**: `safe-fetch.ts` SSRF guard (allowlist, private-range deny incl.
+    169.254.169.254, no redirects, timeout+size caps — #2 integrations must reuse it);
+    Nominatim geocode-on-publish (0020 lat/lng, server-written only); GigsMap
+    (MapLibre + OSM, escaped popups); CSP pins tile origin, worker-src gains blob:.
+  - **Found & fixed while verifying live**: onboarding 400 for anyone skipping the
+    sub-role chip (schema `optional()` vs posted `null` — pre-existing); Live Analysis
+    showing 0 for "DJ / Producer" gigs vs "DJ" profiles (role match now bidirectional).
+- **Previous status (2026-07-31, alpha punch-list session):**
 - **Date:** 2026-07-31 · **Branch:** `claude/alpha-punchlist-pwa` (worktree off `main`;
   PRs #7–#12 merged, #13 = the §4 readiness assessment)
 - **Project stage:** **P0–P9 complete + P10.1–P10.2 (PWA install surface).** Remaining
@@ -515,8 +552,9 @@ Items noted during the audit that are **not** required for the alpha gate but mu
 > the slice plan, ordering rationale (security → functionality → modularity), and
 > dependency graph live in **§5**.
 
-1. **Map view** (browse pins + gig-detail map, wireframe p2/p4) — needs geocoding + lat/lng on
-   gigs; consider MapLibre + OSM tiles to avoid key management.
+1. ~~**Map view**~~ — **DONE (2026-07-31, slice S10).** Migration 0020 (gigs.address/lat/lng,
+   server-geocoded only), Nominatim through the new A10 SSRF guard (`safe-fetch.ts`),
+   MapLibre + OSM tiles in browse (`GigsMap`), tile origin pinned in CSP.
 2. **External calendar & ticketing integrations** for venues (PRD §2.B) — Google/Outlook
    calendar sync; ticketing (external systems) webhooks; affects promoter payouts.
 3. **Promoter sub-role & payment triangle** (PRD §2.A): Venue→Promoter and Promoter→Venue
@@ -524,14 +562,18 @@ Items noted during the audit that are **not** required for the alpha gate but mu
 4. **Mobile app** (`anything/apps/mobile`): currently a generic Expo scaffold rendering `null`
    ("Anything mobile app"); decide post-alpha whether to build native or lean on the PWA.
    The web already exposes `/api/auth/token` + `/api/auth/expo-web-success` for it.
-5. **WebSockets/push**: upgrade messaging + live-ops from polling/SSE; Web Push for "Hot Gig
-   Tonight" alerts (PWA push requires user opt-in UX).
-6. **Matching engine**: Create-Gig "Live Analysis" candidate matching & pricing hints
-   (wireframe p3) — real query over availabilities + roles + rates.
-7. **Search**: global "Search gigs or talent" bar is decorative on every screen; needs a
-   `/search` endpoint (Postgres FTS is fine initially).
-8. **Trust & verification**: trust score, venue rating aggregation from reviews (wireframes
-   p1/p4/p10 show ratings; no reviews model exists), ID verification vendor.
+5. ~~**WebSockets/push**~~ — **DONE as SSE + Web Push (2026-07-31, slice S9).** `/api/stream`
+   emits keys-only invalidate frames behind the existing TanStack caches; Web Push opt-in is
+   VAPID-key-gated with id-only payloads (0019). WebSockets remain unneeded.
+6. ~~**Matching engine**~~ — **DONE (2026-07-31, slice S7).** `/api/gigs/match-preview`:
+   counts + top-4 public cards + pricing percentiles; availability via the 0017 SECURITY
+   DEFINER probe only; bidirectional role matching (found live).
+7. ~~**Search**~~ — **DONE (2026-07-31, slice S5).** `/api/search` (Postgres FTS, 0015 GIN
+   indexes, plainto_tsquery only) + GlobalSearch component + URL-addressable `/search` page.
+8. **Trust & verification** — **core DONE (2026-07-31, slice S8):** shift-scoped `reviews`
+   (0018), venue rating aggregation, talent trust score v1 (server-side). **Remaining:** ID
+   verification implementation — vendor decided (Stripe Identity, `docs/id-verification.md`),
+   deliberately post-alpha; revisit triggers documented there.
 9. **`revalidateTag` no-op**: `publisher/open-next.config.ts` uses `tagCache: "dummy"` — if ISR
    tag invalidation is ever relied on, configure a real tag cache (or deploy to Vercel).
 10. **Uploads pipeline hardening** — **P4 core DONE (2026-07-30)**: every image write path
@@ -554,8 +596,9 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     by their P3–P7 slices.
 13. **Accessibility deep pass**: neon-on-dark contrast ratios, focus states on custom chips/
     toggles, calendar keyboard navigation (beyond the P7 axe smoke tests).
-14. **Data warehouse/analytics**: venue KPIs (avg time-to-hire, filling rate) need event
-    capture design; consider a simple `events` table now to avoid losing history.
+14. ~~**Data warehouse/analytics**~~ — **DONE for venue KPIs (2026-07-31, slice S6).**
+    Append-only `events` (0016) + `track()`; `/api/venue/stats` un-muted time-to-hire and
+    filling-rate trends. A real warehouse remains a post-GA scale concern.
 15. ~~**Rate-limit store**~~ — superseded by #21, now **scheduled as P10.3** (it must land
     before the k6 Apdex gate is meaningful).
 16. ~~**iframe embedding posture**~~ — **DONE (2026-07-31, slice S1).** The builder embed is
@@ -625,12 +668,13 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     what the code actually does and satisfy G1 for alpha, but have not been reviewed by a
     lawyer. Required before general availability, along with executed DPAs (G10) and a DPIA
     (G13). Tracked in `docs/ropa.md` §5.
-27. **Multi-value browse filters**: `GET /api/gigs`/`/api/talent` accept a single
-    neighborhood/role; the UI's multi-select refines client-side within the fetched page
-    (fine at alpha volumes). Add array params + `= ANY($n)` when gig volume makes it matter.
-28. **Availability boost in browse ordering** (P6 remainder): `available_tonight` and open
-    slots should float matching talent/gigs higher in the browse lists; needs an index-backed
-    ORDER BY tweak in `gigs-query.ts`/`talent-query.ts` once ranking rules are decided.
+27. ~~**Multi-value browse filters**~~ — **DONE (2026-07-31, slice S5).** CSV
+    `neighborhoods`/`roles` params → one array parameter via `LIKE ANY($n)`; both browse
+    pages send multi-selects server-side, so pagination is no longer distorted.
+28. ~~**Availability boost in browse ordering**~~ — **DONE (2026-07-31, slices S5+S7).**
+    Talent ordering: available_tonight, then an open AVAILABLE slot today via the 0017
+    definer probe (cutover-safe), then completion. Gigs already order soonest-first, which
+    IS the tonight boost — decision recorded in `gigs-query.ts`.
 
 ---
 
@@ -852,45 +896,45 @@ contrast sweep, reduced-motion) is a follow-on slice once the axe baseline exist
 
 ### Functionality wave (cohesion-grouped; parallel tracks marked)
 
-**S4 — Honest-alpha cosmetics (~1 d)** — §4.5 caveats — *anytime, even before S1*
+**S4 — Honest-alpha cosmetics (~1 d)** — §4.5 caveats — ✅ **landed 2026-07-31**
 - Label/hide the mock "Live Analytics" rail (until S7 makes it real); hide or stub the
   decorative global-search box (until S5); venue "Gig Calendar" page wired to
   `/api/venue/gigs` or dropped; minimal "account suspended" page.
 
-**S5 — Search & discovery (~3–4 d)** — Backlog #7, #27, #28 — *one slice because all
-three live in `gigs-query.ts`/`talent-query.ts` + browse UIs (modularity by cohesion)*
+**S5 — Search & discovery (~3–4 d)** — Backlog #7, #27, #28 — ✅ **landed 2026-07-31**
 - `/api/search` on Postgres FTS (gigs title/description + talent stage-name/bio public
   columns only), wired to the top bar; multi-value filters via `= ANY($n)`; availability
   boost in browse ordering.
 - *Security gate:* `plainto_tsquery` only (no raw tsquery injection), public-column
   projection, rate-limited, authZ-matrix rows on day one.
 
-**S6 — Events & real venue KPIs (~2–3 d)** — Backlog #14
+**S6 — Events & real venue KPIs (~2–3 d)** — Backlog #14 — ✅ **landed 2026-07-31**
 - Append-only `events` table + `track()` helper; un-mute avg-time-to-hire and
   filling-rate trends from real aggregates. No PII in payloads; RLS policy in-file.
 
-**S7 — Matching engine (~3 d)** — Backlog #6 — *after S6 (reads its aggregates); replaces
-the S4 placeholder*
+**S7 — Matching engine (~3 d)** — Backlog #6 — ✅ **landed 2026-07-31** (replaced the
+S4 placeholder as planned)
 - Real create-gig "Live Analysis": candidate counts from availabilities × role × rate
   overlap; pricing hint from published-gig percentiles. Aggregate/public data only
   pre-hire.
 
-**S8 — Trust & reviews (~4–5 d)** — Backlog #8 — *own slice: new user-content tables =
-own blast radius*
+**S8 — Trust & reviews (~4–5 d)** — Backlog #8 — ✅ **landed 2026-07-31** (ID
+verification = decision doc `docs/id-verification.md`, implementation post-alpha)
 - `reviews` (shift-scoped: counterparties only, post-CHECKED_OUT, one per direction),
   venue rating aggregation, talent trust-score v1; ID-verification = vendor decision doc
   only.
 - *Security gate:* XSS-inert rendering, write-gated to real counterparties, rate-limited,
   report-to-triage wired, scores computed server-side.
 
-**S9 — Realtime & push (~4–5 d)** — Backlog #5 — *transport swap hidden behind existing
-TanStack Query keys*
+**S9 — Realtime & push (~4–5 d)** — Backlog #5 — ✅ **landed 2026-07-31** (VAPID keys =
+operator step, .env.example)
 - SSE for messages/live-ops (replaces 5 s polling); Web Push opt-in for Hot Tonight
   (extends `sw.js` — push handler must not cache; §6.6 tests extended; needs VAPID keys
   ops).
 - *Security gate:* SSE authed per-connection; push payloads are id-only (fetch on open).
 
-**S10 — Map view (~2–3 d)** — Backlog #1 — *independent; parallel with S5+*
+**S10 — Map view (~2–3 d)** — Backlog #1 — ✅ **landed 2026-07-31** (built the A10
+SSRF guard, `api/utils/safe-fetch.ts`)
 - `lat/lng` migration, geocode-on-create, MapLibre + OSM tiles (no key management).
 - *Security gate:* geocoding is the app's **first server-side fetch of user-influenced
   input — build the A10 SSRF guard here** (allowlist, private-range deny, timeouts);
@@ -977,6 +1021,8 @@ flowchart TD
 | `CRON_SECRET` | Generate + set without shell echo: `openssl rand -hex 32 \| tr -d '\n' \| vercel env add CRON_SECRET production`. Read by `/api/payouts/release`; Vercel Cron sends it as the bearer automatically | Same command with `vercel env rm CRON_SECRET production` first; redeploy (cron picks up the new value on the next run) | ~Quarterly, or on leak | Authenticates the scheduled escrow-release cron (daily 09:00 UTC, `vercel.json`) | **Sensitive** |
 | `BLOB_READ_WRITE_TOKEN` | **Injected by Vercel** when the Blob store is connected (Dashboard → Storage → Blob → Connect Project); locally via `vercel env pull`. Read by `api/utils/media.ts` (`@vercel/blob`) | Vercel Dashboard → the store → Tokens → cycle (or disconnect/reconnect the project) | On leak; otherwise Vercel-managed | P4 media storage — uploaded images land in Blob instead of inline `data:` URLs in Postgres | **Sensitive** |
 | `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | Sentry → Project Settings → Client Keys (DSN); same value in both. Read by `instrumentation.ts` / `instrumentation-client.ts`; the public one is client-bundled and its origin auto-joins CSP `connect-src` (`security-headers.js`) | Sentry → Client Keys → revoke key + create new → update both vars | Only on abuse (DSNs are designed to be client-visible ingest addresses) | Error tracking (server/edge + browser); all events pass `src/lib/sentry-scrub.ts` | Public by design (low sensitivity — don't advertise, but not a secret) |
+| `WEB_PUSH_VAPID_PUBLIC_KEY` / `WEB_PUSH_VAPID_PRIVATE_KEY` / `WEB_PUSH_VAPID_SUBJECT` | Generate once: `npx web-push generate-vapid-keys`; subject = `mailto:` contact. Read by `api/utils/push.ts` + `/api/push/subscribe` | New pair → env → redeploy. ⚠ Invalidates every existing browser subscription (users re-toggle the opt-in) | On leak of the private key — deliberately not routine | S9 Hot-gig Web Push; whole surface inert (503/no-op) without the pair | Public key: Public · Private key: **Sensitive** |
+| `STREAM_MAX_MS` / `STREAM_TICK_MS` | Optional SSE tuning (defaults 50000/4000 fit serverless limits). Read by `/api/stream`; tests pin `STREAM_MAX_MS=0` | n/a — config | n/a | S9 realtime stream window + DB fingerprint interval | Public |
 | `STRIPE_SECRET_KEY` | Stripe Dashboard → Developers → API keys. **Use `sk_test_…` until GA.** Read by `src/lib/stripe.ts` — its absence 503-gates the whole `/api/stripe/*` surface | Stripe Dashboard → roll key (supports overlap window) → update env → redeploy | On compromise or staff change; Stripe supports scheduled rolls | Stripe Connect onboarding + transfers (P8) | **Sensitive** (highest — money) |
 | `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard → Webhooks → endpoint for `/api/stripe/webhook` → signing secret (`whsec_…`); locally from `stripe listen`. Read by the webhook route (`constructEventAsync`) | Roll the endpoint's signing secret in the dashboard → update env | When rotating the endpoint or on compromise | Webhook signature verification + replay guard | **Sensitive** |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client. Read by `auth.ts` (social sign-in self-activates when both are set) | Console supports two active secrets: add new → deploy → delete old (zero-downtime) | Secret: on compromise (no expiry) | Google sign-in | ID: Public · Secret: **Sensitive** |

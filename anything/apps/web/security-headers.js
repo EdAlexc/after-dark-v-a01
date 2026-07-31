@@ -46,6 +46,13 @@ function sentryIngestOrigin(env) {
 }
 
 /**
+ * The S10 map's tile origin (MapLibre + OSM raster, keyless by design).
+ * MapLibre fetches tiles via XHR into textures, so the origin must appear
+ * in connect-src as well as img-src.
+ */
+const MAP_TILE_ORIGIN = 'https://tile.openstreetmap.org';
+
+/**
  * img-src, pinned when the Blob store is keyed (S3, Backlog #10 / G11):
  * exactly our store's host (derived from the token — CJS twin of
  * media.ts#blobHostname), no `data:` (the inline write path is dead with the
@@ -56,12 +63,13 @@ function sentryIngestOrigin(env) {
  */
 function imgSrc(env) {
   const token = env.BLOB_READ_WRITE_TOKEN;
-  if (!token) return "img-src 'self' data: blob: https:";
+  if (!token) return `img-src 'self' data: blob: https:`;
   const match = /^vercel_blob_rw_([a-z0-9]+)_/i.exec(token);
   const host = match
     ? `https://${match[1].toLowerCase()}.public.blob.vercel-storage.com`
     : 'https://*.public.blob.vercel-storage.com';
-  return `img-src 'self' blob: ${host}`;
+  // The pin stays exact: our Blob store + the map tile origin, nothing else.
+  return `img-src 'self' blob: ${host} ${MAP_TILE_ORIGIN}`;
 }
 
 /**
@@ -70,9 +78,12 @@ function imgSrc(env) {
  */
 function buildCsp({ isDev = false, env = process.env, nonce } = {}) {
   const frameAncestors = ["'self'", ...createPlatformOrigins(env)];
-  const connect = ["'self'", ...createPlatformOrigins(env), sentryIngestOrigin(env)].filter(
-    Boolean
-  );
+  const connect = [
+    "'self'",
+    ...createPlatformOrigins(env),
+    sentryIngestOrigin(env),
+    MAP_TILE_ORIGIN, // S10 — MapLibre XHRs raster tiles
+  ].filter(Boolean);
   // With a nonce, only nonce-carrying scripts run ('strict-dynamic' lets them
   // load Next's chunks). Without one (fallback path), the legacy inline
   // allowance applies. Dev needs eval for HMR either way.
@@ -85,9 +96,10 @@ function buildCsp({ isDev = false, env = process.env, nonce } = {}) {
     "style-src 'self' 'unsafe-inline'",
     imgSrc(env),
     "font-src 'self' data:",
-    // The service worker (public/sw.js, P10.2). Explicit because
-    // 'strict-dynamic' in script-src ignores host sources like 'self'.
-    "worker-src 'self'",
+    // The service worker (public/sw.js, P10.2) plus MapLibre's blob: worker
+    // (S10 — it inlines its tile-decoding worker via createObjectURL).
+    // Explicit because 'strict-dynamic' in script-src ignores host sources.
+    "worker-src 'self' blob:",
     `connect-src ${connect.join(' ')}${isDev ? ' ws: wss:' : ''}`,
     "object-src 'none'",
     "base-uri 'self'",

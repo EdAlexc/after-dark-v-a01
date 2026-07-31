@@ -129,6 +129,14 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     note: 'Selects no auth-table columns; PARTY discovery depends on this staying public.',
   },
   {
+    id: 'search.list',
+    route: 'search/route.ts',
+    method: 'GET',
+    summary: 'Global FTS search — PUBLISHED gigs + public talent columns only (S5)',
+    expect: PUBLIC,
+    note: 'Term feeds plainto_tsquery only; same projection as the public listings; rate-limited.',
+  },
+  {
     id: 'gigs.detail',
     route: 'gigs/[id]/route.ts',
     method: 'GET',
@@ -176,6 +184,22 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     method: 'GET',
     summary: "The calling venue's own gigs, all statuses",
     expect: VENUE_ONLY,
+  },
+  {
+    id: 'gigs.match-preview',
+    route: 'gigs/match-preview/route.ts',
+    method: 'GET',
+    summary: "Create-gig Live Analysis — candidate aggregates + public cards (S7)",
+    expect: VENUE_ONLY,
+    note: 'Hiring tool: public directory columns + one availability boolean; slot details never leave the calendar.',
+  },
+  {
+    id: 'venue.stats',
+    route: 'venue/stats/route.ts',
+    method: 'GET',
+    summary: 'Own KPI aggregates from the S6 event capture (time-to-hire, filling rate)',
+    expect: VENUE_ONLY,
+    note: 'Events carry no PII; the projection is per-venue counts and durations only.',
   },
 
   // ─── Profiles (§6.1 settings/profile rows) ──────────────────────────────────
@@ -415,6 +439,75 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     method: 'POST',
     summary: 'File a moderation report (read side is P9 admin-only)',
     expect: AUTHENTICATED_SELF,
+  },
+
+  // ─── Realtime & push (S9) ───────────────────────────────────────────────────
+  {
+    id: 'stream.events',
+    route: 'stream/route.ts',
+    method: 'GET',
+    summary: 'SSE invalidation stream — authed per connection, emits query keys only',
+    expect: AUTHENTICATED_SELF,
+    note: 'Frames carry TanStack Query keys, never row data; refetches re-run authed routes.',
+  },
+  {
+    id: 'push.status',
+    route: 'push/subscribe/route.ts',
+    method: 'GET',
+    summary: 'Own push opt-in status + VAPID public key (enabled:false when unkeyed)',
+    expect: AUTHENTICATED_SELF,
+  },
+  {
+    id: 'push.subscribe',
+    route: 'push/subscribe/route.ts',
+    method: 'POST',
+    summary: 'Register this browser for hot-gig push (503 without VAPID keys)',
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'UNAVAILABLE',
+      VENUE: 'UNAVAILABLE',
+      PARTY: 'UNAVAILABLE',
+      ADMIN: 'UNAVAILABLE',
+    },
+    note: 'With WEB_PUSH_VAPID_* configured these UNAVAILABLE cells become ALLOW.',
+  },
+  {
+    id: 'push.unsubscribe',
+    route: 'push/subscribe/route.ts',
+    method: 'DELETE',
+    summary: 'Drop own subscription for this browser endpoint',
+    expect: AUTHENTICATED_SELF,
+    note: 'Delete is user-scoped by predicate + RLS; no key gate — cleanup must always work.',
+  },
+
+  // ─── Reviews & trust (S8) ───────────────────────────────────────────────────
+  {
+    id: 'reviews.list',
+    route: 'reviews/route.ts',
+    method: 'GET',
+    summary: 'Public reviews + aggregate for a venue or talent (marketplace content)',
+    expect: PUBLIC,
+    note: 'Authors appear as public stage/venue names; reviewer user ids never leave the server.',
+  },
+  {
+    id: 'reviews.create',
+    route: 'reviews/route.ts',
+    method: 'POST',
+    summary: 'Review the counterparty of a CHECKED_OUT shift (direction derived server-side)',
+    expect: {
+      anon: 'UNAUTHENTICATED',
+      TALENT: 'ALLOW', // reviews the venue of their own completed shift
+      VENUE: 'ALLOW', // reviews the talent on their own completed shift
+      PARTY: 'FORBIDDEN',
+      ADMIN: 'ALLOW',
+    },
+    expectCrossTenant: {
+      // A stranger to the shift — talent, venue, or admin — must not even
+      // learn it exists. Admins moderate reviews via reports, not authorship.
+      TALENT: 'NOT_FOUND',
+      VENUE: 'NOT_FOUND',
+      ADMIN: 'NOT_FOUND',
+    },
   },
 
   // ─── Availability (P6) ──────────────────────────────────────────────────────

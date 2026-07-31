@@ -59,4 +59,39 @@ describe('buildTalentListQuery', () => {
   it('rejects minRate > maxRate at the schema layer', () => {
     expect(TalentListQuerySchema.safeParse({ minRate: '300', maxRate: '10' }).success).toBe(false);
   });
+
+  // ─── Multi-value filters + availability boost (S5 / #27, #28) ──────────────
+  it('sends multi-value filters as ONE array param via LIKE ANY', () => {
+    const { text, values } = buildTalentListQuery(
+      TalentListQuerySchema.parse({ roles: 'DJ, Mixologist', neighborhoods: 'LES' })
+    );
+    expect(text).toContain('LOWER(neighborhood) LIKE ANY($1)');
+    expect(text).toContain('LOWER(primary_role) LIKE ANY($2)');
+    expect(values[0]).toEqual(['%les%']);
+    expect(values[1]).toEqual(['%dj%', '%mixologist%']);
+  });
+
+  it('boosts available-tonight first, then an open AVAILABLE slot today (#28)', () => {
+    const { text } = buildTalentListQuery(EMPTY);
+    const order = text.slice(text.indexOf('ORDER BY'));
+    expect(order).toContain('available_tonight DESC');
+    // The probe must go through the 0017 SECURITY DEFINER helper — a direct
+    // EXISTS on availabilities silently stops boosting post-RLS-cutover.
+    expect(order).toContain('app_talent_available_on(talent_profiles.id, CURRENT_DATE)');
+    expect(order).not.toContain('FROM availabilities');
+    // Tonight flag outranks the slot probe, which outranks completion.
+    expect(order.indexOf('available_tonight')).toBeLessThan(
+      order.indexOf('app_talent_available_on')
+    );
+    expect(order.indexOf('app_talent_available_on')).toBeLessThan(
+      order.indexOf('profile_completion_pct')
+    );
+  });
+
+  it('keeps the boost subquery free of user input (only parameters reach values)', () => {
+    const { text } = buildTalentListQuery(
+      TalentListQuerySchema.parse({ roles: "x'); DROP TABLE availabilities; --" })
+    );
+    expect(text).not.toContain('DROP TABLE');
+  });
 });

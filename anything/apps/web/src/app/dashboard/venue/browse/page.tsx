@@ -40,6 +40,10 @@ interface ApiTalent {
   hourly_rate_max: string | number | null;
   avatar_url: string | null;
   profile_completion_pct: number | null;
+  /** S8 aggregates — server-computed, never client input. */
+  rating: string | number | null;
+  rating_count: number | null;
+  trust_score: number | null;
   created_at: string;
 }
 
@@ -154,7 +158,7 @@ function TalentCard({
               </button>
             </div>
 
-            {/* Location + rate */}
+            {/* Location + rate + S8 review aggregate */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/40">
               {talent.neighborhood && (
                 <span className="flex items-center gap-1">
@@ -166,6 +170,12 @@ function TalentCard({
                 <span className="flex items-center gap-1">
                   <DollarSign className="w-3 h-3" />
                   <span className="font-bold text-white/60">{band}</span>/hr
+                </span>
+              )}
+              {talent.rating != null && (talent.rating_count ?? 0) > 0 && (
+                <span className="flex items-center gap-1 text-yellow-400">
+                  ★ {Number(talent.rating).toFixed(1)}
+                  <span className="text-white/30">({talent.rating_count})</span>
                 </span>
               )}
             </div>
@@ -200,12 +210,25 @@ function TalentCard({
                   <MessageSquare className="w-3.5 h-3.5" /> Contact
                 </Button>
               </Link>
-              {typeof talent.profile_completion_pct === 'number' &&
+              {typeof talent.trust_score === 'number' ? (
+                <span
+                  className={cn(
+                    'text-[10px] font-bold px-2 py-0.5 rounded-lg border',
+                    talent.trust_score >= 70
+                      ? 'text-[#00FFCC]/80 bg-[#00FFCC]/5 border-[#00FFCC]/15'
+                      : 'text-white/50 bg-white/5 border-white/10'
+                  )}
+                >
+                  Trust {talent.trust_score}
+                </span>
+              ) : (
+                typeof talent.profile_completion_pct === 'number' &&
                 talent.profile_completion_pct >= 80 && (
                   <span className="text-[10px] font-bold text-[#00FFCC]/70 bg-[#00FFCC]/5 border border-[#00FFCC]/15 px-2 py-0.5 rounded-lg">
                     Complete Profile
                   </span>
-                )}
+                )
+              )}
             </div>
           </div>
         </div>
@@ -225,13 +248,14 @@ export default function VenueBrowsePage() {
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
-  // Same param strategy as gig browse: single selections filter server-side
-  // via the validated /api/talent params, multi-selects refine client-side.
+  // Same param strategy as gig browse (S5/#27): selections filter server-side
+  // via the validated /api/talent params; multi-selects ride as CSV lists.
   const params = new URLSearchParams();
   if (rateRange[0] > RATE_RANGE_DEFAULT[0]) params.set('minRate', String(rateRange[0]));
   if (rateRange[1] < RATE_RANGE_DEFAULT[1]) params.set('maxRate', String(rateRange[1]));
-  if (selectedRoles.length === 1) params.set('role', selectedRoles[0]);
-  if (selectedNeighborhoods.length === 1) params.set('neighborhood', selectedNeighborhoods[0]);
+  if (selectedRoles.length > 0) params.set('roles', selectedRoles.join(','));
+  if (selectedNeighborhoods.length > 0)
+    params.set('neighborhoods', selectedNeighborhoods.join(','));
   if (page > 1) params.set('page', String(page));
   const queryString = params.toString();
 
@@ -247,19 +271,13 @@ export default function VenueBrowsePage() {
 
   const allTalent = useMemo(() => data?.talent ?? [], [data]);
 
+  // Multi-selects are server-side since S5 — only the free-text quick filter
+  // still refines within the fetched page.
   const filtered = allTalent.filter((t) => {
+    if (!search) return true;
     const haystack =
       `${t.stage_name} ${t.primary_role ?? ''} ${(t.genres_vibes ?? []).join(' ')}`.toLowerCase();
-    if (search && !haystack.includes(search.toLowerCase())) return false;
-    if (selectedRoles.length > 1) {
-      const role = (t.primary_role ?? '').toLowerCase();
-      if (!selectedRoles.some((r) => role.includes(r.toLowerCase()))) return false;
-    }
-    if (selectedNeighborhoods.length > 1) {
-      const hood = (t.neighborhood ?? '').toLowerCase();
-      if (!selectedNeighborhoods.some((n) => hood.includes(n.toLowerCase()))) return false;
-    }
-    return true;
+    return haystack.includes(search.toLowerCase());
   });
 
   const toggleRole = (r: string) => {

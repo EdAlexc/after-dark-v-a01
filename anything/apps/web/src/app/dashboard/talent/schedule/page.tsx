@@ -9,13 +9,14 @@
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { CalendarDays, ChevronLeft, ChevronRight, Loader2, Zap } from 'lucide-react';
+import { Bell, CalendarDays, ChevronLeft, ChevronRight, Loader2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { NotificationsBell } from '@/components/NotificationsBell';
 import { cn } from '@/lib/utils';
+import { subscribeToPush, unsubscribeFromPush } from '@/lib/pwa';
 
 const SLOTS = [
   { key: 'EARLY_EVENING', label: 'Early Evening', hours: '6–10 PM' },
@@ -129,6 +130,36 @@ export default function TalentSchedulePage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  // Hot-gig Web Push opt-in (S9). enabled:false = VAPID keys not set — the
+  // toggle renders disabled instead of promising something that can't send.
+  const { data: pushStatus } = useQuery({
+    queryKey: ['push-status'],
+    queryFn: async () => {
+      const res = await fetch('/api/push/subscribe');
+      if (!res.ok) throw new Error('Failed to load push status');
+      return res.json() as Promise<{ enabled: boolean; subscribed: boolean }>;
+    },
+    staleTime: 60_000,
+  });
+  const pushToggle = useMutation({
+    mutationFn: async (value: boolean) => {
+      if (value) {
+        const result = await subscribeToPush();
+        if (result === 'denied') throw new Error('Notifications are blocked in your browser');
+        if (result === 'unsupported') throw new Error('This browser does not support push');
+        if (result === 'unavailable') throw new Error('Push alerts are not available right now');
+        return true;
+      }
+      await unsubscribeFromPush();
+      return false;
+    },
+    onSuccess: (subscribed) => {
+      toast.success(subscribed ? 'Hot gig alerts on 🔥' : 'Hot gig alerts off');
+      void qc.invalidateQueries({ queryKey: ['push-status'] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const openEditor = (key: string) => {
     setSelectedDay(key);
     const existing = byDay.get(key) ?? [];
@@ -182,6 +213,29 @@ export default function TalentSchedulePage() {
                   <Switch
                     checked={profileData?.profile?.available_tonight ?? false}
                     onCheckedChange={(value) => toggleTonight.mutate(value)}
+                    className="data-[state=checked]:bg-[#00FFCC]"
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Hot-gig push alerts (S9) — opt-in Web Push, key-gated server-side */}
+              <Card className="bg-[#1E1E1E] border-white/5">
+                <CardContent className="p-4 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center">
+                      <Bell className="w-4 h-4 text-white/60" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold">Hot Gig Alerts</p>
+                      <p className="text-[11px] text-white/40">
+                        Push notification when a gig starting tonight goes live
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={pushStatus?.subscribed ?? false}
+                    disabled={pushStatus?.enabled === false || pushToggle.isPending}
+                    onCheckedChange={(value) => pushToggle.mutate(value)}
                     className="data-[state=checked]:bg-[#00FFCC]"
                   />
                 </CardContent>

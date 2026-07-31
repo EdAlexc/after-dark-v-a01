@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import ReviewDialog from '@/components/ReviewDialog';
 import { cn } from '@/lib/utils';
 import { type ApiGig, formatDate, formatRate, formatTimeRange } from '@/lib/gigs';
 
@@ -429,12 +430,28 @@ export default function TalentDashboard() {
                               </Button>
                             )}
                             {(shift.status === 'CHECKED_OUT' || shift.status === 'PAID') && (
-                              <span className="text-[11px] text-white/40 flex items-center gap-1.5">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-[#00FFCC]" />
-                                {shift.status === 'PAID' || shift.payout_status === 'RELEASED'
-                                  ? 'Payout released'
-                                  : 'Payout in escrow (24h)'}
-                              </span>
+                              <>
+                                <span className="text-[11px] text-white/40 flex items-center gap-1.5">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-[#00FFCC]" />
+                                  {shift.status === 'PAID' || shift.payout_status === 'RELEASED'
+                                    ? 'Payout released'
+                                    : 'Payout in escrow (24h)'}
+                                </span>
+                                {/* S8: shift-scoped review of the venue */}
+                                <ReviewDialog
+                                  shiftId={shift.id}
+                                  counterpartLabel={shift.venue_name ?? 'this venue'}
+                                  trigger={
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="border-yellow-400/30 text-yellow-400 hover:bg-yellow-400/10 text-xs font-bold"
+                                    >
+                                      ★ Rate Venue
+                                    </Button>
+                                  }
+                                />
+                              </>
                             )}
                           </div>
                         </CardContent>

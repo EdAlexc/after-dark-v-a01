@@ -42,7 +42,7 @@ function sqlWithRole(role: string | null, extra?: (text: string) => unknown[] | 
   mocks.sql.mockImplementation(async (first: unknown, ..._rest: unknown[]) => {
     const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
     if (text.includes('SELECT role, suspended_at')) return [{ role }];
-    if (text.includes('SELECT id FROM venue_profiles')) return [{ id: 'vp-1' }];
+    if (text.includes('FROM venue_profiles')) return [{ id: 'vp-1', address: null }];
     if (text.includes('INSERT INTO gigs')) return [{ id: 'g-1', status: 'PUBLISHED' }];
     return extra?.(text) ?? [];
   });
@@ -147,7 +147,7 @@ describe('POST /api/gigs (venue-only create)', () => {
     mocks.sql.mockImplementation(async (first: unknown) => {
       const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
       if (text.includes('SELECT role, suspended_at')) return [{ role: 'VENUE' }];
-      if (text.includes('SELECT id FROM venue_profiles')) return [];
+      if (text.includes('FROM venue_profiles')) return [];
       return [];
     });
     const res = await POST(post(VALID_GIG), {});

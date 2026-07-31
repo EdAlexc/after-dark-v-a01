@@ -11,7 +11,7 @@ import { withRoute } from '@/app/api/utils/route-kit';
 export const GET = withRoute('talent.list', async (request) => {
   const filters = parseQuery(request.url, TalentListQuerySchema);
   const { text, values } = buildTalentListQuery(filters);
-  const rows = await sql(text, values as (string | number)[]);
+  const rows = await sql(text, values);
   const hasMore = rows.length > TALENT_PAGE_SIZE;
   const talent = hasMore ? rows.slice(0, TALENT_PAGE_SIZE) : rows;
   return Response.json({ talent, page: filters.page, pageSize: TALENT_PAGE_SIZE, hasMore });

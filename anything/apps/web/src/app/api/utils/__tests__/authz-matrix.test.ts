@@ -156,6 +156,27 @@ function wireSql(actor: Actor, ownerId: string, gigStatus = 'PUBLISHED') {
     if (text.includes('INSERT INTO applications')) return [{ id: 'app-1', status: 'PENDING' }];
     if (text.includes('UPDATE applications')) return [{ id: 'app-1' }];
 
+    // S8 reviews: the review-scope lookup uses a distinct alias so the shift
+    // can present as completed here without disturbing shifts.transition.
+    if (text.includes('FROM shifts review_shift')) {
+      return [
+        {
+          id: SHIFT_ID,
+          status: 'CHECKED_OUT',
+          talent_id: 'tp-1',
+          venue_id: 'vp-1',
+          gig_title: 'Matrix Gig',
+          venue_user_id: venueSide,
+          talent_user_id: talentSide,
+        },
+      ];
+    }
+    if (text.includes('INSERT INTO reviews')) {
+      return [{ id: 'rev-1', shift_id: SHIFT_ID, rating: 5, created_at: 'now' }];
+    }
+    if (text.includes('FROM reviews')) return [];
+
+    if (text.includes('push_subscriptions')) return [];
     if (text.includes('FROM shift_transitions')) return [];
     if (text.includes('INSERT INTO shift_transitions')) return [];
     if (text.includes('FROM shifts s')) {
@@ -292,6 +313,14 @@ const REQUEST_BODY: Record<string, unknown | ((actor: Actor) => unknown)> = {
   'payouts.release': {},
   // P9 admin surfaces
   'admin.reports.update': { status: 'REVIEWING' },
+  // S8 reviews
+  'reviews.create': { shift_id: SHIFT_ID, rating: 5, comment: 'matrix review' },
+  // S9 push
+  'push.subscribe': {
+    endpoint: 'https://push.example/endpoint-1',
+    keys: { p256dh: 'matrix-p256dh', auth: 'matrix-auth' },
+  },
+  'push.unsubscribe': { endpoint: 'https://push.example/endpoint-1' },
   'admin.users.update': { suspended: true, reason: 'matrix probe' },
   'admin.gigs.update': { status: 'CANCELLED', reason: 'matrix takedown' },
 };
@@ -299,6 +328,9 @@ const REQUEST_BODY: Record<string, unknown | ((actor: Actor) => unknown)> = {
 /** Query strings for GET routes whose schema requires one. */
 const REQUEST_QUERY: Record<string, string> = {
   'availability.get': '?month=2026-08',
+  'search.list': '?q=matrix',
+  'gigs.match-preview': '?role=DJ',
+  'reviews.list': `?venue_id=${GIG_ID}`,
 };
 
 function buildRequest(row: MatrixRow, actor: Actor): Request {

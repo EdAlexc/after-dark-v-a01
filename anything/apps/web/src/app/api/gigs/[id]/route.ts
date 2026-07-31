@@ -7,6 +7,9 @@ import { GIG_TRANSITIONS, canTransition } from '@/app/api/utils/gig-lifecycle';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 import { withRlsContext, type RlsUser } from '@/app/api/utils/rls';
+import { track } from '@/app/api/utils/events';
+import { isHotWindow, pushHotGigToTalent } from '@/app/api/utils/push';
+import { geocodeAddress } from '@/app/api/utils/geocode';
 
 const statusLimiter = getRateLimiter('gigs-status', { windowMs: 60 * 60 * 1000, max: 60 });
 
@@ -27,7 +30,12 @@ async function loadGig(id: string, user?: RlsUser | null): Promise<GigDetailRow 
   const query = sql`
     SELECT g.*,
            vp.user_id AS venue_user_id,
-           vp.venue_name, vp.neighborhood AS venue_neighborhood, vp.address,
+           vp.venue_name, vp.neighborhood AS venue_neighborhood,
+           -- S10: gigs now carry their own address; the venue's is the
+           -- display/geocode fallback (COALESCE keeps the UI's gig.address
+           -- meaning "where this gig happens").
+           COALESCE(g.address, vp.address) AS address,
+           vp.address AS venue_address,
            vp.description AS venue_description, vp.venue_type, vp.capacity,
            vp.rating AS venue_rating, vp.avatar_url AS venue_avatar_url,
            (SELECT COUNT(*)::int FROM gigs g2
@@ -140,6 +148,31 @@ export const PATCH = withRoute('gigs.status', async (request, context) => {
     entityId: parsed.data,
     metadata: { from: currentStatus, to: nextStatus },
   });
+
+  // KPI capture (S6): publish/cancel instants feed time-to-hire + filling rate.
+  if (nextStatus === 'PUBLISHED' || nextStatus === 'CANCELLED') {
+    await track(user, nextStatus === 'PUBLISHED' ? 'gig.published' : 'gig.cancelled', {
+      venueId: row.venue_id ? String(row.venue_id) : null,
+      gigId: parsed.data,
+      payload: { role: row.role_needed ?? null },
+    });
+  }
+  // S9: Hot Tonight push (id-only payload; no-op without VAPID keys).
+  if (nextStatus === 'PUBLISHED' && isHotWindow(row.start_time as string | null)) {
+    await pushHotGigToTalent(parsed.data);
+  }
+  // S10: drafts skip geocoding; the publish instant earns the pin. `address`
+  // is already COALESCE(gig's own, venue profile's) from loadGig.
+  if (nextStatus === 'PUBLISHED' && row.lat == null) {
+    const address = row.address as string | null;
+    const point = address ? await geocodeAddress(address) : null;
+    if (point) {
+      await withRlsContext(
+        user,
+        sql`UPDATE gigs SET lat = ${point.lat}, lng = ${point.lng} WHERE id = ${parsed.data}`
+      );
+    }
+  }
 
   return Response.json(toPublicGig({ ...row, ...updated[0] } as GigDetailRow, true));
 });

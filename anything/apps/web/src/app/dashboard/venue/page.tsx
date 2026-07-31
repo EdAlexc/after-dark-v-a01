@@ -28,6 +28,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import ReviewDialog from '@/components/ReviewDialog';
 import { cn } from '@/lib/utils';
 import { type ApiGig, formatDate, formatRate, formatTimeRange } from '@/lib/gigs';
 
@@ -162,6 +163,24 @@ export default function VenueDashboard() {
   });
   const shifts = shiftsData?.shifts ?? [];
 
+  // Venue KPIs from the S6 event capture: time-to-hire + filling-rate trends.
+  const { data: statsData } = useQuery({
+    queryKey: ['venue-stats'],
+    queryFn: async () => {
+      const res = await fetch('/api/venue/stats');
+      if (!res.ok) throw new Error('Failed to load stats');
+      return res.json() as Promise<{
+        stats: {
+          avgTimeToHireHours: number | null;
+          window30d: { published: number; filled: number; applications: number };
+          previous30d: { published: number; filled: number; applications: number };
+        } | null;
+      }>;
+    },
+    staleTime: 60_000,
+  });
+  const stats = statsData?.stats ?? null;
+
   const shiftTransition = useMutation({
     mutationFn: async ({ id, to }: { id: string; to: 'CHECKED_IN' | 'CHECKED_OUT' }) => {
       const res = await fetch(`/api/shifts/${id}`, {
@@ -203,12 +222,33 @@ export default function VenueDashboard() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  // Real, derivable stats (P1.3). Payouts (P5) and time-to-hire (P2) unlock later.
+  // Real, derivable stats (P1.3) + S6 event-backed KPIs.
   const published = gigs.filter((g) => g.status === 'PUBLISHED').length;
   const drafts = gigs.filter((g) => g.status === 'DRAFT').length;
   const filledish = gigs.filter((g) => g.status === 'FILLED' || g.status === 'COMPLETED').length;
   const fillable = published + filledish;
   const openGigs = gigs.filter((g) => g.status !== 'CANCELLED');
+
+  // Formatting for the S6 cards. Trend compares this 30-day window with the
+  // previous one; both need data before a percentage is honest.
+  const timeToHireLabel =
+    stats?.avgTimeToHireHours == null
+      ? null
+      : stats.avgTimeToHireHours < 48
+        ? `${stats.avgTimeToHireHours.toFixed(stats.avgTimeToHireHours < 10 ? 1 : 0)}h`
+        : `${(stats.avgTimeToHireHours / 24).toFixed(1)}d`;
+  const fillTrend = (() => {
+    if (!stats) return null;
+    const current = stats.window30d.published > 0
+      ? stats.window30d.filled / stats.window30d.published
+      : null;
+    const previous = stats.previous30d.published > 0
+      ? stats.previous30d.filled / stats.previous30d.published
+      : null;
+    if (current === null || previous === null || previous === 0) return null;
+    const delta = Math.round(((current - previous) / previous) * 100);
+    return delta === 0 ? '±0% vs last month' : `${delta > 0 ? '+' : ''}${delta}% vs last month`;
+  })();
 
   const todayLabel = new Date().toLocaleDateString(undefined, {
     weekday: 'long',
@@ -261,7 +301,7 @@ export default function VenueDashboard() {
             <StatCard
               label="Filling Rate"
               value={isPending ? '…' : fillable > 0 ? `${filledish} of ${fillable}` : '—'}
-              change={fillable > 0 ? 'gigs filled' : 'no open gigs yet'}
+              change={fillTrend ?? (fillable > 0 ? 'gigs filled' : 'no open gigs yet')}
               icon={<BarChart3 className="w-5 h-5" />}
               muted={fillable === 0}
             />
@@ -282,10 +322,16 @@ export default function VenueDashboard() {
             />
             <StatCard
               label="Avg. Time to Hire"
-              value="—"
-              change="unlocks with applications"
+              value={timeToHireLabel ?? '—'}
+              change={
+                timeToHireLabel
+                  ? `${stats?.window30d.applications ?? 0} application${
+                      (stats?.window30d.applications ?? 0) === 1 ? '' : 's'
+                    } / 30d`
+                  : 'no hires recorded yet'
+              }
               icon={<Clock className="w-5 h-5" />}
-              muted
+              muted={timeToHireLabel === null}
             />
           </div>
 
@@ -640,6 +686,22 @@ export default function VenueDashboard() {
                             <p className="text-[11px] text-[#00FFCC] flex items-center gap-1.5">
                               <CheckCircle2 className="w-3 h-3" /> Payout released.
                             </p>
+                          )}
+                          {(shift.status === 'CHECKED_OUT' || shift.status === 'PAID') && (
+                            /* S8: shift-scoped review of the talent */
+                            <ReviewDialog
+                              shiftId={shift.id}
+                              counterpartLabel={shift.stage_name ?? 'this talent'}
+                              trigger={
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="w-full text-xs font-bold border-yellow-400/30 text-yellow-400 hover:bg-yellow-400/10"
+                                >
+                                  ★ Rate Talent
+                                </Button>
+                              }
+                            />
                           )}
                         </CardContent>
                       </Card>

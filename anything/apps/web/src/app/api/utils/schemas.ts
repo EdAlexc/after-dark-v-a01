@@ -37,17 +37,39 @@ const socialLinks = z
   .record(shortText(40), z.string().trim().max(300))
   .refine((obj) => Object.keys(obj).length <= 12, { message: 'too many entries' });
 
+/**
+ * Comma-separated multi-value query param (S5 / Backlog #27) — parseQuery is
+ * single-valued, so lists ride as CSV: `roles=DJ,Bartender`. Items are
+ * trimmed, empties dropped, count and length bounded.
+ */
+const csvList = (maxItems: number, maxItemLength: number) =>
+  z
+    .string()
+    .max(maxItems * (maxItemLength + 1))
+    .transform((value) =>
+      value
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+    )
+    .refine((items) => items.length <= maxItems, { message: `at most ${maxItems} values` })
+    .refine((items) => items.every((item) => item.length <= maxItemLength), {
+      message: `each value must be ≤ ${maxItemLength} characters`,
+    });
+
 // ─── Roles / onboarding ───────────────────────────────────────────────────────
 
 /** Self-service roles. ADMIN is intentionally absent (privilege-escalation fix). */
 export const SelfServiceRoleSchema = z.enum(['TALENT', 'VENUE', 'PARTY']);
 
+// nullish, not optional: the onboarding form posts `null` for skipped fields
+// (found live — a tester who skips the sub-role chip got a 400 pre-S4–S10).
 export const RoleSelectionSchema = z.object({
   role: SelfServiceRoleSchema,
-  subRole: shortText(80).optional(),
-  stageName: shortText(80).optional(),
-  venueName: shortText(120).optional(),
-  neighborhood: shortText(80).optional(),
+  subRole: shortText(80).nullish(),
+  stageName: shortText(80).nullish(),
+  venueName: shortText(120).nullish(),
+  neighborhood: shortText(80).nullish(),
 });
 
 // ─── Gigs ─────────────────────────────────────────────────────────────────────
@@ -75,6 +97,9 @@ export const GigCreateSchema = z
     title: shortText(120).min(3),
     role_needed: shortText(80),
     description: shortText(5000).optional().default(''),
+    /** Gig venue address (S10) — geocoded server-side; falls back to the
+     *  venue profile's address when omitted. */
+    address: shortText(200).optional(),
     start_time: timestamp,
     end_time: timestamp,
     base_rate: rate,
@@ -110,6 +135,10 @@ export const GigListQuerySchema = z
   .object({
     neighborhood: shortText(80).optional(),
     role: shortText(80).optional(),
+    /** Multi-value variants (S5, CSV). When present they supersede the
+     *  single-value params — the UI sends one form or the other. */
+    neighborhoods: csvList(10, 80).optional(),
+    roles: csvList(10, 80).optional(),
     minRate: rate.optional(),
     maxRate: rate.optional(),
     tonightOnly: z
@@ -132,6 +161,8 @@ export const TalentListQuerySchema = z
   .object({
     neighborhood: shortText(80).optional(),
     role: shortText(80).optional(),
+    neighborhoods: csvList(10, 80).optional(),
+    roles: csvList(10, 80).optional(),
     minRate: rate.optional(),
     maxRate: rate.optional(),
     page,
@@ -141,6 +172,32 @@ export const TalentListQuerySchema = z
       query.minRate === undefined || query.maxRate === undefined || query.minRate <= query.maxRate,
     { message: 'minRate must be ≤ maxRate', path: ['minRate'] }
   );
+
+// ─── Global search (S5 / Backlog #7) ─────────────────────────────────────────
+
+/**
+ * Public search over gigs + talent. The term feeds `plainto_tsquery` ONLY —
+ * never raw tsquery syntax — so no query-language injection is possible.
+ */
+export const SearchQuerySchema = z.object({
+  q: z.string().trim().min(2, 'query too short').max(120),
+  /** Restrict to one entity type; omitted = both. */
+  type: z.enum(['gigs', 'talent']).optional(),
+  limit: z.coerce.number().int().min(1).max(20).optional().default(8),
+});
+
+// ─── Matching engine (S7 / Backlog #6) ───────────────────────────────────────
+
+/** Create-gig "Live Analysis" preview inputs (VENUE-only endpoint). */
+export const MatchPreviewQuerySchema = z.object({
+  role: shortText(80).min(2),
+  rate: rate.optional(),
+  /** Gig date for the availability probe. */
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD')
+    .optional(),
+});
 
 // ─── Profiles ─────────────────────────────────────────────────────────────────
 
@@ -257,11 +314,44 @@ export const AcceptRateSchema = z.object({
 });
 
 export const ReportCreateSchema = z.object({
-  entity_type: z.enum(['conversation', 'user', 'gig']),
+  entity_type: z.enum(['conversation', 'user', 'gig', 'review']),
   entity_id: shortText(64).min(1),
   reason: shortText(2000).min(3),
   severity: z.enum(['LOW', 'MEDIUM', 'HIGH']).optional().default('MEDIUM'),
 });
+
+// ─── Web Push (S9) ───────────────────────────────────────────────────────────
+
+/** Browser PushSubscription.toJSON() shape — bounds mirror 0019's CHECKs. */
+export const PushSubscribeSchema = z.object({
+  endpoint: z.string().url().max(1000),
+  keys: z.object({
+    p256dh: z.string().min(1).max(200),
+    auth: z.string().min(1).max(100),
+  }),
+});
+
+export const PushUnsubscribeSchema = z.object({
+  endpoint: z.string().url().max(1000),
+});
+
+// ─── Reviews & trust (S8) ────────────────────────────────────────────────────
+
+export const ReviewCreateSchema = z.object({
+  shift_id: z.string().uuid(),
+  rating: z.number().int().min(1).max(5),
+  comment: shortText(1000).optional().default(''),
+});
+
+/** Public review listing — exactly one subject. */
+export const ReviewsListQuerySchema = z
+  .object({
+    venue_id: z.string().uuid().optional(),
+    talent_id: z.string().uuid().optional(),
+  })
+  .refine((query) => Boolean(query.venue_id) !== Boolean(query.talent_id), {
+    message: 'exactly one of venue_id or talent_id is required',
+  });
 
 // ─── Availability (P6) ────────────────────────────────────────────────────────
 
@@ -361,3 +451,4 @@ export type GigCreate = z.infer<typeof GigCreateSchema>;
 export type GigListQuery = z.infer<typeof GigListQuerySchema>;
 export type GigStatus = z.infer<typeof GigStatusSchema>;
 export type TalentListQuery = z.infer<typeof TalentListQuerySchema>;
+export type SearchQuery = z.infer<typeof SearchQuerySchema>;

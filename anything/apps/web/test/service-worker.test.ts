@@ -66,7 +66,15 @@ type Harness = {
 	listeners: Map<string, (event: unknown) => void>;
 	cacheStorage: FakeCacheStorage;
 	fetchMock: ReturnType<typeof vi.fn>;
-	sw: { skipWaiting: ReturnType<typeof vi.fn>; clients: { claim: ReturnType<typeof vi.fn> } };
+	sw: {
+		skipWaiting: ReturnType<typeof vi.fn>;
+		clients: {
+			claim: ReturnType<typeof vi.fn>;
+			matchAll: ReturnType<typeof vi.fn>;
+			openWindow: ReturnType<typeof vi.fn>;
+		};
+		registration: { showNotification: ReturnType<typeof vi.fn> };
+	};
 };
 
 function loadSw(): Harness {
@@ -78,7 +86,12 @@ function loadSw(): Harness {
 			listeners.set(type, handler);
 		},
 		skipWaiting: vi.fn().mockResolvedValue(undefined),
-		clients: { claim: vi.fn().mockResolvedValue(undefined) },
+		clients: {
+			claim: vi.fn().mockResolvedValue(undefined),
+			matchAll: vi.fn().mockResolvedValue([]),
+			openWindow: vi.fn().mockResolvedValue(undefined),
+		},
+		registration: { showNotification: vi.fn().mockResolvedValue(undefined) },
 		location: { origin: ORIGIN },
 	};
 	const sandbox = { self: sw, caches: cacheStorage, fetch: fetchMock, URL, console };
@@ -220,5 +233,74 @@ describe('service worker (§6.6 contract)', () => {
 		expect(keys).not.toContain('afterdark-precache-v0');
 		expect(keys).toContain('unrelated-cache');
 		expect(harness.sw.clients.claim).toHaveBeenCalled();
+	});
+});
+
+// ─── S9 Web Push (§6.6 extended: the push path must not fetch or cache) ──────
+
+function makePushEvent(payload: unknown) {
+	const event = makeEvent();
+	(event as { data?: unknown }).data =
+		payload === undefined ? undefined : { json: () => payload };
+	return event;
+}
+
+describe('service worker — push (S9)', () => {
+	it('shows a generic notification for a well-formed id-only payload', async () => {
+		const harness = loadSw();
+		const event = makePushEvent({ kind: 'hot_gig', gigId: 'gig-1' });
+		harness.listeners.get('push')!(event);
+		await settle(event);
+		expect(harness.sw.registration.showNotification).toHaveBeenCalledTimes(1);
+		const [title, options] = harness.sw.registration.showNotification.mock.calls[0] as [
+			string,
+			{ body: string; data: { url: string } },
+		];
+		// Generic copy only — a push payload carries no names/titles to show.
+		expect(title).toContain('Hot gig');
+		expect(options.data.url).toBe('/gigs/gig-1');
+	});
+
+	it('ignores malformed, foreign, or non-string-id payloads', async () => {
+		const harness = loadSw();
+		for (const payload of [
+			undefined,
+			null,
+			{ kind: 'other' },
+			{ kind: 'hot_gig' },
+			{ kind: 'hot_gig', gigId: 42 },
+		]) {
+			const event = makePushEvent(payload);
+			harness.listeners.get('push')!(event);
+			await settle(event);
+		}
+		expect(harness.sw.registration.showNotification).not.toHaveBeenCalled();
+	});
+
+	it('never fetches or caches anything on the push path (§6.6)', async () => {
+		const harness = loadSw();
+		const before = harness.cacheStorage.entryCount();
+		const event = makePushEvent({ kind: 'hot_gig', gigId: 'gig-1' });
+		harness.listeners.get('push')!(event);
+		await settle(event);
+		expect(harness.fetchMock).not.toHaveBeenCalled();
+		expect(harness.cacheStorage.entryCount()).toBe(before);
+	});
+
+	it('notification click opens the deep link only for same-origin paths', async () => {
+		const harness = loadSw();
+		const click = makeEvent() as ReturnType<typeof makeEvent> & {
+			notification?: unknown;
+		};
+		click.notification = { close: vi.fn(), data: { url: '/gigs/gig-1' } };
+		harness.listeners.get('notificationclick')!(click);
+		await settle(click);
+		expect(harness.sw.clients.openWindow).toHaveBeenCalledWith('/gigs/gig-1');
+
+		const evil = makeEvent() as ReturnType<typeof makeEvent> & { notification?: unknown };
+		evil.notification = { close: vi.fn(), data: { url: 'https://evil.example/x' } };
+		harness.listeners.get('notificationclick')!(evil);
+		await settle(evil);
+		expect(harness.sw.clients.openWindow).toHaveBeenCalledTimes(1);
 	});
 });

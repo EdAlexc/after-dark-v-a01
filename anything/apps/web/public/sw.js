@@ -107,3 +107,46 @@ self.addEventListener('fetch', (event) => {
 	// Everything else (public images, fontawesome proxy, …): untouched —
 	// default browser networking, nothing stored.
 });
+
+/**
+ * Web Push (S9). Contract: payloads are ID-ONLY ({kind, gigId}) — this
+ * handler renders a generic notification and NEVER fetches or caches
+ * anything (§6.6: no authenticated data may enter the worker's hands).
+ * Content loads in the page the user opens.
+ */
+self.addEventListener('push', (event) => {
+	let payload = null;
+	try {
+		payload = event.data ? event.data.json() : null;
+	} catch {
+		payload = null;
+	}
+	if (!payload || payload.kind !== 'hot_gig' || typeof payload.gigId !== 'string') return;
+
+	event.waitUntil(
+		self.registration.showNotification('🔥 Hot gig tonight', {
+			body: 'A gig starting tonight just went live. Tap to view it on AfterDark.',
+			icon: '/icons/icon-192.png',
+			badge: '/icons/icon-192.png',
+			tag: 'hot-gig-' + payload.gigId,
+			data: { url: '/gigs/' + encodeURIComponent(payload.gigId) },
+		})
+	);
+});
+
+self.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+	const url = event.notification.data && event.notification.data.url;
+	if (typeof url !== 'string' || !url.startsWith('/')) return;
+	event.waitUntil(
+		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+			for (const client of clients) {
+				if ('focus' in client) {
+					client.navigate(url);
+					return client.focus();
+				}
+			}
+			return self.clients.openWindow(url);
+		})
+	);
+});

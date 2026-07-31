@@ -29,6 +29,7 @@
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"lucide-react": "^1.7.0",
+		"maplibre-gl": "^4",
 		"motion": "^12.7.4",
 		"next": "^16.2.6",
 		"next-themes": "^0.4.6",
@@ -45,6 +46,7 @@
 		"tailwind-merge": "^3.2.0",
 		"vanilla-colorful": "^0.7.2",
 		"vaul": "^1.1.2",
+		"web-push": "^3.6.7",
 		"ws": "^8.18.2",
 		"zod": "^4.4.3"
 	},
@@ -57,6 +59,7 @@
 		"@types/qrcode": "^1.5.6",
 		"@types/react": "^19.0.1",
 		"@types/react-dom": "^19.0.1",
+		"@types/web-push": "^3.6.4",
 		"@types/ws": "^8.18.1",
 		"jsdom": "^26.1.0",
 		"oxlint": "^1.76.0",
