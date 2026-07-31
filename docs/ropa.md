@@ -103,6 +103,7 @@
 | EXIF/GPS not stripped from uploaded photos | Location inference from images | **P4** media pipeline |
 | Profile images stored base64 in Postgres | Larger PII blast radius than object storage with signed URLs | **P4** |
 | No automated retention purge job | Logs may outlive the stated schedule | `retention.md` §4, P10 |
+| Incident runbook desk-checked but not yet human-tabletopped | Operator muscle memory unproven under the 72 h clock | `incident-runbook.md` §4, before first tester invite |
 | RLS policies verified but not yet the production connection role | Defence-in-depth not yet active in prod | DEV_TIMELINE P2.4 cutover |
 | DPAs not yet executed | Processor compliance unevidenced | G10, before GA |
 | No DPIA | Recommended given location + work-history data | G13, before GA |

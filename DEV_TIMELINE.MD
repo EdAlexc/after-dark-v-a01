@@ -8,11 +8,38 @@
 
 ## 1. Current status — YOU ARE HERE
 
-- **Date:** 2026-07-30 · **Branch:** `claude/p9-admin-trust` (worktree off `main`;
-  PRs #7–#11 merged)
-- **Project stage:** **P0–P9 complete.** The marketplace loop runs end-to-end AND the
-  platform can now moderate itself (reports triage, suspension, takedowns, audit viewer).
-  Next: **P10 (PWA, performance & the alpha gate)** — the last slice before alpha.
+- **Date:** 2026-07-31 · **Branch:** `claude/alpha-punchlist-pwa` (worktree off `main`;
+  PRs #7–#12 merged, #13 = the §4 readiness assessment)
+- **Project stage:** **P0–P9 complete + P10.1–P10.2 (PWA install surface).** Remaining
+  before the formal alpha exit gate: **P10.3** (shared rate-limit store), **P10.4** (CWV/
+  k6/axe CI gates), and the **§4.6 ops activation** (Sentry DSN, `CRON_SECRET`, Blob token
+  — ~10 min in the Vercel dashboard).
+- **Alpha punch-list delivered this session (2026-07-31 — closes §4.3):**
+  - **B1 CI restored**: deleted `anything/.eslintignore` (create.xyz leftover containing
+    `*`) — oxlint had linted **zero files** since the lint step was added in PR #8, exiting
+    1 and skipping vitest + build on every `main` merge. Lint now sees real files (0
+    warnings); 606 tests green locally.
+  - **B6 PWA (P10.1 + P10.2)**: `manifest.webmanifest` + deterministic icon set
+    (`yarn pwa:icons`, sharp-rendered crescent mark, maskable + apple-touch);
+    dependency-free `public/sw.js` enforcing §6.6 (never intercepts `/api`, navigations
+    network-only w/ offline fallback page, `/_next/static` cache-first, `PURGE_CACHES`);
+    registration in `Providers` (production-only), **cache purge wired into logout**;
+    `worker-src 'self'` added to the CSP (strict-dynamic ignores host sources); 22 new
+    tests incl. a sandbox harness driving the real worker file. Manual: TESTING.md §9.
+  - **B7 incident runbook**: `docs/incident-runbook.md` v1.0 (P1–P4 classes, 72 h drill,
+    contact tree, tabletop script + log w/ desk-check run recorded; human tabletop owed
+    before first invite) + legal-hold section added to `docs/retention.md` §5.
+  - **B3 payments briefing**: verbatim tester briefing in TESTING.md §2.1 (payouts
+    simulated, no real payment data); Stripe test keys stay optional (§4.6 step 4).
+  - **B2/B4/B5 prepared as operator steps** — exact 10-minute runbook in **§4.6** (they
+    involve provisioning/pasting secrets, which stays out of agent hands by design).
+  - **Discovered & fixed while watching this PR's CI: every Vercel deploy since the P3–P8
+    merge (`aa94e60`, 2026-07-30 23:56) had been failing** — production was serving the
+    P2-era build. Cause: P8's `vercel.json` declared an **hourly** cron, which Hobby-plan
+    Vercel rejects at deploy time (GitHub CI never reads `vercel.json`, so its build stayed
+    green — and §4.2's assessment missed it for the same reason: deploy status lives only
+    in Vercel/commit statuses). Rescheduled to daily 09:00 UTC (§4.6 cron note); restore
+    hourly on Pro.
 - **P9 delivered this session** (583 tests green; the whole moderation loop executed live
   against a Neon branch and browser-verified; migration 0012 + the admin preview account
   applied to production):
@@ -99,8 +126,9 @@
     `constructEventAsync` signature verification + replay drop, transfers on release.
     `POST|GET /api/payouts/release` releases HELD→RELEASED **only 24h after checkout**,
     exactly once (`WHERE status='HELD'`), flips shifts→PAID, notifies; callable by ADMIN
-    session or `CRON_SECRET` bearer — `vercel.json` now schedules it hourly (Vercel Cron
-    invokes with GET + the bearer).
+    session or `CRON_SECRET` bearer — `vercel.json` schedules it (Vercel Cron invokes with
+    GET + the bearer). *(Shipped hourly; rescheduled to daily 2026-07-31 — the hourly cron
+    was failing every Vercel deploy on the Hobby plan, see §4.6's cron note.)*
   - **AuthZ matrix grew with the surface** (P2.3 paying off): ~21 new rows, new
     `UNAVAILABLE` outcome for the key-gated Stripe start, and the generated suite now
     contributes 231 tests; the coverage gate kept every new route declared.
@@ -217,31 +245,30 @@
   - **Tests**: **219 passing** (unit + route + middleware + headers + migration-core), heavy on
     edge cases (SQLi payloads, escalation, redirect smuggling, TOTP RFC vectors, GCM tampering,
     rate-limit window edges). Dead code removed; app metadata renamed to AfterDark.
-- **Still UI-with-mock-data only** (unchanged): landing featured gigs, both dashboards, browse,
-  applicants, messages, schedule, live-ops checkout. **Still missing:** gig detail page,
-  applications, messaging/availability/shifts backends, Stripe, admin, notifications, search,
-  map, PWA. Full matrix: CLAUDE.md §4.
-- **New env var**: `AUTH_SECRET_ENCRYPTION_KEY` is now **required** for 2FA (see `.env.example`;
-  2FA fails closed without it). `DATABASE_URL` still required.
+- *(Historical P0-era notes, superseded by later entries above: the "still mock" list is
+  obsolete — P1–P9 made those surfaces real, see CLAUDE.md §4 — and
+  `AUTH_SECRET_ENCRYPTION_KEY` was retired by migration 0005; `BETTER_AUTH_SECRET` now
+  covers 2FA encryption.)*
 
 ### Pick-up-here: next five tasks (in order)
 
-> P9 is complete; **P10 (PWA, performance & alpha gate)** is the last slice before alpha.
+> P10.1–P10.2 landed 2026-07-31; §4.3 is closed except the operator env steps.
 
-1. **P10.1** — `manifest.webmanifest` (AfterDark, standalone, theme `#121212`, maskable
-   icons) + install prompt sanity on iOS/Android emulation.
-2. **P10.2** — Serwist service worker: precache shell/static, network-first APIs, offline
-   fallback page. **Never cache authed API responses; purge caches on logout** (§6.6) —
-   test: logout → offline → no PII retrievable from the cache.
+1. **§4.6 ops activation** (~10 min, Vercel dashboard): Sentry DSN (B2), `CRON_SECRET`
+   (B4), Blob store (B5); then one redeploy. This is what stands between the repo and
+   inviting the first testers.
+2. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min) before the first tester
+   invite — the desk check validated the document, not the operator's muscle memory.
 3. **P10.3** — Shared rate-limit store (Upstash Redis or Postgres token bucket, Backlog
    #21): back `getRateLimiter` with it so limits hold across serverless instances; the k6
-   Apdex gate is meaningless until this lands.
+   Apdex gate is meaningless until this lands. Required before any **open** (non-invite)
+   signup.
 4. **P10.4** — CI gates: Lighthouse CWV budgets (TENANT_GUARDRAIL §3.2), k6 Apdex ≥ 0.85 @
    T=300 ms (§3.4 scenarios), `@axe-core/playwright` on the 10 core screens (dark-theme
-   contrast!).
-5. **Ops carry-overs** — RLS cutover (`docs/rls-cutover.md`); `CRON_SECRET` in Vercel for
-   the payout cron; Stripe test keys when ready (DEV_TIMELINE P8 honest-status checklist);
-   `BLOB_READ_WRITE_TOKEN` for real image storage.
+   contrast!) — these are the formal alpha *exit* checklist.
+5. **Ops carry-overs** — RLS cutover (`docs/rls-cutover.md`); Stripe test keys when ready
+   (§4.6 step 4); alpha-cosmetic caveats from §4.5: hide/label the mock Live Analytics
+   rail and the decorative global search box.
 
 ---
 
@@ -442,11 +469,13 @@ servers or logs.
 **Security gate:** every admin action is audited with the actor id; admin reads of private
 messages are logged as moderation events; no admin surface is reachable by any non-ADMIN role.
 
-### P10 — PWA, performance & alpha gate (≈3–4 d) — ☐ not started
-- ☐ **P10.1** `manifest.webmanifest` (AfterDark, standalone, theme `#121212`, maskable icons).
-- ☐ **P10.2** Serwist service worker: precache shell/static, network-first APIs, offline
-  fallback. **Never cache authed API responses; purge caches on logout** (§6.6) — test:
-  logout → offline → no PII retrievable from cache.
+### P10 — PWA, performance & alpha gate (≈3–4 d) — ◐ P10.1–P10.2 landed 2026-07-31
+- ☑ **P10.1** `manifest.webmanifest` (AfterDark, standalone, theme `#121212`, maskable icons —
+  generated deterministically via `yarn pwa:icons`, committed under `public/icons/`).
+- ☑ **P10.2** Service worker: precache shell/static, network-only APIs + navigations, offline
+  fallback. **Never cache authed API responses; purge caches on logout** (§6.6) — encoded as
+  behavioral tests (`test/service-worker.test.ts`) plus the manual TESTING.md §9 procedure.
+  *Shipped hand-written/dependency-free instead of Serwist — rationale in §4.6's note.*
 - ☐ **P10.3** Shared rate-limit store (Upstash or a Postgres token bucket, Backlog #21) — the
   in-memory limiter is per-instance, which makes the Apdex gate meaningless until this lands.
 - ☐ **P10.4** Gates in CI: Lighthouse CWV budgets, k6 Apdex ≥ 0.85 @ T=300 ms
@@ -482,6 +511,9 @@ Items noted during the audit that are **not** required for the alpha gate but mu
 > **2026-07-31:** every item below was re-evaluated for alpha necessity — verdicts and
 > reasoning in §4.5. Three items changed status: #10 (partially alpha-blocking), #16
 > (recommended before distribution), #21 (conditional on signup model).
+> **Later the same day:** every open item was assigned to a post-alpha development slice —
+> the slice plan, ordering rationale (security → functionality → modularity), and
+> dependency graph live in **§5**.
 
 1. **Map view** (browse pins + gig-detail map, wireframe p2/p4) — needs geocoding + lat/lng on
    gigs; consider MapLibre + OSM tiles to avoid key management.
@@ -614,7 +646,7 @@ else can trail it.
 | PWA surface | ❌ confirmed absent — `public/` contains only `favicon.png`; no manifest, no service worker |
 | Rate limiter | in-memory `Map` per instance (`rate-limit.ts`) — P10.3 confirmed outstanding |
 | Stripe | key-gated as documented (`stripe.ts` checks `STRIPE_SECRET_KEY`); no keys configured |
-| Payout cron | `vercel.json` schedules `/api/payouts/release` hourly — inert until `CRON_SECRET` is set in Vercel |
+| Payout cron | `vercel.json` schedules `/api/payouts/release` (hourly at assessment time; daily since 2026-07-31 — the hourly schedule was itself failing every Vercel deploy, §4.6 cron note) — inert until `CRON_SECRET` is set in Vercel |
 | RLS cutover | `withRlsContext` exists only in `rls.ts`, wired into **zero** routes — production still connects as owner, as documented |
 | Retention purge job (G7) | ❌ absent — `docs/retention.md` exists, no purge script or cron |
 | Incident runbook (G9) | ❌ absent — `docs/` has only `retention.md`, `rls-cutover.md`, `ropa.md` |
@@ -631,15 +663,20 @@ bypassed, lint reports 0 warnings, so CI goes green immediately.
 
 ### 4.3 Blockers before distributing to alpha testers
 
-| # | Item | Why it blocks | Cost |
+> **Status update 2026-07-31 (alpha punch-list session):** every item that can be closed
+> from the repo is closed — B1, B3, B6, B7 ✅. B2/B4/B5 are Vercel-dashboard operations
+> involving secrets, so they are prepared but must be executed by the operator: exact
+> steps in **§4.6** (~10 minutes total).
+
+| # | Item | Why it blocks | Status (2026-07-31) |
 |---|---|---|---|
-| B1 | **Restore the CI gate**: delete `anything/.eslintignore` | `main` is currently unprotected — tests/build don't run on merges; docs claiming "CI green" are false as of PR #8 | 1-line PR |
-| B2 | **Error tracking on**: set `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` in Vercel | Distributing to testers with zero crash visibility wastes the alpha — every bug becomes a support conversation instead of a stack trace. The PII-scrubbed pipeline is already built (Backlog #19); it is a no-op without a DSN | minutes (ops) |
-| B3 | **Decide the payments story**: set test-mode `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` (P8 honest-status checklist) **or** explicitly brief testers that payouts are simulated | The alpha loop is defined with "(sandbox) Stripe Connect escrow payout". Without keys the ledger advances but no money moves — testers will report "I never got paid" as a bug unless told | hours (ops + TESTING.md §10 pass) |
-| B4 | **Set `CRON_SECRET`** in Vercel | The 24 h escrow release never fires — HELD payouts accumulate until an admin releases manually; talent-facing "pending payout" numbers go stale | minutes (ops) |
-| B5 | **Set `BLOB_READ_WRITE_TOKEN`** in Vercel | Without it every tester photo/attachment is stored inline in Postgres as a data URL — re-creating the base64-PII-in-DB problem P4 was built to close (EXIF is stripped either way, but storage/bloat/egress are wrong) | minutes (ops) |
-| B6 | **PWA decision**: build P10.1–P10.2 (~2 d) **or** amend the alpha definition to "responsive web app" and defer PWA | The alpha is *defined* as "deployable PWA" and the PRD targets one; nothing PWA exists. Shipping testers a plain web app is fine — silently calling it the PWA alpha is not | decision + 0–2 d |
-| B7 | **G9 incident runbook** (`docs/incident-runbook.md`) | The 72 h GDPR breach-notification duty applies *now* (real signups exist); alpha adds testers' PII. A tabletop-tested one-pager satisfies it | ~half day (doc) |
+| B1 | **Restore the CI gate**: delete `anything/.eslintignore` | `main` is currently unprotected — tests/build don't run on merges; docs claiming "CI green" are false as of PR #8 | ✅ **done** — file deleted; lint verified 0 warnings on real files; watch this PR's CI run for the green proof |
+| B2 | **Error tracking on**: set `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` in Vercel | Distributing to testers with zero crash visibility wastes the alpha — every bug becomes a support conversation instead of a stack trace. The PII-scrubbed pipeline is already built (Backlog #19); it is a no-op without a DSN | ◻ **ops** — §4.6 step 1 |
+| B3 | **Decide the payments story**: set test-mode Stripe keys **or** explicitly brief testers that payouts are simulated | The alpha loop is defined with "(sandbox) Stripe Connect escrow payout". Without keys the ledger advances but no money moves — testers will report "I never got paid" as a bug unless told | ✅ **done via the briefing arm** — verbatim tester briefing in TESTING.md §2.1; in-app legal pages already agree (`ALPHA_NOTICE`). Test-mode keys remain optional (§4.6 step 4 when ready) |
+| B4 | **Set `CRON_SECRET`** in Vercel | The 24 h escrow release never fires — HELD payouts accumulate until an admin releases manually; talent-facing "pending payout" numbers go stale | ◻ **ops** — §4.6 step 2 |
+| B5 | **Set `BLOB_READ_WRITE_TOKEN`** in Vercel | Without it every tester photo/attachment is stored inline in Postgres as a data URL — re-creating the base64-PII-in-DB problem P4 was built to close (EXIF is stripped either way, but storage/bloat/egress are wrong) | ◻ **ops** — §4.6 step 3 |
+| B6 | **PWA decision**: build P10.1–P10.2 (~2 d) **or** amend the alpha definition to "responsive web app" and defer PWA | The alpha is *defined* as "deployable PWA" and the PRD targets one; nothing PWA exists. Shipping testers a plain web app is fine — silently calling it the PWA alpha is not | ✅ **done — built** (P10.1 + P10.2, 2026-07-31): manifest + generated maskable icon set (`yarn pwa:icons`), dependency-free `public/sw.js` with the §6.6 contract (never intercepts `/api`, navigations network-only, offline fallback, purge on logout), `worker-src 'self'` CSP, 22 new tests; manual procedure TESTING.md §9. Deviation noted: hand-written worker instead of Serwist (§4.6 note) |
+| B7 | **G9 incident runbook** (`docs/incident-runbook.md`) | The 72 h GDPR breach-notification duty applies *now* (real signups exist); alpha adds testers' PII. A tabletop-tested one-pager satisfies it | ✅ **done** — runbook v1.0 with contact tree, 72 h drill, tabletop script + log (AI desk-check run recorded; a human-run tabletop is still owed before the first invite), legal-hold added to `retention.md` §5 |
 
 ### 4.4 Required for the formal alpha *exit* gate, but not for starting a closed alpha
 
@@ -658,7 +695,8 @@ bypassed, lint reports 0 warnings, so CI goes green immediately.
 - **Doc hygiene**: §1 of this file still contains stale P0-era lines (e.g. "New env var:
   `AUTH_SECRET_ENCRYPTION_KEY` is now **required**" — obsolete since migration 0005, and a
   "Still UI-with-mock-data" list describing pre-P3 reality). Anyone assessing state from §1
-  alone is misled; prune on the next status update.
+  alone is misled; prune on the next status update. *(Pruned 2026-07-31 — collapsed into a
+  historical-note line.)*
 
 ### 4.5 Technical Backlog re-evaluation (necessary for alpha?)
 
@@ -697,3 +735,239 @@ bypassed, lint reports 0 warnings, so CI goes green immediately.
 fix; hide-or-label the mock Live Analytics rail (#6 caveat); hide-or-stub the decorative
 global search box (#7 caveat); prune the stale §1 status lines (§4.4); G9 incident runbook
 (B7).
+
+### 4.6 Ops activation runbook — B2/B4/B5 (added 2026-07-31; ~10 min in the Vercel dashboard)
+
+These involve provisioning or pasting secrets, so they are operator steps by design. All
+code paths are already shipped and no-op safely until the values exist. Order doesn't
+matter; redeploy once at the end (env changes apply to *new* deployments only).
+
+1. **B2 — Sentry.** Create (or reuse) a Sentry project (platform: Next.js) and copy its
+   DSN. Vercel → Project → Settings → Environment Variables: add `SENTRY_DSN` **and**
+   `NEXT_PUBLIC_SENTRY_DSN` (same value) for Production + Preview. Nothing else to wire:
+   the CSP adds the ingest origin to `connect-src` automatically, and every event passes
+   the tested PII scrubber (`src/lib/sentry-scrub.ts`). Verify: throw from a preview page,
+   see the event in Sentry with cookies/headers absent.
+2. **B4 — `CRON_SECRET`.** Generate locally (`openssl rand -base64 32`) and add as
+   `CRON_SECRET` (Production). Vercel Cron automatically sends it as the bearer token on
+   the scheduled `GET /api/payouts/release` (in `vercel.json`, **daily 09:00 UTC** — see
+   the cron note below). Verify: the next scheduled run logs 200, or curl the route with
+   `Authorization: Bearer <value>`.
+
+> **Cron schedule note (2026-07-31).** The cron shipped hourly (`0 * * * *`) in P8 — and
+> that is exactly when Vercel deployments started failing: **Hobby-plan projects reject
+> any deployment declaring a sub-daily cron**, a deploy-time validation error GitHub CI
+> never sees (it doesn't read `vercel.json`). Every deploy from the P3–P8 merge
+> (`aa94e60`) onward failed, leaving production serving the P2-era build. Schedule is now
+> `0 9 * * *` (daily, after NYC nights end): the release route itself enforces the ≥24 h
+> escrow window, so payouts release 24–48 h post-checkout, and an ADMIN session can
+> release manually anytime. If the project moves to Vercel Pro, restore `0 * * * *`.
+3. **B5 — Blob storage.** Vercel → Storage → Create Database → **Blob** → connect to this
+   project (Production + Preview): Vercel injects `BLOB_READ_WRITE_TOKEN` itself — no
+   manual token handling. Verify: upload a profile photo, its URL should be on
+   `*.public.blob.vercel-storage.com`, not a `data:` URL.
+4. **(Optional, upgrades B3) Stripe test mode.** When ready to exercise real test-mode
+   money: create the Stripe platform account → set `STRIPE_SECRET_KEY` +
+   `STRIPE_WEBHOOK_SECRET` (test mode) → register the webhook endpoint
+   (`/api/stripe/webhook`) → run the TESTING.md §10 Stripe addendum → re-brief testers
+   per TESTING.md §2.1 note (1).
+
+> **P10.2 implementation note (deviation from the plan's "Serwist"):** the service worker
+> shipped hand-written and dependency-free (~100 lines, `public/sw.js`) rather than on
+> Serwist. Rationale: the §6.6 contract here is mostly *negative* (never cache `/api`,
+> never cache session HTML) — a tiny explicit worker makes those guarantees auditable and
+> directly testable (`test/service-worker.test.ts` drives the real file in a sandbox),
+> and it avoids coupling the build to bundler-integration churn. If precache manifests of
+> hashed assets ever become necessary, migrate to Serwist then.
+
+---
+
+## 5. Backlog Development Slices — 2026-07-31
+
+> Every **open** Technical Backlog item (§3) and carry-over, divided into shippable slices.
+> Optimization order, applied in this priority: **security** (debt and exposure first),
+> then **functionality** (user-visible value in cohesion groups), then **modularity**
+> (each slice owns its tables/files; parallel tracks share nothing; infra swaps hide
+> behind existing interfaces). The §2.0 definition of done and §2.1 sizing rules
+> (≤ ~3 days, independently shippable, revertable) apply to every slice unchanged.
+
+### Security wave (do first, in this order)
+
+**S1 — Serverless security spine (~2–3 d)** — Backlog #21, #16 + credential hygiene
+- Shared rate-limit store (P10.3): back `getRateLimiter` with Upstash Redis or a Postgres
+  token bucket **behind the existing interface** (call sites untouched; in-memory stays as
+  the dev/test fallback). Per-instance limits are no limits on serverless fan-out.
+- Embed lockdown (#16): `frame-ancestors 'self'` (create.xyz origins become env-gated
+  opt-in, off by default), and revisit platform-wide `SameSite=None` → `Lax` now that the
+  builder pathway is dead weight.
+- Rotate the committed shared preview credentials (TESTING.md §2 warning) — generated
+  per-environment, not in git.
+- *Security gate:* k6 auth burst across ≥2 instances holds 429s; clickjacking probe
+  blocked; gitleaks finds no credentials.
+
+**S2 — RLS cutover + retention purge (~2–3 d)** — Backlog #25 + G7 — *parallel with S1
+(no shared files)*
+- Production cutover exactly per `docs/rls-cutover.md`: create the least-privilege role,
+  wire `withRlsContext` into the five RLS-governed routes (no-op while owner-connected),
+  flip `DATABASE_URL`, re-run verify.
+- G7 retention purge job: a `CRON_SECRET`-authed endpoint on the daily cron (Hobby-compatible),
+  purging per `docs/retention.md` §1, **honoring §5 legal holds**; every purge audited.
+- *Security gate:* `yarn db:verify-rls` green against the production role; purge-with-hold
+  test green; purge writes audit rows.
+
+**S3 — Media pipeline completion (~2 d)** — Backlog #10 remainder — *needs B5 (Blob token)*
+- Backfill pre-P4 base64 rows into Blob; delete the inline-data-URL read path after.
+- Tighten CSP `img-src` from `https:` to `'self' blob:` + the Blob host.
+- AV-scanning stance: images stay inert (sharp re-encode); messages remain image-only
+  until an AV step exists — document, don't widen.
+- *Security gate:* zero `data:` rows remain; G11 egress audit re-run; CSP pinned.
+
+**P10.4 (not backlog, the alpha exit gate) slots here** — after S1, because the k6 Apdex
+numbers are meaningless until rate limits are shared. Lighthouse budgets + k6 scenarios +
+axe smoke on the 10 screens, all in CI. The a11y **deep** pass (#13 — keyboard calendar,
+contrast sweep, reduced-motion) is a follow-on slice once the axe baseline exists.
+
+### Functionality wave (cohesion-grouped; parallel tracks marked)
+
+**S4 — Honest-alpha cosmetics (~1 d)** — §4.5 caveats — *anytime, even before S1*
+- Label/hide the mock "Live Analytics" rail (until S7 makes it real); hide or stub the
+  decorative global-search box (until S5); venue "Gig Calendar" page wired to
+  `/api/venue/gigs` or dropped; minimal "account suspended" page.
+
+**S5 — Search & discovery (~3–4 d)** — Backlog #7, #27, #28 — *one slice because all
+three live in `gigs-query.ts`/`talent-query.ts` + browse UIs (modularity by cohesion)*
+- `/api/search` on Postgres FTS (gigs title/description + talent stage-name/bio public
+  columns only), wired to the top bar; multi-value filters via `= ANY($n)`; availability
+  boost in browse ordering.
+- *Security gate:* `plainto_tsquery` only (no raw tsquery injection), public-column
+  projection, rate-limited, authZ-matrix rows on day one.
+
+**S6 — Events & real venue KPIs (~2–3 d)** — Backlog #14
+- Append-only `events` table + `track()` helper; un-mute avg-time-to-hire and
+  filling-rate trends from real aggregates. No PII in payloads; RLS policy in-file.
+
+**S7 — Matching engine (~3 d)** — Backlog #6 — *after S6 (reads its aggregates); replaces
+the S4 placeholder*
+- Real create-gig "Live Analysis": candidate counts from availabilities × role × rate
+  overlap; pricing hint from published-gig percentiles. Aggregate/public data only
+  pre-hire.
+
+**S8 — Trust & reviews (~4–5 d)** — Backlog #8 — *own slice: new user-content tables =
+own blast radius*
+- `reviews` (shift-scoped: counterparties only, post-CHECKED_OUT, one per direction),
+  venue rating aggregation, talent trust-score v1; ID-verification = vendor decision doc
+  only.
+- *Security gate:* XSS-inert rendering, write-gated to real counterparties, rate-limited,
+  report-to-triage wired, scores computed server-side.
+
+**S9 — Realtime & push (~4–5 d)** — Backlog #5 — *transport swap hidden behind existing
+TanStack Query keys*
+- SSE for messages/live-ops (replaces 5 s polling); Web Push opt-in for Hot Tonight
+  (extends `sw.js` — push handler must not cache; §6.6 tests extended; needs VAPID keys
+  ops).
+- *Security gate:* SSE authed per-connection; push payloads are id-only (fetch on open).
+
+**S10 — Map view (~2–3 d)** — Backlog #1 — *independent; parallel with S5+*
+- `lat/lng` migration, geocode-on-create, MapLibre + OSM tiles (no key management).
+- *Security gate:* geocoding is the app's **first server-side fetch of user-influenced
+  input — build the A10 SSRF guard here** (allowlist, private-range deny, timeouts);
+  #2's integrations will reuse it.
+
+### Modularity / platform wave (opportunistic — schedule into gaps)
+
+**S11 — Deploy & repo hygiene** — Backlog #23, #4→#24, #9
+- `installCommand: yarn workspaces focus web` (#23; verify on a preview first).
+- Mobile decision (#4: PWA-only vs Expo) — a product call; **then** #24 (flatten
+  `anything/`, which also removes the Vercel Root Directory footgun) in the shape that
+  decision dictates. #9 (`revalidateTag` no-op): close as moot-on-Vercel with a decision
+  note unless ISR is ever adopted.
+
+### Parked (blocked on definitions external to the repo)
+
+- **#2 external calendar/ticketing** and **#3 promoter payment triangle** — need product
+  definition first; both inherit the S10 SSRF guard and (for #3) a payments-grade
+  review like P8's.
+- **#26 GA legal track** — counsel review, executed DPAs (G10), DPIA (G13): external,
+  runs parallel to any slice, gates **GA** not development.
+
+Rough serial total: **~4–5 focused weeks** for S1–S10; the dependency chart below cuts it
+to ~3 when the parallel tracks run concurrently. First tester feedback should be allowed
+to reorder the functionality wave — the security wave is not negotiable.
+
+### Logic dependency chart
+
+Boxes in the same wave with no connecting edge are **mutually parallel** (they share no
+tables or files). Dashed edges are replacements, not build dependencies.
+
+```mermaid
+flowchart TD
+    subgraph SEC["Security wave — first, non-negotiable"]
+        S1["S1 · shared rate limits<br/>+ embed lockdown + credential rotation"]
+        S2["S2 · RLS cutover<br/>+ G7 retention purge"]
+        S3["S3 · media completion<br/>(base64 backfill → CSP pin)"]
+    end
+
+    subgraph FUN["Functionality wave — cohesion-grouped"]
+        S4["S4 · honest-alpha cosmetics (~1 d)"]
+        S5["S5 · search + multi-filters<br/>+ availability boost"]
+        S6["S6 · events table → real venue KPIs"]
+        S7["S7 · matching engine<br/>(real Live Analytics)"]
+        S8["S8 · reviews & trust score"]
+        S9["S9 · SSE + Web Push"]
+        S10["S10 · map view<br/>(builds the A10 SSRF guard)"]
+    end
+
+    subgraph PLAT["Platform wave — opportunistic"]
+        S11["S11 · install scoping · #9 closure"]
+        M4["#4 mobile decision"] --> M24["#24 repo flatten"]
+    end
+
+    OPS[("B5 Blob token<br/>(operator step, §4.6)")] --> S3
+    S1 --> P104["P10.4 · Lighthouse / k6 / axe CI gates"]
+    P104 --> EXIT(["alpha exit gate / open signup"])
+    EXIT -.able to reorder FUN.-> S9
+
+    S6 --> S7
+    S4 -.placeholder replaced by.-> S7
+    S4 -.stub replaced by.-> S5
+
+    S10 -- "A10 guard reused by" --> PARKED["parked: #2 calendar/ticketing · #3 promoter<br/>(need product definition first)"]
+    LEGAL["#26 legal track · counsel / DPAs / DPIA<br/>(runs parallel to everything)"] --> GA(["GA gate"])
+```
+
+---
+
+## 6. Environment Variables — 2026-07-31
+
+> The complete env contract, cross-checked against `apps/web/.env.example` and every
+> `process.env.*` read in `src/` + `scripts/`. "Sensitive" = store as a **Sensitive**
+> (encrypted, never client-exposed) variable in Vercel and never commit or log it;
+> "Public" = shipped to the browser bundle (`NEXT_PUBLIC_*`) or non-secret config — safe
+> in logs, still managed via env. Set everything for **Production + Preview** unless
+> noted. Env changes only apply to *new* deployments — redeploy after editing.
+
+| Env Variable | Where/How to find it | How to rotate | How often to rotate | Use | Sensitive or Public |
+|---|---|---|---|---|---|
+| `DATABASE_URL` | Neon console → project `after-dark` → Connect → **pooled** string (`…-pooler…?sslmode=require`). Read by `api/utils/sql.ts`, `scripts/migrate.mjs`, seed/preview scripts | Neon console → Roles → reset password (or switch to the least-privilege role per `docs/rls-cutover.md`, slice S2) → update Vercel env → redeploy | On compromise or staff change; changes once at the S2 RLS cutover | Every DB read/write | **Sensitive** |
+| `BETTER_AUTH_SECRET` | Generate: `openssl rand -base64 32`. Read by `src/lib/auth.ts` | New value → Vercel env → redeploy. ⚠ Invalidates **every session and every 2FA enrollment** (users re-enroll) | Only on compromise (P1 incident, see `docs/incident-runbook.md` §3) — deliberately not routine because of the 2FA cost | Signs session cookies **and** encrypts 2FA TOTP secrets/backup codes at rest | **Sensitive** |
+| `BETTER_AUTH_URL` | The canonical app origin (production domain; `http://localhost:4000` locally). Read by `auth.ts` as a trusted origin | Change only on domain move | n/a | CSRF trusted-origin + canonical URL | Public |
+| `CRON_SECRET` | Generate + set without shell echo: `openssl rand -hex 32 \| tr -d '\n' \| vercel env add CRON_SECRET production`. Read by `/api/payouts/release`; Vercel Cron sends it as the bearer automatically | Same command with `vercel env rm CRON_SECRET production` first; redeploy (cron picks up the new value on the next run) | ~Quarterly, or on leak | Authenticates the scheduled escrow-release cron (daily 09:00 UTC, `vercel.json`) | **Sensitive** |
+| `BLOB_READ_WRITE_TOKEN` | **Injected by Vercel** when the Blob store is connected (Dashboard → Storage → Blob → Connect Project); locally via `vercel env pull`. Read by `api/utils/media.ts` (`@vercel/blob`) | Vercel Dashboard → the store → Tokens → cycle (or disconnect/reconnect the project) | On leak; otherwise Vercel-managed | P4 media storage — uploaded images land in Blob instead of inline `data:` URLs in Postgres | **Sensitive** |
+| `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | Sentry → Project Settings → Client Keys (DSN); same value in both. Read by `instrumentation.ts` / `instrumentation-client.ts`; the public one is client-bundled and its origin auto-joins CSP `connect-src` (`security-headers.js`) | Sentry → Client Keys → revoke key + create new → update both vars | Only on abuse (DSNs are designed to be client-visible ingest addresses) | Error tracking (server/edge + browser); all events pass `src/lib/sentry-scrub.ts` | Public by design (low sensitivity — don't advertise, but not a secret) |
+| `STRIPE_SECRET_KEY` | Stripe Dashboard → Developers → API keys. **Use `sk_test_…` until GA.** Read by `src/lib/stripe.ts` — its absence 503-gates the whole `/api/stripe/*` surface | Stripe Dashboard → roll key (supports overlap window) → update env → redeploy | On compromise or staff change; Stripe supports scheduled rolls | Stripe Connect onboarding + transfers (P8) | **Sensitive** (highest — money) |
+| `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard → Webhooks → endpoint for `/api/stripe/webhook` → signing secret (`whsec_…`); locally from `stripe listen`. Read by the webhook route (`constructEventAsync`) | Roll the endpoint's signing secret in the dashboard → update env | When rotating the endpoint or on compromise | Webhook signature verification + replay guard | **Sensitive** |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client. Read by `auth.ts` (social sign-in self-activates when both are set) | Console supports two active secrets: add new → deploy → delete old (zero-downtime) | Secret: on compromise (no expiry) | Google sign-in | ID: Public · Secret: **Sensitive** |
+| `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET` / `APPLE_APP_BUNDLE_IDENTIFIER` | Apple Developer portal → Certificates, IDs & Profiles → Services ID. The client secret is a **self-signed JWT generated from your `.p8` key, valid ≤ 6 months** | Regenerate the JWT from the `.p8` signing key → update env | **≤ every 6 months — hard expiry** (calendar it; sign-in breaks silently when it lapses) | Apple sign-in | IDs: Public · Secret: **Sensitive** |
+| `NEXT_PUBLIC_CREATE_BASE_URL` / `NEXT_PUBLIC_CREATE_HOST` / `NEXT_PUBLIC_CREATE_ENV` / `NEXT_PUBLIC_PROJECT_GROUP_ID` / `NEXT_PUBLIC_CREATE_AUTH_PROVIDERS` | create.xyz platform values (inherited from the export). Read by `security-headers.js` (frame-ancestors/connect-src) and platform glue | n/a — config, not credentials | n/a — slice **S1 makes them off-by-default** (builder embed becomes opt-in) | create.xyz builder iframe embedding + CSP origins | Public (client-bundled) |
+| `EXPO_PUBLIC_PROXY_BASE_URL` | Mobile auth-bridge base URL (unused until the Backlog #4 decision) | n/a | n/a | Expo scaffold auth bridge | Public |
+| `VERCEL_URL` / `VERCEL_BRANCH_URL` / `VERCEL_PROJECT_PRODUCTION_URL` / `VERCEL_ENV` | **System-injected by Vercel** — nothing to set; requires "Automatically expose System Environment Variables" (on by default). Read by `src/lib/deployment-origins.ts` (preview-deploy trusted origins) and Sentry env tagging | n/a | n/a | Per-deploy trusted origins so preview sign-in passes CSRF | Public |
+| `RLS_URL` / `OWNER_URL` | Two connection strings for a **disposable Neon branch**, passed inline when running `yarn db:verify-rls` (`scripts/verify-rls.mjs`). Never set in Vercel | Delete the branch after the run | Ephemeral per run | RLS verification harness (never against prod) | **Sensitive** (but ephemeral, local-only) |
+| `FORCE_SEED` | Manual flag for `scripts/seed.ts` (which refuses prod without it). Never set in Vercel | n/a | n/a | Seed-script safety interlock | Public (a flag, not a secret) |
+| `AUTH_SECRET_ENCRYPTION_KEY` | **Obsolete** since migration 0005 (hand-rolled 2FA replaced by the better-auth twoFactor plugin). Harmless if still set — delete on sight | Delete, don't rotate | n/a | None (legacy) | — |
+
+**House rules:** secrets enter Vercel via piped stdin (`… \| vercel env add NAME production`)
+or the dashboard's Sensitive type — never shell args (history), never `NEXT_PUBLIC_*`,
+never logged (`api/utils/logger.ts` redacts, but don't test it). Local dev uses
+`.env.local` (gitignored; `vercel env pull` syncs it). Any **new** variable must be added
+to `apps/web/.env.example` *and* this table in the same PR — they are the same contract in
+two audiences.

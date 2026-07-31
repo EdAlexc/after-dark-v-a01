@@ -14,3 +14,6 @@ next-env.d.ts
 
 # TypeScript
 *.tsbuildinfo
+
+# Vercel CLI link state (machine-local)
+.vercel

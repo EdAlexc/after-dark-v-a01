@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
+import { purgeSwCaches } from '@/lib/pwa';
 
 function LogoutHandler() {
   const searchParams = useSearchParams();
@@ -12,6 +13,9 @@ function LogoutHandler() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      // §6.6: purge service-worker caches on logout, before the session ends,
+      // so nothing cached survives into the next user's session on this device.
+      await purgeSwCaches();
       const { error: signOutError } = await authClient.signOut();
       if (cancelled) return;
       if (signOutError) {

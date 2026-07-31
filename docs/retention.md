@@ -58,3 +58,11 @@ than deleted).
    Vercel configuration needs to be checked against it and recorded here.
 3. **Backups.** Neon's point-in-time recovery window means deleted rows persist in backups for
    the recovery period. Document the window and state it in the privacy policy before GA.
+
+## 5. Legal hold
+
+Every schedule above is **suspended for data relevant to an active incident investigation
+or legal claim** (see [`incident-runbook.md`](incident-runbook.md) §3 "Preserve evidence"):
+do not purge, rotate away, or "clean up" logs, audit rows, or snapshots tied to an open
+incident until its log entry is closed. The hold is scoped — everything unrelated keeps its
+normal schedule.
