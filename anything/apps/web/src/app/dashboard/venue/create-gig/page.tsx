@@ -156,6 +156,7 @@ export default function CreateGigPage() {
   const [equipmentOpen, setEquipmentOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [form, setForm] = useState<GigFormData>({
     title: '',
     role_needed: '',
@@ -208,6 +209,7 @@ export default function CreateGigPage() {
         }),
       });
       if (!res.ok) throw new Error('Failed to save');
+      setLastSavedAt(new Date());
       toast.success('Draft saved!');
     } catch {
       toast.error('Could not save draft');
@@ -247,7 +249,7 @@ export default function CreateGigPage() {
 
   return (
     <div className="min-h-screen bg-[#121212] text-white flex font-sans pt-14 md:pt-0">
-      <DashboardSidebar role="venue" userName="Nebula NYC" />
+      <DashboardSidebar role="venue" />
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
@@ -655,8 +657,13 @@ export default function CreateGigPage() {
                 <span className="text-xs font-bold uppercase tracking-widest text-white/40">
                   Live Analysis
                 </span>
-                <Zap className="w-3.5 h-3.5 text-[#00FFCC] fill-current" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-yellow-400/80 bg-yellow-400/10 border border-yellow-400/20 rounded-full px-2 py-0.5">
+                  Sample data
+                </span>
               </div>
+              <p className="text-[11px] text-white/30 mb-3 leading-relaxed">
+                Illustrative preview — real candidate matching is coming soon.
+              </p>
               <div className="flex items-center gap-4 py-3 px-4 rounded-xl bg-[#00FFCC]/5 border border-[#00FFCC]/15">
                 <div className="w-12 h-12 rounded-xl bg-[#00FFCC]/15 flex items-center justify-center flex-shrink-0">
                   <Users className="w-6 h-6 text-[#00FFCC]" />
@@ -769,9 +776,12 @@ export default function CreateGigPage() {
               <Save className="w-3.5 h-3.5" />
               {saving ? 'Saving…' : 'Save Draft'}
             </Button>
-            <span className="text-[11px] text-white/20 hidden sm:block">
-              ✓ Auto-saved 2 min ago
-            </span>
+            {lastSavedAt && (
+              <span className="text-[11px] text-white/20 hidden sm:block">
+                ✓ Draft saved{' '}
+                {lastSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

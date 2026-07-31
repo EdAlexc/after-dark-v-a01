@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
-  Bell,
   PlusCircle,
   Users,
   Clock,
@@ -15,31 +14,29 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import { NotificationsBell } from '@/components/NotificationsBell';
 import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type GigStatus = 'DRAFT' | 'PUBLISHED' | 'FILLED' | 'COMPLETED' | 'CANCELLED';
 
-interface GigEvent {
+/** Shape served by GET /api/venue/gigs (P1.3). */
+interface ApiGig {
   id: number;
   title: string;
-  role: string;
-  time: string;
-  rate: string;
-  applicants: number;
-  hired?: string;
+  role_needed: string;
+  start_time: string | null;
+  end_time: string | null;
+  base_rate: string | number | null;
+  tips_included: boolean | null;
   status: GigStatus;
-}
-
-interface DayGigs {
-  gigs: GigEvent[];
-}
-
-interface GigCalendar {
-  [dayKey: string]: DayGigs;
+  applicant_count: number;
+  shortlisted_count: number;
+  pending_count: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -84,191 +81,65 @@ const MONTH_NAMES = [
 ];
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function firstDayOfMonth(year: number, month: number): number {
-  const m = month === 0 ? 13 : month === 1 ? 14 : month + 1;
-  const y = month < 2 ? year - 1 : year;
-  const k = y % 100;
-  const j = Math.floor(y / 100);
-  const h =
-    (1 + Math.floor((13 * (m + 1)) / 5) + k + Math.floor(k / 4) + Math.floor(j / 4) - 2 * j) % 7;
-  return (h + 6) % 7;
-}
-
-function daysInMonth(year: number, month: number): number {
-  const days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  if (month === 1) {
-    const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-    return isLeap ? 29 : 28;
-  }
-  return days[month];
-}
-
 function buildKey(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-// ─── Mock gig calendar ────────────────────────────────────────────────────────
+/** Local-date key for a gig's start time (calendar is in the viewer's zone). */
+function dayKeyOf(iso: string): string {
+  const d = new Date(iso);
+  return buildKey(d.getFullYear(), d.getMonth(), d.getDate());
+}
 
-const INITIAL_GIGS: GigCalendar = {
-  '2026-07-17': {
-    gigs: [
-      {
-        id: 1,
-        title: 'Rooftop Happy Hour DJ',
-        role: 'DJ',
-        time: '5PM–9PM',
-        rate: '$100/hr',
-        applicants: 3,
-        status: 'DRAFT',
-      },
-    ],
-  },
-  '2026-07-18': {
-    gigs: [
-      {
-        id: 2,
-        title: 'House Night Opener',
-        role: 'DJ / Producer',
-        time: '10PM–1AM',
-        rate: '$120/hr',
-        applicants: 8,
-        hired: 'Marcus Lee',
-        status: 'FILLED',
-      },
-      {
-        id: 3,
-        title: 'VIP Lounge Mixologist',
-        role: 'Mixologist',
-        time: '8PM–2AM',
-        rate: '$65/hr + Tips',
-        applicants: 6,
-        hired: 'Sophia Cruz',
-        status: 'FILLED',
-      },
-    ],
-  },
-  '2026-07-19': {
-    gigs: [
-      {
-        id: 4,
-        title: 'Closing Set – Main Room',
-        role: 'DJ / Producer',
-        time: '2AM–6AM',
-        rate: '$180/hr',
-        applicants: 14,
-        status: 'PUBLISHED',
-      },
-      {
-        id: 5,
-        title: 'Door / Security Lead',
-        role: 'Security',
-        time: '9PM–4AM',
-        rate: '$45/hr',
-        applicants: 22,
-        hired: 'James Rivera',
-        status: 'FILLED',
-      },
-      {
-        id: 6,
-        title: 'Event Host / MC',
-        role: 'Host / MC',
-        time: '9PM–3AM',
-        rate: '$90/hr',
-        applicants: 9,
-        status: 'PUBLISHED',
-      },
-    ],
-  },
-  '2026-07-24': {
-    gigs: [
-      {
-        id: 7,
-        title: 'Friday Deep House Night',
-        role: 'DJ',
-        time: '10PM–3AM',
-        rate: '$150/hr',
-        applicants: 5,
-        status: 'PUBLISHED',
-      },
-    ],
-  },
-  '2026-07-25': {
-    gigs: [
-      {
-        id: 8,
-        title: 'Saturday Techno Closing',
-        role: 'DJ / Producer',
-        time: '2AM–6AM',
-        rate: '$200/hr',
-        applicants: 11,
-        status: 'PUBLISHED',
-      },
-      {
-        id: 9,
-        title: 'Weekend Bartender',
-        role: 'Bartender',
-        time: '7PM–3AM',
-        rate: '$55/hr + Tips',
-        applicants: 4,
-        status: 'DRAFT',
-      },
-    ],
-  },
-  '2026-07-10': {
-    gigs: [
-      {
-        id: 10,
-        title: 'Afrobeats Friday',
-        role: 'DJ',
-        time: '9PM–2AM',
-        rate: '$130/hr',
-        applicants: 7,
-        hired: 'DJ Kira Voss',
-        status: 'COMPLETED',
-      },
-    ],
-  },
-  '2026-07-11': {
-    gigs: [
-      {
-        id: 11,
-        title: 'Latin Night',
-        role: 'DJ / Producer',
-        time: '10PM–4AM',
-        rate: '$140/hr',
-        applicants: 9,
-        hired: 'DJ Salsa',
-        status: 'COMPLETED',
-      },
-    ],
-  },
-  '2026-07-31': {
-    gigs: [
-      {
-        id: 12,
-        title: 'Summer Closing Party',
-        role: 'Multiple Roles',
-        time: '9PM–6AM',
-        rate: 'Varies',
-        applicants: 0,
-        status: 'DRAFT',
-      },
-    ],
-  },
-};
+function formatTimeRange(start: string | null, end: string | null): string {
+  if (!start) return 'Time TBD';
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return end ? `${fmt(start)}–${fmt(end)}` : fmt(start);
+}
+
+function formatRate(rate: string | number | null, tips: boolean | null): string {
+  const value = Number(rate);
+  if (!Number.isFinite(value) || value <= 0) return 'Rate TBD';
+  return `$${value}/hr${tips ? ' + Tips' : ''}`;
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function VenueSchedulePage() {
-  const [year, setYear] = useState(2026);
-  const [month, setMonth] = useState(6); // July 0-indexed
-  const [selected, setSelected] = useState<number | null>(19);
+  const today = useMemo(() => new Date(), []);
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+  const [selected, setSelected] = useState<number | null>(today.getDate());
 
-  const TODAY = { year: 2026, month: 6, day: 17 };
+  // Real gigs — same source as the dashboard's Open Gigs table (S4; was mock).
+  const { data, isPending, isError } = useQuery({
+    queryKey: ['venue-gigs'],
+    queryFn: async () => {
+      const res = await fetch('/api/venue/gigs');
+      if (!res.ok) throw new Error('Failed to load gigs');
+      return res.json() as Promise<{ gigs: ApiGig[] }>;
+    },
+  });
+
+  /** Gigs grouped by local start date; undated gigs are listed separately. */
+  const { byDay, undated } = useMemo(() => {
+    const map: Record<string, ApiGig[]> = {};
+    const noDate: ApiGig[] = [];
+    for (const gig of data?.gigs ?? []) {
+      if (!gig.start_time) {
+        noDate.push(gig);
+        continue;
+      }
+      const key = dayKeyOf(gig.start_time);
+      (map[key] ??= []).push(gig);
+    }
+    return { byDay: map, undated: noDate };
+  }, [data]);
 
   const cells = useMemo<(number | null)[]>(() => {
-    const firstDay = firstDayOfMonth(year, month);
-    const totalDays = daysInMonth(year, month);
+    const firstDay = new Date(year, month, 1).getDay();
+    const totalDays = new Date(year, month + 1, 0).getDate();
     const result: (number | null)[] = [
       ...Array(firstDay).fill(null),
       ...Array.from({ length: totalDays }, (_, i) => i + 1),
@@ -278,7 +149,7 @@ export default function VenueSchedulePage() {
   }, [year, month]);
 
   const selectedKey = selected !== null ? buildKey(year, month, selected) : null;
-  const selectedGigs = selectedKey ? (INITIAL_GIGS[selectedKey]?.gigs ?? []) : [];
+  const selectedGigs = selectedKey ? (byDay[selectedKey] ?? []) : [];
 
   const prevMonth = () => {
     if (month === 0) {
@@ -295,15 +166,11 @@ export default function VenueSchedulePage() {
     setSelected(null);
   };
 
-  const gigCountForDay = (day: number) => {
-    const key = buildKey(year, month, day);
-    return INITIAL_GIGS[key]?.gigs.length ?? 0;
-  };
+  const gigsForDay = (day: number) => byDay[buildKey(year, month, day)] ?? [];
 
   const primaryStatusForDay = (day: number): GigStatus | null => {
-    const key = buildKey(year, month, day);
-    const gigs = INITIAL_GIGS[key]?.gigs;
-    if (!gigs || gigs.length === 0) return null;
+    const gigs = gigsForDay(day);
+    if (gigs.length === 0) return null;
     const priority: GigStatus[] = ['PUBLISHED', 'FILLED', 'DRAFT', 'COMPLETED', 'CANCELLED'];
     for (const p of priority) {
       if (gigs.some((g) => g.status === p)) return p;
@@ -313,7 +180,7 @@ export default function VenueSchedulePage() {
 
   return (
     <div className="min-h-screen bg-[#121212] text-white flex font-sans pt-14 md:pt-0">
-      <DashboardSidebar role="venue" userName="Nebula NYC" />
+      <DashboardSidebar role="venue" />
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
@@ -332,10 +199,7 @@ export default function VenueSchedulePage() {
                 Post a Gig
               </Button>
             </Link>
-            <button className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
-              <Bell className="w-4 h-4 text-white/60" />
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-[#00FFCC] rounded-full" />
-            </button>
+            <NotificationsBell role="venue" />
           </div>
         </header>
 
@@ -364,15 +228,24 @@ export default function VenueSchedulePage() {
               </div>
               <button
                 onClick={() => {
-                  setYear(TODAY.year);
-                  setMonth(TODAY.month);
-                  setSelected(TODAY.day);
+                  setYear(today.getFullYear());
+                  setMonth(today.getMonth());
+                  setSelected(today.getDate());
                 }}
                 className="text-xs font-bold text-[#00FFCC] hover:underline"
               >
                 Today
               </button>
             </div>
+
+            {isError && (
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+                <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-red-300">
+                  Could not load your gigs. Refresh to try again.
+                </p>
+              </div>
+            )}
 
             {/* Day labels */}
             <div className="grid grid-cols-7 gap-1">
@@ -392,12 +265,15 @@ export default function VenueSchedulePage() {
                 if (day === null) {
                   return <div key={`empty-${idx}`} className="aspect-[1/1.15] rounded-xl" />;
                 }
-                const count = gigCountForDay(day);
+                const dayGigs = gigsForDay(day);
+                const count = dayGigs.length;
                 const primaryStatus = primaryStatusForDay(day);
-                const isToday = year === TODAY.year && month === TODAY.month && day === TODAY.day;
+                const isToday =
+                  year === today.getFullYear() &&
+                  month === today.getMonth() &&
+                  day === today.getDate();
                 const isSelected = selected === day;
                 const key = buildKey(year, month, day);
-                const dayGigs = INITIAL_GIGS[key]?.gigs ?? [];
 
                 return (
                   <button
@@ -431,7 +307,7 @@ export default function VenueSchedulePage() {
                     </span>
 
                     {/* Status dots for each gig */}
-                    {dayGigs.length > 0 && (
+                    {count > 0 && (
                       <div className="flex flex-wrap gap-0.5 w-full">
                         {dayGigs.slice(0, 3).map((g) => (
                           <div
@@ -477,10 +353,33 @@ export default function VenueSchedulePage() {
                 </div>
               ))}
             </div>
+
+            {/* Undated drafts (legacy rows without a start time) */}
+            {undated.length > 0 && (
+              <div className="pt-2">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-white/30 mb-2">
+                  Undated gigs
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {undated.map((gig) => (
+                    <Link
+                      key={gig.id}
+                      href={`/gigs/${gig.id}`}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#1A1A1A] border border-white/8 hover:border-white/20 transition-colors"
+                    >
+                      <div
+                        className={cn('w-2 h-2 rounded-full', STATUS_CONFIG[gig.status].dot)}
+                      />
+                      <span className="text-xs text-white/60">{gig.title}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── Day Detail Panel ──────────────────────── */}
-          <div className="w-72 xl:w-80 flex-shrink-0 border-l border-white/5 bg-[#0D0D0D] flex flex-col overflow-y-auto">
+          <div className="w-72 xl:w-80 flex-shrink-0 border-l border-white/5 bg-[#0D0D0D] flex-col overflow-y-auto hidden lg:flex">
             {/* Header */}
             <div className="p-5 border-b border-white/5">
               <div className="flex items-center justify-between mb-1">
@@ -496,7 +395,11 @@ export default function VenueSchedulePage() {
 
             {selected !== null ? (
               <div className="flex-1 p-4 space-y-4">
-                {selectedGigs.length === 0 ? (
+                {isPending ? (
+                  <div className="flex items-center justify-center py-10">
+                    <div className="w-6 h-6 border-2 border-[#00FFCC]/20 border-t-[#00FFCC] rounded-full animate-spin" />
+                  </div>
+                ) : selectedGigs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 text-center">
                     <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center mb-3">
                       <PlusCircle className="w-5 h-5 text-white/20" />
@@ -543,7 +446,9 @@ export default function VenueSchedulePage() {
                                 <p className="text-sm font-black text-white leading-tight">
                                   {gig.title}
                                 </p>
-                                <p className="text-[11px] text-white/50 mt-0.5">{gig.role}</p>
+                                <p className="text-[11px] text-white/50 mt-0.5">
+                                  {gig.role_needed}
+                                </p>
                               </div>
                               <span
                                 className={cn(
@@ -559,38 +464,42 @@ export default function VenueSchedulePage() {
                             <div className="space-y-1.5 text-xs text-white/50">
                               <div className="flex items-center gap-2">
                                 <Clock className="w-3 h-3 text-white/30 flex-shrink-0" />
-                                <span>{gig.time}</span>
+                                <span>{formatTimeRange(gig.start_time, gig.end_time)}</span>
                               </div>
                               <div className="flex items-center gap-2">
                                 <DollarSign className="w-3 h-3 text-white/30 flex-shrink-0" />
-                                <span>{gig.rate}</span>
+                                <span>{formatRate(gig.base_rate, gig.tips_included)}</span>
                               </div>
                               <div className="flex items-center gap-2">
                                 <Users className="w-3 h-3 text-white/30 flex-shrink-0" />
                                 <span>
-                                  {gig.applicants} applicant{gig.applicants !== 1 ? 's' : ''}
+                                  {gig.applicant_count} applicant
+                                  {gig.applicant_count !== 1 ? 's' : ''}
                                 </span>
                               </div>
-                              {gig.hired && (
+                              {gig.status === 'FILLED' && (
                                 <div className="flex items-center gap-2">
                                   <CheckCircle2 className="w-3 h-3 text-[#00FFCC] flex-shrink-0" />
-                                  <span className="text-[#00FFCC] font-bold">{gig.hired}</span>
+                                  <span className="text-[#00FFCC] font-bold">Talent hired</span>
                                 </div>
                               )}
                             </div>
 
                             {/* Action */}
                             {gig.status !== 'COMPLETED' && gig.status !== 'CANCELLED' && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="w-full text-white/50 hover:text-white hover:bg-white/5 text-xs font-bold border border-white/8 flex items-center gap-1.5"
+                              <Link
+                                href={
+                                  gig.status === 'PUBLISHED' || gig.status === 'DRAFT'
+                                    ? '/dashboard/venue/applicants'
+                                    : `/gigs/${gig.id}`
+                                }
+                                className="w-full text-white/50 hover:text-white hover:bg-white/5 text-xs font-bold border border-white/8 rounded-lg px-3 py-2 flex items-center justify-center gap-1.5 transition-colors"
                               >
                                 <Eye className="w-3.5 h-3.5" />
                                 {gig.status === 'PUBLISHED' || gig.status === 'DRAFT'
                                   ? 'Review Applicants'
                                   : 'View Details'}
-                              </Button>
+                              </Link>
                             )}
                           </div>
                         );
@@ -605,7 +514,7 @@ export default function VenueSchedulePage() {
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-white/40">Total Applicants</span>
                         <span className="font-bold text-white">
-                          {selectedGigs.reduce((a, g) => a + g.applicants, 0)}
+                          {selectedGigs.reduce((a, g) => a + g.applicant_count, 0)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-xs">
