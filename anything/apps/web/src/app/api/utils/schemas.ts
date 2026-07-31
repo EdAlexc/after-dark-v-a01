@@ -62,12 +62,14 @@ const csvList = (maxItems: number, maxItemLength: number) =>
 /** Self-service roles. ADMIN is intentionally absent (privilege-escalation fix). */
 export const SelfServiceRoleSchema = z.enum(['TALENT', 'VENUE', 'PARTY']);
 
+// nullish, not optional: the onboarding form posts `null` for skipped fields
+// (found live — a tester who skips the sub-role chip got a 400 pre-S4–S10).
 export const RoleSelectionSchema = z.object({
   role: SelfServiceRoleSchema,
-  subRole: shortText(80).optional(),
-  stageName: shortText(80).optional(),
-  venueName: shortText(120).optional(),
-  neighborhood: shortText(80).optional(),
+  subRole: shortText(80).nullish(),
+  stageName: shortText(80).nullish(),
+  venueName: shortText(120).nullish(),
+  neighborhood: shortText(80).nullish(),
 });
 
 // ─── Gigs ─────────────────────────────────────────────────────────────────────

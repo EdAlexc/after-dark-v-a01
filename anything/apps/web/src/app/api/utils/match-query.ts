@@ -29,21 +29,33 @@ export interface MatchPreviewInput {
   date?: string | null;
 }
 
+/**
+ * Role matching is BIDIRECTIONAL substring: the wizard's option list is more
+ * specific than profile roles ("DJ / Producer" vs a profile's "DJ"), so
+ * either side containing the other counts. The reverse LIKE is guarded
+ * against empty profile roles (which would match everything).
+ */
+const ROLE_MATCH = `(
+      LOWER(primary_role) LIKE $1
+      OR (primary_role IS NOT NULL AND primary_role <> '' AND $2 LIKE '%' || LOWER(primary_role) || '%')
+    )`;
+
 /** Matching talent + how many of them are available on the gig date. */
 export function buildMatchCountQuery(input: MatchPreviewInput): BuiltQuery {
   let text = `
     SELECT COUNT(*)::int AS total,
            COUNT(*) FILTER (WHERE available_tonight)::int AS tonight,
-           COUNT(*) FILTER (WHERE app_talent_available_on(id, $2::date))::int AS on_date
+           COUNT(*) FILTER (WHERE app_talent_available_on(id, $3::date))::int AS on_date
     FROM talent_profiles
     WHERE stage_name IS NOT NULL AND stage_name <> ''
-      AND LOWER(primary_role) LIKE $1
+      AND ${ROLE_MATCH}
   `;
   const values: (string | number | null)[] = [
     `%${input.role.toLowerCase()}%`,
+    input.role.toLowerCase(),
     input.date ?? null,
   ];
-  let index = 3;
+  let index = 4;
   if (input.rate !== undefined) {
     text += ` AND (hourly_rate_min IS NULL OR hourly_rate_min <= $${index})`;
     values.push(input.rate);
@@ -58,23 +70,24 @@ export function buildTopCandidatesQuery(input: MatchPreviewInput): BuiltQuery {
     SELECT id, stage_name, primary_role, neighborhood, avatar_url,
            hourly_rate_min, hourly_rate_max, profile_completion_pct,
            available_tonight,
-           app_talent_available_on(id, $2::date) AS available_on_date
+           app_talent_available_on(id, $3::date) AS available_on_date
     FROM talent_profiles
     WHERE stage_name IS NOT NULL AND stage_name <> ''
-      AND LOWER(primary_role) LIKE $1
+      AND ${ROLE_MATCH}
   `;
   const values: (string | number | null)[] = [
     `%${input.role.toLowerCase()}%`,
+    input.role.toLowerCase(),
     input.date ?? null,
   ];
-  let index = 3;
+  let index = 4;
   if (input.rate !== undefined) {
     text += ` AND (hourly_rate_min IS NULL OR hourly_rate_min <= $${index})`;
     values.push(input.rate);
     index++;
   }
   text += `
-    ORDER BY app_talent_available_on(id, $2::date) DESC, available_tonight DESC,
+    ORDER BY app_talent_available_on(id, $3::date) DESC, available_tonight DESC,
              profile_completion_pct DESC NULLS LAST, created_at DESC
     LIMIT $${index}
   `;

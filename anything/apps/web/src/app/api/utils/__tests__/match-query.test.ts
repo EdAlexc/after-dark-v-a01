@@ -63,6 +63,16 @@ describe('match builders', () => {
     const { text } = buildMatchCountQuery({ role: 'DJ', rate: 150 });
     expect(text).toContain('hourly_rate_min IS NULL OR hourly_rate_min <=');
   });
+
+  it('role matching is bidirectional — a "DJ" profile matches a "DJ / Producer" gig', () => {
+    // Found live: wizard options are more specific than profile roles.
+    const { text, values } = buildMatchCountQuery({ role: 'DJ / Producer' });
+    expect(text).toContain(`$2 LIKE '%' || LOWER(primary_role) || '%'`);
+    // The reverse side is guarded so an empty profile role can't match all.
+    expect(text).toContain(`primary_role <> ''`);
+    expect(values[0]).toBe('%dj / producer%');
+    expect(values[1]).toBe('dj / producer');
+  });
 });
 
 describe('scoreCandidate', () => {
