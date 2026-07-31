@@ -33,6 +33,13 @@
     simulated, no real payment data); Stripe test keys stay optional (§4.6 step 4).
   - **B2/B4/B5 prepared as operator steps** — exact 10-minute runbook in **§4.6** (they
     involve provisioning/pasting secrets, which stays out of agent hands by design).
+  - **Discovered & fixed while watching this PR's CI: every Vercel deploy since the P3–P8
+    merge (`aa94e60`, 2026-07-30 23:56) had been failing** — production was serving the
+    P2-era build. Cause: P8's `vercel.json` declared an **hourly** cron, which Hobby-plan
+    Vercel rejects at deploy time (GitHub CI never reads `vercel.json`, so its build stayed
+    green — and §4.2's assessment missed it for the same reason: deploy status lives only
+    in Vercel/commit statuses). Rescheduled to daily 09:00 UTC (§4.6 cron note); restore
+    hourly on Pro.
 - **P9 delivered this session** (583 tests green; the whole moderation loop executed live
   against a Neon branch and browser-verified; migration 0012 + the admin preview account
   applied to production):
@@ -119,8 +126,9 @@
     `constructEventAsync` signature verification + replay drop, transfers on release.
     `POST|GET /api/payouts/release` releases HELD→RELEASED **only 24h after checkout**,
     exactly once (`WHERE status='HELD'`), flips shifts→PAID, notifies; callable by ADMIN
-    session or `CRON_SECRET` bearer — `vercel.json` now schedules it hourly (Vercel Cron
-    invokes with GET + the bearer).
+    session or `CRON_SECRET` bearer — `vercel.json` schedules it (Vercel Cron invokes with
+    GET + the bearer). *(Shipped hourly; rescheduled to daily 2026-07-31 — the hourly cron
+    was failing every Vercel deploy on the Hobby plan, see §4.6's cron note.)*
   - **AuthZ matrix grew with the surface** (P2.3 paying off): ~21 new rows, new
     `UNAVAILABLE` outcome for the key-gated Stripe start, and the generated suite now
     contributes 231 tests; the coverage gate kept every new route declared.
@@ -635,7 +643,7 @@ else can trail it.
 | PWA surface | ❌ confirmed absent — `public/` contains only `favicon.png`; no manifest, no service worker |
 | Rate limiter | in-memory `Map` per instance (`rate-limit.ts`) — P10.3 confirmed outstanding |
 | Stripe | key-gated as documented (`stripe.ts` checks `STRIPE_SECRET_KEY`); no keys configured |
-| Payout cron | `vercel.json` schedules `/api/payouts/release` hourly — inert until `CRON_SECRET` is set in Vercel |
+| Payout cron | `vercel.json` schedules `/api/payouts/release` (hourly at assessment time; daily since 2026-07-31 — the hourly schedule was itself failing every Vercel deploy, §4.6 cron note) — inert until `CRON_SECRET` is set in Vercel |
 | RLS cutover | `withRlsContext` exists only in `rls.ts`, wired into **zero** routes — production still connects as owner, as documented |
 | Retention purge job (G7) | ❌ absent — `docs/retention.md` exists, no purge script or cron |
 | Incident runbook (G9) | ❌ absent — `docs/` has only `retention.md`, `rls-cutover.md`, `ropa.md` |
@@ -739,8 +747,18 @@ matter; redeploy once at the end (env changes apply to *new* deployments only).
    see the event in Sentry with cookies/headers absent.
 2. **B4 — `CRON_SECRET`.** Generate locally (`openssl rand -base64 32`) and add as
    `CRON_SECRET` (Production). Vercel Cron automatically sends it as the bearer token on
-   the scheduled `GET /api/payouts/release` (already in `vercel.json`, hourly). Verify:
-   next hour's cron run logs 200, or curl the route with `Authorization: Bearer <value>`.
+   the scheduled `GET /api/payouts/release` (in `vercel.json`, **daily 09:00 UTC** — see
+   the cron note below). Verify: the next scheduled run logs 200, or curl the route with
+   `Authorization: Bearer <value>`.
+
+> **Cron schedule note (2026-07-31).** The cron shipped hourly (`0 * * * *`) in P8 — and
+> that is exactly when Vercel deployments started failing: **Hobby-plan projects reject
+> any deployment declaring a sub-daily cron**, a deploy-time validation error GitHub CI
+> never sees (it doesn't read `vercel.json`). Every deploy from the P3–P8 merge
+> (`aa94e60`) onward failed, leaving production serving the P2-era build. Schedule is now
+> `0 9 * * *` (daily, after NYC nights end): the release route itself enforces the ≥24 h
+> escrow window, so payouts release 24–48 h post-checkout, and an ADMIN session can
+> release manually anytime. If the project moves to Vercel Pro, restore `0 * * * *`.
 3. **B5 — Blob storage.** Vercel → Storage → Create Database → **Blob** → connect to this
    project (Production + Preview): Vercel injects `BLOB_READ_WRITE_TOKEN` itself — no
    manual token handling. Verify: upload a profile photo, its URL should be on

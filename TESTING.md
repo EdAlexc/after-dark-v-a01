@@ -258,7 +258,8 @@ API shape so it can be scripted.
    Checkout computes `shift_pay_cents` from the actual timestamps and inserts a payout row:
    `status HELD`, `gross = fee + net`, fee = exactly 5% (DB CHECK enforces the invariant).
 6. **Release**: `POST /api/payouts/release` (ADMIN session or `Authorization: Bearer
-   $CRON_SECRET`; Vercel Cron hits it hourly via GET + the same bearer). Within 24h of
+   $CRON_SECRET`; Vercel Cron hits it daily at 09:00 UTC via GET + the same bearer —
+   hourly requires Vercel Pro, see DEV_TIMELINE §4.6 cron note). Within 24h of
    checkout it releases **0** rows; backdate `check_out_at` 25h on a test branch and it
    releases exactly once (second call → 0), flips the shift to PAID, and the talent gets a
    `payout.released` notification. Without Stripe keys the ledger advances and `transfers`
