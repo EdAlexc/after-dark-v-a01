@@ -8,11 +8,31 @@
 
 ## 1. Current status — YOU ARE HERE
 
-- **Date:** 2026-07-30 · **Branch:** `claude/p9-admin-trust` (worktree off `main`;
-  PRs #7–#11 merged)
-- **Project stage:** **P0–P9 complete.** The marketplace loop runs end-to-end AND the
-  platform can now moderate itself (reports triage, suspension, takedowns, audit viewer).
-  Next: **P10 (PWA, performance & the alpha gate)** — the last slice before alpha.
+- **Date:** 2026-07-31 · **Branch:** `claude/alpha-punchlist-pwa` (worktree off `main`;
+  PRs #7–#12 merged, #13 = the §4 readiness assessment)
+- **Project stage:** **P0–P9 complete + P10.1–P10.2 (PWA install surface).** Remaining
+  before the formal alpha exit gate: **P10.3** (shared rate-limit store), **P10.4** (CWV/
+  k6/axe CI gates), and the **§4.6 ops activation** (Sentry DSN, `CRON_SECRET`, Blob token
+  — ~10 min in the Vercel dashboard).
+- **Alpha punch-list delivered this session (2026-07-31 — closes §4.3):**
+  - **B1 CI restored**: deleted `anything/.eslintignore` (create.xyz leftover containing
+    `*`) — oxlint had linted **zero files** since the lint step was added in PR #8, exiting
+    1 and skipping vitest + build on every `main` merge. Lint now sees real files (0
+    warnings); 606 tests green locally.
+  - **B6 PWA (P10.1 + P10.2)**: `manifest.webmanifest` + deterministic icon set
+    (`yarn pwa:icons`, sharp-rendered crescent mark, maskable + apple-touch);
+    dependency-free `public/sw.js` enforcing §6.6 (never intercepts `/api`, navigations
+    network-only w/ offline fallback page, `/_next/static` cache-first, `PURGE_CACHES`);
+    registration in `Providers` (production-only), **cache purge wired into logout**;
+    `worker-src 'self'` added to the CSP (strict-dynamic ignores host sources); 22 new
+    tests incl. a sandbox harness driving the real worker file. Manual: TESTING.md §9.
+  - **B7 incident runbook**: `docs/incident-runbook.md` v1.0 (P1–P4 classes, 72 h drill,
+    contact tree, tabletop script + log w/ desk-check run recorded; human tabletop owed
+    before first invite) + legal-hold section added to `docs/retention.md` §5.
+  - **B3 payments briefing**: verbatim tester briefing in TESTING.md §2.1 (payouts
+    simulated, no real payment data); Stripe test keys stay optional (§4.6 step 4).
+  - **B2/B4/B5 prepared as operator steps** — exact 10-minute runbook in **§4.6** (they
+    involve provisioning/pasting secrets, which stays out of agent hands by design).
 - **P9 delivered this session** (583 tests green; the whole moderation loop executed live
   against a Neon branch and browser-verified; migration 0012 + the admin preview account
   applied to production):
@@ -217,31 +237,30 @@
   - **Tests**: **219 passing** (unit + route + middleware + headers + migration-core), heavy on
     edge cases (SQLi payloads, escalation, redirect smuggling, TOTP RFC vectors, GCM tampering,
     rate-limit window edges). Dead code removed; app metadata renamed to AfterDark.
-- **Still UI-with-mock-data only** (unchanged): landing featured gigs, both dashboards, browse,
-  applicants, messages, schedule, live-ops checkout. **Still missing:** gig detail page,
-  applications, messaging/availability/shifts backends, Stripe, admin, notifications, search,
-  map, PWA. Full matrix: CLAUDE.md §4.
-- **New env var**: `AUTH_SECRET_ENCRYPTION_KEY` is now **required** for 2FA (see `.env.example`;
-  2FA fails closed without it). `DATABASE_URL` still required.
+- *(Historical P0-era notes, superseded by later entries above: the "still mock" list is
+  obsolete — P1–P9 made those surfaces real, see CLAUDE.md §4 — and
+  `AUTH_SECRET_ENCRYPTION_KEY` was retired by migration 0005; `BETTER_AUTH_SECRET` now
+  covers 2FA encryption.)*
 
 ### Pick-up-here: next five tasks (in order)
 
-> P9 is complete; **P10 (PWA, performance & alpha gate)** is the last slice before alpha.
+> P10.1–P10.2 landed 2026-07-31; §4.3 is closed except the operator env steps.
 
-1. **P10.1** — `manifest.webmanifest` (AfterDark, standalone, theme `#121212`, maskable
-   icons) + install prompt sanity on iOS/Android emulation.
-2. **P10.2** — Serwist service worker: precache shell/static, network-first APIs, offline
-   fallback page. **Never cache authed API responses; purge caches on logout** (§6.6) —
-   test: logout → offline → no PII retrievable from the cache.
+1. **§4.6 ops activation** (~10 min, Vercel dashboard): Sentry DSN (B2), `CRON_SECRET`
+   (B4), Blob store (B5); then one redeploy. This is what stands between the repo and
+   inviting the first testers.
+2. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min) before the first tester
+   invite — the desk check validated the document, not the operator's muscle memory.
 3. **P10.3** — Shared rate-limit store (Upstash Redis or Postgres token bucket, Backlog
    #21): back `getRateLimiter` with it so limits hold across serverless instances; the k6
-   Apdex gate is meaningless until this lands.
+   Apdex gate is meaningless until this lands. Required before any **open** (non-invite)
+   signup.
 4. **P10.4** — CI gates: Lighthouse CWV budgets (TENANT_GUARDRAIL §3.2), k6 Apdex ≥ 0.85 @
    T=300 ms (§3.4 scenarios), `@axe-core/playwright` on the 10 core screens (dark-theme
-   contrast!).
-5. **Ops carry-overs** — RLS cutover (`docs/rls-cutover.md`); `CRON_SECRET` in Vercel for
-   the payout cron; Stripe test keys when ready (DEV_TIMELINE P8 honest-status checklist);
-   `BLOB_READ_WRITE_TOKEN` for real image storage.
+   contrast!) — these are the formal alpha *exit* checklist.
+5. **Ops carry-overs** — RLS cutover (`docs/rls-cutover.md`); Stripe test keys when ready
+   (§4.6 step 4); alpha-cosmetic caveats from §4.5: hide/label the mock Live Analytics
+   rail and the decorative global search box.
 
 ---
 
@@ -442,11 +461,13 @@ servers or logs.
 **Security gate:** every admin action is audited with the actor id; admin reads of private
 messages are logged as moderation events; no admin surface is reachable by any non-ADMIN role.
 
-### P10 — PWA, performance & alpha gate (≈3–4 d) — ☐ not started
-- ☐ **P10.1** `manifest.webmanifest` (AfterDark, standalone, theme `#121212`, maskable icons).
-- ☐ **P10.2** Serwist service worker: precache shell/static, network-first APIs, offline
-  fallback. **Never cache authed API responses; purge caches on logout** (§6.6) — test:
-  logout → offline → no PII retrievable from cache.
+### P10 — PWA, performance & alpha gate (≈3–4 d) — ◐ P10.1–P10.2 landed 2026-07-31
+- ☑ **P10.1** `manifest.webmanifest` (AfterDark, standalone, theme `#121212`, maskable icons —
+  generated deterministically via `yarn pwa:icons`, committed under `public/icons/`).
+- ☑ **P10.2** Service worker: precache shell/static, network-only APIs + navigations, offline
+  fallback. **Never cache authed API responses; purge caches on logout** (§6.6) — encoded as
+  behavioral tests (`test/service-worker.test.ts`) plus the manual TESTING.md §9 procedure.
+  *Shipped hand-written/dependency-free instead of Serwist — rationale in §4.6's note.*
 - ☐ **P10.3** Shared rate-limit store (Upstash or a Postgres token bucket, Backlog #21) — the
   in-memory limiter is per-instance, which makes the Apdex gate meaningless until this lands.
 - ☐ **P10.4** Gates in CI: Lighthouse CWV budgets, k6 Apdex ≥ 0.85 @ T=300 ms
@@ -631,15 +652,20 @@ bypassed, lint reports 0 warnings, so CI goes green immediately.
 
 ### 4.3 Blockers before distributing to alpha testers
 
-| # | Item | Why it blocks | Cost |
+> **Status update 2026-07-31 (alpha punch-list session):** every item that can be closed
+> from the repo is closed — B1, B3, B6, B7 ✅. B2/B4/B5 are Vercel-dashboard operations
+> involving secrets, so they are prepared but must be executed by the operator: exact
+> steps in **§4.6** (~10 minutes total).
+
+| # | Item | Why it blocks | Status (2026-07-31) |
 |---|---|---|---|
-| B1 | **Restore the CI gate**: delete `anything/.eslintignore` | `main` is currently unprotected — tests/build don't run on merges; docs claiming "CI green" are false as of PR #8 | 1-line PR |
-| B2 | **Error tracking on**: set `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` in Vercel | Distributing to testers with zero crash visibility wastes the alpha — every bug becomes a support conversation instead of a stack trace. The PII-scrubbed pipeline is already built (Backlog #19); it is a no-op without a DSN | minutes (ops) |
-| B3 | **Decide the payments story**: set test-mode `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` (P8 honest-status checklist) **or** explicitly brief testers that payouts are simulated | The alpha loop is defined with "(sandbox) Stripe Connect escrow payout". Without keys the ledger advances but no money moves — testers will report "I never got paid" as a bug unless told | hours (ops + TESTING.md §10 pass) |
-| B4 | **Set `CRON_SECRET`** in Vercel | The 24 h escrow release never fires — HELD payouts accumulate until an admin releases manually; talent-facing "pending payout" numbers go stale | minutes (ops) |
-| B5 | **Set `BLOB_READ_WRITE_TOKEN`** in Vercel | Without it every tester photo/attachment is stored inline in Postgres as a data URL — re-creating the base64-PII-in-DB problem P4 was built to close (EXIF is stripped either way, but storage/bloat/egress are wrong) | minutes (ops) |
-| B6 | **PWA decision**: build P10.1–P10.2 (~2 d) **or** amend the alpha definition to "responsive web app" and defer PWA | The alpha is *defined* as "deployable PWA" and the PRD targets one; nothing PWA exists. Shipping testers a plain web app is fine — silently calling it the PWA alpha is not | decision + 0–2 d |
-| B7 | **G9 incident runbook** (`docs/incident-runbook.md`) | The 72 h GDPR breach-notification duty applies *now* (real signups exist); alpha adds testers' PII. A tabletop-tested one-pager satisfies it | ~half day (doc) |
+| B1 | **Restore the CI gate**: delete `anything/.eslintignore` | `main` is currently unprotected — tests/build don't run on merges; docs claiming "CI green" are false as of PR #8 | ✅ **done** — file deleted; lint verified 0 warnings on real files; watch this PR's CI run for the green proof |
+| B2 | **Error tracking on**: set `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` in Vercel | Distributing to testers with zero crash visibility wastes the alpha — every bug becomes a support conversation instead of a stack trace. The PII-scrubbed pipeline is already built (Backlog #19); it is a no-op without a DSN | ◻ **ops** — §4.6 step 1 |
+| B3 | **Decide the payments story**: set test-mode Stripe keys **or** explicitly brief testers that payouts are simulated | The alpha loop is defined with "(sandbox) Stripe Connect escrow payout". Without keys the ledger advances but no money moves — testers will report "I never got paid" as a bug unless told | ✅ **done via the briefing arm** — verbatim tester briefing in TESTING.md §2.1; in-app legal pages already agree (`ALPHA_NOTICE`). Test-mode keys remain optional (§4.6 step 4 when ready) |
+| B4 | **Set `CRON_SECRET`** in Vercel | The 24 h escrow release never fires — HELD payouts accumulate until an admin releases manually; talent-facing "pending payout" numbers go stale | ◻ **ops** — §4.6 step 2 |
+| B5 | **Set `BLOB_READ_WRITE_TOKEN`** in Vercel | Without it every tester photo/attachment is stored inline in Postgres as a data URL — re-creating the base64-PII-in-DB problem P4 was built to close (EXIF is stripped either way, but storage/bloat/egress are wrong) | ◻ **ops** — §4.6 step 3 |
+| B6 | **PWA decision**: build P10.1–P10.2 (~2 d) **or** amend the alpha definition to "responsive web app" and defer PWA | The alpha is *defined* as "deployable PWA" and the PRD targets one; nothing PWA exists. Shipping testers a plain web app is fine — silently calling it the PWA alpha is not | ✅ **done — built** (P10.1 + P10.2, 2026-07-31): manifest + generated maskable icon set (`yarn pwa:icons`), dependency-free `public/sw.js` with the §6.6 contract (never intercepts `/api`, navigations network-only, offline fallback, purge on logout), `worker-src 'self'` CSP, 22 new tests; manual procedure TESTING.md §9. Deviation noted: hand-written worker instead of Serwist (§4.6 note) |
+| B7 | **G9 incident runbook** (`docs/incident-runbook.md`) | The 72 h GDPR breach-notification duty applies *now* (real signups exist); alpha adds testers' PII. A tabletop-tested one-pager satisfies it | ✅ **done** — runbook v1.0 with contact tree, 72 h drill, tabletop script + log (AI desk-check run recorded; a human-run tabletop is still owed before the first invite), legal-hold added to `retention.md` §5 |
 
 ### 4.4 Required for the formal alpha *exit* gate, but not for starting a closed alpha
 
@@ -658,7 +684,8 @@ bypassed, lint reports 0 warnings, so CI goes green immediately.
 - **Doc hygiene**: §1 of this file still contains stale P0-era lines (e.g. "New env var:
   `AUTH_SECRET_ENCRYPTION_KEY` is now **required**" — obsolete since migration 0005, and a
   "Still UI-with-mock-data" list describing pre-P3 reality). Anyone assessing state from §1
-  alone is misled; prune on the next status update.
+  alone is misled; prune on the next status update. *(Pruned 2026-07-31 — collapsed into a
+  historical-note line.)*
 
 ### 4.5 Technical Backlog re-evaluation (necessary for alpha?)
 
@@ -697,3 +724,37 @@ bypassed, lint reports 0 warnings, so CI goes green immediately.
 fix; hide-or-label the mock Live Analytics rail (#6 caveat); hide-or-stub the decorative
 global search box (#7 caveat); prune the stale §1 status lines (§4.4); G9 incident runbook
 (B7).
+
+### 4.6 Ops activation runbook — B2/B4/B5 (added 2026-07-31; ~10 min in the Vercel dashboard)
+
+These involve provisioning or pasting secrets, so they are operator steps by design. All
+code paths are already shipped and no-op safely until the values exist. Order doesn't
+matter; redeploy once at the end (env changes apply to *new* deployments only).
+
+1. **B2 — Sentry.** Create (or reuse) a Sentry project (platform: Next.js) and copy its
+   DSN. Vercel → Project → Settings → Environment Variables: add `SENTRY_DSN` **and**
+   `NEXT_PUBLIC_SENTRY_DSN` (same value) for Production + Preview. Nothing else to wire:
+   the CSP adds the ingest origin to `connect-src` automatically, and every event passes
+   the tested PII scrubber (`src/lib/sentry-scrub.ts`). Verify: throw from a preview page,
+   see the event in Sentry with cookies/headers absent.
+2. **B4 — `CRON_SECRET`.** Generate locally (`openssl rand -base64 32`) and add as
+   `CRON_SECRET` (Production). Vercel Cron automatically sends it as the bearer token on
+   the scheduled `GET /api/payouts/release` (already in `vercel.json`, hourly). Verify:
+   next hour's cron run logs 200, or curl the route with `Authorization: Bearer <value>`.
+3. **B5 — Blob storage.** Vercel → Storage → Create Database → **Blob** → connect to this
+   project (Production + Preview): Vercel injects `BLOB_READ_WRITE_TOKEN` itself — no
+   manual token handling. Verify: upload a profile photo, its URL should be on
+   `*.public.blob.vercel-storage.com`, not a `data:` URL.
+4. **(Optional, upgrades B3) Stripe test mode.** When ready to exercise real test-mode
+   money: create the Stripe platform account → set `STRIPE_SECRET_KEY` +
+   `STRIPE_WEBHOOK_SECRET` (test mode) → register the webhook endpoint
+   (`/api/stripe/webhook`) → run the TESTING.md §10 Stripe addendum → re-brief testers
+   per TESTING.md §2.1 note (1).
+
+> **P10.2 implementation note (deviation from the plan's "Serwist"):** the service worker
+> shipped hand-written and dependency-free (~100 lines, `public/sw.js`) rather than on
+> Serwist. Rationale: the §6.6 contract here is mostly *negative* (never cache `/api`,
+> never cache session HTML) — a tiny explicit worker makes those guarantees auditable and
+> directly testable (`test/service-worker.test.ts` drives the real file in a sandbox),
+> and it avoids coupling the build to bundler-integration churn. If precache manifests of
+> hashed assets ever become necessary, migrate to Serwist then.

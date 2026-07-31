@@ -50,6 +50,12 @@ describe('buildCsp', () => {
     expect(buildCsp({ isDev: false, env: {} })).toContain("frame-ancestors 'self'");
   });
 
+  it("allows the service worker via worker-src 'self' (P10.2)", () => {
+    // 'strict-dynamic' makes script-src ignore host sources, so without an
+    // explicit worker-src the nonce policy would block /sw.js registration.
+    expect(buildCsp({ isDev: false, env: {}, nonce: 'n' })).toContain("worker-src 'self'");
+  });
+
   it('admits the Sentry ingest origin into connect-src only when configured', () => {
     const withDsn: string = buildCsp({
       isDev: false,

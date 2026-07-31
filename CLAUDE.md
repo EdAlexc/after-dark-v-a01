@@ -26,6 +26,7 @@ with high multi-user/multi-tenant concurrency and PII/transactional data protect
 | `CLAUDE.md` / `DEV_TIMELINE.MD` / `TENANT_GUARDRAIL.md` | This audit & planning set (2026-07-24) |
 | `TESTING.md` | Verification playbook: automated suites, manual E2E checklists, security probes, shared preview accounts (2026-07-30) |
 | `docs/ropa.md` · `docs/retention.md` | GDPR Art. 30 record of processing + retention schedule (P2; keep in sync with `/legal/privacy`) |
+| `docs/incident-runbook.md` | G9 breach/incident runbook: 72 h drill, contact tree, tabletop log (2026-07-31) |
 | `docs/rls-cutover.md` | Runbook for switching the app to the least-privilege DB role (P2.4 remainder) |
 
 ## 2. Commands & environment
@@ -43,6 +44,7 @@ yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
 yarn db:preview-accounts    # shared talent/venue/party preview accounts (TESTING.md §2; idempotent)
 yarn db:verify-rls          # proves RLS isolation against a non-owner role (never run on prod)
+yarn pwa:icons              # regenerate public/icons/* deterministically from vector art (P10.1)
 ```
 
 - **Required env**: `DATABASE_URL` (Neon Postgres) and `BETTER_AUTH_SECRET` (signs sessions
@@ -146,7 +148,11 @@ shares the workspace root — see Technical Backlog #23 to scope installs to `we
   nonce), RBAC guard, zod validation, rate limiting, security headers, structured logging +
   audit trail, optional **Sentry** (PII-scrubbed, no-op without DSN), dormant RLS policies,
   migrations + tests (P0–P1).
-- **Absent**: Stripe, WebSockets/SSE, service worker/manifest (no PWA).
+- **PWA (P10.1–P10.2, 2026-07-31)**: `manifest.webmanifest` + maskable icons (regenerate via
+  `yarn pwa:icons`); dependency-free `public/sw.js` (never intercepts `/api`, navigations
+  network-only with `public/offline.html` fallback, `/_next/static` cache-first, purge on
+  logout via `src/lib/pwa.ts`); CSP `worker-src 'self'`. Verification: TESTING.md §9.
+- **Absent**: Stripe keys (code shipped key-gated), WebSockets/SSE.
 
 ## 4. Spec-vs-code audit (feature matrix)
 
@@ -179,7 +185,7 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Legal surface: privacy, ToS, contact (footer, GDPR G1) | p1–p10 footer | `src/app/legal/*`, `src/app/contact` | ✅ real routes, versioned via `lib/legal.ts` (P2.1) |
 | Data export & account deletion (GDPR G4) | — | `dashboard/settings` → `/api/account/*` | ✅ self-serve, audited, audit-trail pseudonymized (P2.2) |
 | Age gating 18+ / per-gig 21+ (GDPR G12) | p3 toggle | signup + `gigs.age_requirement` | ✅ attested at signup; 21+ badge on detail (P2.5) |
-| PWA (installable, offline, service worker) | — | `public/` has favicon only | ❌ |
+| PWA (installable, offline, service worker) | — | `public/manifest.webmanifest`, `public/sw.js`, `src/lib/pwa.ts` | ✅ installable + offline fallback + logout cache purge (P10.1–P10.2); push notifications remain post-alpha |
 | Talent create-gig page | — | — | ✅ removed 2026-07-30 (was off-PRD; Backlog #11) |
 
 **API inventory (real endpoints):** `/api/auth/[...all]`, `/api/auth/token`,

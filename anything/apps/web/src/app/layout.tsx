@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./global.css";
 import { Providers } from "./providers";
 
@@ -12,9 +12,20 @@ export const metadata: Metadata = {
 	title: "AfterDark — NYC Nightlife Marketplace",
 	description:
 		"AfterDark connects premium NYC venues with world-class nightlife talent — post gigs, book DJs, mixologists, security, and get paid securely.",
+	manifest: "/manifest.webmanifest",
 	icons: {
 		icon: "/favicon.png",
+		apple: "/icons/apple-touch-icon.png",
 	},
+	appleWebApp: {
+		capable: true,
+		title: "AfterDark",
+		statusBarStyle: "black-translucent",
+	},
+};
+
+export const viewport: Viewport = {
+	themeColor: "#121212",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

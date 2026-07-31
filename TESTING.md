@@ -22,8 +22,9 @@ key-gated; the ledger advances without keys). New with P9: **admin
 moderation** — reports triage, account suspension (enforced platform-wide by AuthGuard),
 gig takedowns, the audit-log viewer + CSV export, and KPI cards, all on `/dashboard/admin`.
 The **only surface still on sample data** is the venue "Gig Calendar" page
-(`/dashboard/venue/schedule` — not a PRD screen). PWA (P10) doesn't exist yet. Full
-matrix: CLAUDE.md §4.
+(`/dashboard/venue/schedule` — not a PRD screen). New with P10.1–P10.2 (2026-07-31): the
+**PWA install surface is real** — manifest + icons, service worker with offline fallback,
+cache purge on logout (verification procedure in §9). Full matrix: CLAUDE.md §4.
 
 ## 2. Shared preview accounts (deployed site + any DB seeded with them)
 
@@ -42,6 +43,23 @@ The venue account owns three starter gigs (2 published, 1 draft) so dashboards a
 never empty. ⚠️ These are **shared alpha credentials committed to the repo** — rotate them
 (edit `scripts/create-preview-accounts.ts`, re-run, update this table) before any real user or
 real payment data enters the database.
+
+### 2.1 Alpha tester briefing — read this before inviting anyone (§4.3 B3)
+
+Give every alpha tester this paragraph verbatim (or link them to it):
+
+> **Payments in this alpha are simulated.** AfterDark's payout ledger, 5% marketplace fee,
+> and 24-hour escrow window all run for real inside the app, but **no money moves**: Stripe
+> is not connected, no bank/card details are collected anywhere, and "Payouts" figures are
+> bookkeeping entries only. Do not enter real payment information anywhere (the app never
+> asks for it — report it as a bug if anything does). Everything else you do is real: real
+> accounts, real messages, real bookings, and real photos (which other testers can see —
+> don't upload anything you wouldn't share).
+
+Two operational notes for whoever runs the alpha: (1) if Stripe **test-mode** keys are
+configured later (DEV_TIMELINE §4.3 B3), re-brief testers that money now moves in Stripe's
+test sandbox — still no real funds; (2) the in-app legal pages already state that payments
+are not live (`src/lib/legal.ts` `ALPHA_NOTICE`), so the briefing and the product agree.
 
 ## 3. Automated suites
 
@@ -401,7 +419,8 @@ What it asserts, and why each matters:
 
 ## 8. Known gaps (do not report as regressions)
 
-- **PWA/service-worker (P10) does not exist yet** — last slice before alpha.
+- **P10.3/P10.4 remain** (shared rate-limit store; Lighthouse/k6/axe CI gates) — P10.1–P10.2
+  (manifest, service worker, offline fallback) landed 2026-07-31, see §9.
 - Admin CSV export is **bounded** (10k newest rows per download), not an async job — use
   filters to slice bigger windows; a queued export is post-alpha.
 - Suspension blocks the suspended user at the API layer with a 403 + reason; there is no
@@ -425,3 +444,35 @@ What it asserts, and why each matters:
   (`docs/retention.md` §4).
 - Map views deferred (Backlog #1). Multi-select browse filters refine client-side within the
   fetched page until the API grows array params (Backlog #27).
+
+## 9. PWA verification (P10.1–P10.2, added 2026-07-31)
+
+Automated (already in `yarn test`): `test/pwa-manifest.test.ts` (manifest schema, icons
+committed, layout wiring, offline page script-free) and `test/service-worker.test.ts`
+(drives `public/sw.js` in a sandbox: `/api/*` never intercepted or cached, navigations
+network-only, offline fallback served on network failure, `/_next/static` cache-first,
+`PURGE_CACHES` empties everything, old versions cleaned on activate). The registration and
+logout purge helpers are covered in `src/lib/__tests__/pwa.test.ts`.
+
+Manual, against a **production build or deployed preview** (the worker is production-only;
+`yarn dev` deliberately never registers it):
+
+1. **Installable**: open DevTools → Application → Manifest — no errors, icons render, name
+   "AfterDark". Chrome shows the install affordance in the omnibox; on Android "Add to Home
+   Screen" produces a standalone dark-themed window; on iOS Safari share-sheet → Add to Home
+   Screen uses the apple-touch icon.
+2. **Worker active**: Application → Service Workers shows `/sw.js` activated. Cache Storage
+   lists `afterdark-precache-v1` (offline page, manifest, icon) and — after some browsing —
+   `afterdark-static-v1` (`/_next/static/…` only).
+3. **§6.6 negative check (the important one)**: browse the dashboard while signed in, then
+   inspect Cache Storage — **no `/api/…` entry and no HTML document may appear, ever.** Any
+   authed content in a cache is a release blocker, full stop.
+4. **Offline fallback**: DevTools → Network → Offline, navigate anywhere → the dark
+   AfterDark offline page renders (no browser dinosaur). Back online, navigation recovers.
+5. **Logout purge**: sign in, browse, sign out (`/account/logout`), then check Application →
+   Cache Storage: **empty**. Go offline and hit any page — the offline fallback may 404
+   (cache purged) or the plain browser error may show; what must NOT happen is any app
+   content rendering from cache.
+6. **Update flow**: deploy a change, reload twice — the new worker takes over without a
+   stale bundle lingering (skipWaiting + clients.claim; bump `VERSION` in `sw.js` if cached
+   asset behavior ever changes).

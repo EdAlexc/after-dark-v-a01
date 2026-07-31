@@ -3,7 +3,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Toaster } from 'sonner';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { registerServiceWorker } from '@/lib/pwa';
 
 // Create a client that persists across re-renders
 function makeQueryClient() {
@@ -34,6 +35,11 @@ function getQueryClient() {
 export function Providers({ children }: { children: ReactNode }) {
   // Initialize query client once
   const [queryClient] = useState(() => getQueryClient());
+
+  // PWA (P10.2): production-only, no-op where unsupported.
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

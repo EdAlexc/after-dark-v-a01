@@ -59,6 +59,9 @@ function buildCsp({ isDev = false, env = process.env, nonce } = {}) {
     // Profile/gig media may be remote (base64 data URLs + https images today).
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
+    // The service worker (public/sw.js, P10.2). Explicit because
+    // 'strict-dynamic' in script-src ignores host sources like 'self'.
+    "worker-src 'self'",
     `connect-src ${connect.join(' ')}${isDev ? ' ws: wss:' : ''}`,
     "object-src 'none'",
     "base-uri 'self'",
