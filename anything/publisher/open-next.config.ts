@@ -27,6 +27,15 @@ const config: OpenNextConfig = {
       incrementalCache: "s3",
       // Keep tag cache as dummy since we don't have DynamoDB
       // This means revalidateTag() won't work, but basic ISR/SSG will
+      //
+      // DECISION (S11 / Backlog #9, 2026-07-31): closed as moot-on-Vercel.
+      // Vercel is the active deploy target (CLAUDE.md §2.1); this AWS
+      // pipeline is inherited create.xyz tooling and unused by it. The app
+      // never calls revalidateTag() — every page is 'use client' and the
+      // root layout is force-dynamic (nonce CSP), so there is no ISR to
+      // invalidate. Revisit ONLY if (a) this AWS path is ever revived AND
+      // (b) ISR/tag invalidation is adopted; then configure a real tagCache
+      // (DynamoDB) instead of "dummy".
       tagCache: "dummy",
     },
   },
