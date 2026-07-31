@@ -1,11 +1,18 @@
 #!/usr/bin/env tsx
 /**
- * Creates the three shared PREVIEW accounts (talent / venue / party) that the
+ * Creates the shared PREVIEW accounts (talent / venue / party / admin) that the
  * dev team uses to exercise the deployed site — one per role instance.
- * Credentials are documented in TESTING.md §2. Rotate them before any real
- * user data enters the database.
  *
- *   DATABASE_URL=postgres://… yarn tsx scripts/create-preview-accounts.ts
+ *   DATABASE_URL=postgres://… PREVIEW_ACCOUNTS_SECRET=… \
+ *     yarn tsx scripts/create-preview-accounts.ts
+ *
+ * Credential hygiene (S1): passwords are NOT in git. Each password is derived
+ * per-environment as HMAC(PREVIEW_ACCOUNTS_SECRET, email) — deterministic for
+ * a given secret (idempotent re-runs), different per environment, and rotated
+ * for every account at once by rotating the secret and re-running (the script
+ * re-hashes the credential row on every run, so it also *repairs* a drifted
+ * password). The script prints the passwords: its stdout is the delivery
+ * channel to the team — treat that output like the secret itself.
  *
  * Idempotent (keyed by email): safe to re-run; it re-asserts roles/profiles
  * and only seeds the venue's starter gigs when the venue has none. Users are
@@ -13,79 +20,90 @@
  * deployment of this codebase (scrypt hashes don't depend on the auth secret).
  */
 
+import { createHmac } from 'node:crypto';
+import { hashPassword } from 'better-auth/crypto';
 import { auth } from '../src/lib/auth';
 import sql from '../src/app/api/utils/sql';
 
 interface PreviewAccount {
   email: string;
-  password: string;
   name: string;
   role: 'TALENT' | 'VENUE' | 'PARTY' | 'ADMIN';
 }
 
 export const PREVIEW_ACCOUNTS: PreviewAccount[] = [
-  {
-    email: 'talent.preview@afterdark.dev',
-    password: 'AfterDark-Talent-2026!',
-    name: 'Nova Reign',
-    role: 'TALENT',
-  },
-  {
-    email: 'venue.preview@afterdark.dev',
-    password: 'AfterDark-Venue-2026!',
-    name: 'The Velvet Hour',
-    role: 'VENUE',
-  },
-  {
-    email: 'party.preview@afterdark.dev',
-    password: 'AfterDark-Party-2026!',
-    name: 'Jordan Nightowl',
-    role: 'PARTY',
-  },
+  { email: 'talent.preview@afterdark.dev', name: 'Nova Reign', role: 'TALENT' },
+  { email: 'venue.preview@afterdark.dev', name: 'The Velvet Hour', role: 'VENUE' },
+  { email: 'party.preview@afterdark.dev', name: 'Jordan Nightowl', role: 'PARTY' },
   {
     // ADMIN is granted out-of-band only (CLAUDE.md §7 finding 1) — this
     // script IS the out-of-band channel: it runs with direct DB access.
     email: 'admin.preview@afterdark.dev',
-    password: 'AfterDark-Admin-2026!',
     name: 'Night Shift (Admin)',
     role: 'ADMIN',
   },
 ];
 
+/**
+ * Deterministic per-environment password: HMAC keeps it un-derivable without
+ * the secret; the fixed prefix keeps it self-evidently a preview credential
+ * and satisfies complexity rules.
+ */
+export function derivePreviewPassword(secret: string, email: string): string {
+  const digest = createHmac('sha256', secret).update(email).digest('base64url');
+  return `Ad!${digest.slice(0, 18)}`;
+}
+
 if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL is not set. See .env.example.');
   process.exit(1);
 }
+const previewSecret = process.env.PREVIEW_ACCOUNTS_SECRET;
+if (!previewSecret || previewSecret.length < 16) {
+  console.error(
+    'PREVIEW_ACCOUNTS_SECRET is not set (or too short — use ≥16 chars, e.g. openssl rand -hex 32).\n' +
+      'Preview passwords are derived from it per environment; they are never committed. See TESTING.md §2.'
+  );
+  process.exit(1);
+}
 
-async function ensureUser(account: PreviewAccount): Promise<string> {
+async function ensureUser(account: PreviewAccount, password: string): Promise<string> {
   const existing = (await sql`
     SELECT id FROM "user" WHERE email = ${account.email} LIMIT 1
   `) as Array<{ id: string }>;
   let id = existing[0]?.id;
   if (!id) {
     const result = await auth.api.signUpEmail({
-      body: { email: account.email, password: account.password, name: account.name },
+      body: { email: account.email, password, name: account.name },
     });
     id = result.user.id;
     console.log(`✓ created ${account.role} preview user ${account.email}`);
   } else {
     console.log(`• ${account.email} already exists`);
   }
+  // Re-assert the password on every run so rotating PREVIEW_ACCOUNTS_SECRET
+  // (and re-running) rotates every preview credential in one step.
+  await sql`
+    UPDATE account SET password = ${await hashPassword(password)}, "updatedAt" = NOW()
+    WHERE "userId" = ${id} AND "providerId" = 'credential'
+  `;
   await sql`UPDATE "user" SET role = ${account.role}, "updatedAt" = NOW() WHERE id = ${id}`;
   return id;
 }
 
 async function main() {
   const [talent, venue, party, admin] = PREVIEW_ACCOUNTS;
+  const passwordFor = (account: PreviewAccount) =>
+    derivePreviewPassword(previewSecret as string, account.email);
 
-  const talentId = await ensureUser(talent);
+  const talentId = await ensureUser(talent, passwordFor(talent));
   await sql`
     INSERT INTO talent_profiles (user_id, stage_name, pronouns, neighborhood, bio, primary_role, genres_vibes, hourly_rate_min, hourly_rate_max, profile_completion_pct)
     VALUES (${talentId}, 'Nova Reign', 'she/her', 'Williamsburg', 'Open-format DJ & MC. Rooftops, warehouses, and everything between.', 'DJ', ${JSON.stringify(['House', 'Hip-Hop', 'Afrobeats'])}, 120, 250, 82)
     ON CONFLICT (user_id) DO UPDATE SET stage_name = EXCLUDED.stage_name, updated_at = NOW()
   `;
 
-  const venueId = await ensureUser(venue);
+  const venueId = await ensureUser(venue, passwordFor(venue));
   const venueRows = (await sql`
     INSERT INTO venue_profiles (user_id, venue_name, neighborhood, address, description, venue_type, capacity, music_genres)
     VALUES (${venueId}, 'The Velvet Hour', 'Lower East Side', '133 Essex St, New York, NY', 'Intimate cocktail den with a late-night dance floor.', 'Lounge', 180, ${JSON.stringify(['House', 'Disco', 'R&B'])})
@@ -94,9 +112,9 @@ async function main() {
   `) as Array<{ id: string }>;
   const venueProfileId = venueRows[0].id;
 
-  await ensureUser(party);
+  await ensureUser(party, passwordFor(party));
   // ADMIN needs no profile row — the role itself is the capability (P9).
-  await ensureUser(admin);
+  await ensureUser(admin, passwordFor(admin));
   // PARTY is read-only discovery (CLAUDE.md §6.3): no profile row by design.
 
   const gigCount = (await sql`
@@ -123,9 +141,11 @@ async function main() {
     console.log(`• venue already has ${gigCount[0].count} gig(s) — not reseeding`);
   }
 
-  console.log('\nPreview credentials (also in TESTING.md §2):');
+  console.log(
+    '\nPreview credentials for THIS environment (derived from PREVIEW_ACCOUNTS_SECRET — share like a secret):'
+  );
   for (const account of PREVIEW_ACCOUNTS) {
-    console.log(`  ${account.role.padEnd(6)} ${account.email} / ${account.password}`);
+    console.log(`  ${account.role.padEnd(6)} ${account.email} / ${passwordFor(account)}`);
   }
 }
 

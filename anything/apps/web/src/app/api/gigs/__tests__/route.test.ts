@@ -6,7 +6,13 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('next/headers', () => ({ headers: async () => new Headers() }));
 vi.mock('@/lib/auth', () => ({ auth: { api: { getSession: mocks.getSession } } }));
-vi.mock('@/app/api/utils/sql', () => ({ default: mocks.sql }));
+vi.mock('@/app/api/utils/sql', () => ({
+  default: Object.assign(mocks.sql, {
+    // Neon's transaction API (used via withRlsContext, S2): array of
+    // already-pending queries → array of results.
+    transaction: async (queries: Promise<unknown>[]) => Promise.all(queries),
+  }),
+}));
 
 import { GET, POST } from '../route';
 import { getRateLimiter } from '@/app/api/utils/rate-limit';

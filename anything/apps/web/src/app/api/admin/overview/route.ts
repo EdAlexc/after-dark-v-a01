@@ -1,6 +1,7 @@
 import sql from '@/app/api/utils/sql';
 import { authGuard } from '@/app/api/utils/auth-guard';
 import { withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext } from '@/app/api/utils/rls';
 import { stripeEnabled } from '@/lib/stripe';
 
 /**
@@ -9,28 +10,32 @@ import { stripeEnabled } from '@/lib/stripe';
  * audited (every admin WRITE is).
  */
 export const GET = withRoute('admin.overview', async () => {
-  await authGuard.requireRole('ADMIN');
+  const admin = await authGuard.requireRole('ADMIN');
 
-  const [users, reports, gigs, payouts, shiftsTonight] = await Promise.all([
+  // RLS (S2): the tenant-table aggregates need ADMIN context (platform_all
+  // policies); "user" is not RLS-governed and stays outside the batch.
+  const [users, [reports, gigs, payouts, shiftsTonight]] = await Promise.all([
     sql`
       SELECT COALESCE(role, 'UNASSIGNED') AS role,
              COUNT(*)::int AS count,
              COUNT(*) FILTER (WHERE suspended_at IS NOT NULL)::int AS suspended
       FROM "user" GROUP BY role
     `,
-    sql`
-      SELECT status, severity, COUNT(*)::int AS count
-      FROM reports GROUP BY status, severity
-    `,
-    sql`SELECT status, COUNT(*)::int AS count FROM gigs GROUP BY status`,
-    sql`
-      SELECT status, COUNT(*)::int AS count, COALESCE(SUM(net_cents), 0)::bigint AS net_cents
-      FROM payouts GROUP BY status
-    `,
-    sql`
-      SELECT COUNT(*)::int AS count FROM shifts
-      WHERE status IN ('IN_TRANSIT', 'CHECKED_IN')
-    `,
+    withRlsContext<[unknown[], unknown[], unknown[], unknown[]]>(admin, [
+      sql`
+        SELECT status, severity, COUNT(*)::int AS count
+        FROM reports GROUP BY status, severity
+      `,
+      sql`SELECT status, COUNT(*)::int AS count FROM gigs GROUP BY status`,
+      sql`
+        SELECT status, COUNT(*)::int AS count, COALESCE(SUM(net_cents), 0)::bigint AS net_cents
+        FROM payouts GROUP BY status
+      `,
+      sql`
+        SELECT COUNT(*)::int AS count FROM shifts
+        WHERE status IN ('IN_TRANSIT', 'CHECKED_IN')
+      `,
+    ]),
   ]);
 
   return Response.json({

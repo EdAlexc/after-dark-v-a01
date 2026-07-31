@@ -4,6 +4,7 @@ import { auditLogger } from '@/app/api/utils/audit';
 import { parseBody } from '@/app/api/utils/validation';
 import { AdminReportUpdateSchema, ReportIdSchema } from '@/app/api/utils/schemas';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext, type RlsUser } from '@/app/api/utils/rls';
 
 interface ReportRow {
   id: number;
@@ -18,12 +19,16 @@ interface ReportRow {
   resolution_note: string | null;
 }
 
-async function loadReport(id: number): Promise<ReportRow | null> {
-  const rows = (await sql`
-    SELECT id, reporter_id, entity_type, entity_id, reason, severity, status,
-           created_at, reviewed_at, resolution_note
-    FROM reports WHERE id = ${id} LIMIT 1
-  `) as ReportRow[];
+async function loadReport(admin: RlsUser, id: number): Promise<ReportRow | null> {
+  // RLS (S2): reports_admin_read keys on the ADMIN context.
+  const rows = await withRlsContext<ReportRow[]>(
+    admin,
+    sql`
+      SELECT id, reporter_id, entity_type, entity_id, reason, severity, status,
+             created_at, reviewed_at, resolution_note
+      FROM reports WHERE id = ${id} LIMIT 1
+    `
+  );
   return rows[0] ?? null;
 }
 
@@ -40,34 +45,42 @@ export const GET = withRoute('admin.reports.detail', async (_request, context) =
   const parsed = ReportIdSchema.safeParse(params?.id);
   if (!parsed.success) throw ApiError.notFound();
 
-  const report = await loadReport(parsed.data);
+  const report = await loadReport(admin, parsed.data);
   if (!report) throw ApiError.notFound();
 
   let conversation: Record<string, unknown> | null = null;
   let messages: Array<Record<string, unknown>> = [];
   if (report.entity_type === 'conversation') {
-    const conversationRows = (await sql`
-      SELECT c.id, c.kind, c.gig_id, g.title AS gig_title,
-             vu.email AS venue_email, cu.email AS counterpart_email
-      FROM conversations c
-      LEFT JOIN gigs g ON g.id = c.gig_id
-      LEFT JOIN "user" vu ON vu.id = c.venue_user_id
-      LEFT JOIN "user" cu ON cu.id = c.counterpart_user_id
-      WHERE c.id = ${report.entity_id}
-      LIMIT 1
-    `) as Array<Record<string, unknown>>;
+    // RLS (S2): moderation reads of private threads ride the ADMIN-context
+    // platform policies (and are audited below).
+    const conversationRows = await withRlsContext<Array<Record<string, unknown>>>(
+      admin,
+      sql`
+        SELECT c.id, c.kind, c.gig_id, g.title AS gig_title,
+               vu.email AS venue_email, cu.email AS counterpart_email
+        FROM conversations c
+        LEFT JOIN gigs g ON g.id = c.gig_id
+        LEFT JOIN "user" vu ON vu.id = c.venue_user_id
+        LEFT JOIN "user" cu ON cu.id = c.counterpart_user_id
+        WHERE c.id = ${report.entity_id}
+        LIMIT 1
+      `
+    );
     conversation = conversationRows[0] ?? null;
 
     if (conversation) {
-      messages = (await sql`
-        SELECT m.id, m.kind, m.content, m.rate_cents, m.created_at,
-               u.email AS sender_email
-        FROM messages m
-        LEFT JOIN "user" u ON u.id = m.sender_id
-        WHERE m.conversation_id = ${report.entity_id}
-        ORDER BY m.created_at DESC
-        LIMIT 20
-      `) as Array<Record<string, unknown>>;
+      messages = await withRlsContext<Array<Record<string, unknown>>>(
+        admin,
+        sql`
+          SELECT m.id, m.kind, m.content, m.rate_cents, m.created_at,
+                 u.email AS sender_email
+          FROM messages m
+          LEFT JOIN "user" u ON u.id = m.sender_id
+          WHERE m.conversation_id = ${report.entity_id}
+          ORDER BY m.created_at DESC
+          LIMIT 20
+        `
+      );
 
       // Security gate: reading private messages for moderation leaves a trail.
       await auditLogger.record({
@@ -95,23 +108,26 @@ export const PATCH = withRoute('admin.reports.update', async (request, context) 
   if (!parsed.success) throw ApiError.notFound();
   const body = await parseBody(request, AdminReportUpdateSchema);
 
-  const report = await loadReport(parsed.data);
+  const report = await loadReport(admin, parsed.data);
   if (!report) throw ApiError.notFound();
   if (report.status === body.status) return Response.json({ report }); // no-op
   if (report.status === 'CLOSED') {
     throw ApiError.badRequest('Report is closed — reopen is not supported');
   }
 
-  const updated = (await sql`
-    UPDATE reports
-    SET status = ${body.status},
-        reviewed_by = ${admin.id},
-        reviewed_at = NOW(),
-        resolution_note = COALESCE(${body.resolution_note ?? null}, resolution_note)
-    WHERE id = ${parsed.data} AND status = ${report.status}
-    RETURNING id, entity_type, entity_id, reason, severity, status, created_at,
-              reviewed_at, resolution_note
-  `) as ReportRow[];
+  const updated = await withRlsContext<ReportRow[]>(
+    admin,
+    sql`
+      UPDATE reports
+      SET status = ${body.status},
+          reviewed_by = ${admin.id},
+          reviewed_at = NOW(),
+          resolution_note = COALESCE(${body.resolution_note ?? null}, resolution_note)
+      WHERE id = ${parsed.data} AND status = ${report.status}
+      RETURNING id, entity_type, entity_id, reason, severity, status, created_at,
+                reviewed_at, resolution_note
+    `
+  );
   if (updated.length === 0) {
     throw new ApiError(409, 'Report changed underneath you — reload');
   }

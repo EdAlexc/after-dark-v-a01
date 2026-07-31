@@ -1,96 +1,103 @@
 # RLS cutover runbook
 
-> TENANT_GUARDRAIL §6.2 · DEV_TIMELINE P2.4 · Backlog #25.
-> Status as of **2026-07-30**: policies written (`0004`), GRANTs written (`0006`), enforcement
-> **verified against a real non-owner role** (`yarn db:verify-rls`, 10/10). The production
-> connection has **not** been switched — steps 3–4 below are the remaining work.
+> TENANT_GUARDRAIL §6.2 · DEV_TIMELINE P2.4 → slice **S2** · Backlog #25.
+> Status as of **2026-07-31 (S2)**: policies **complete** (`0004` + `0014`), GRANTs written
+> (`0006`/`0011`/`0013`/`0014` + the living `scripts/grants.sql`), and **every route that
+> touches an RLS-governed table now runs its statements through `withRlsContext`** — the
+> engineering work this runbook used to gate on is done. What remains is the operator flip
+> (steps 1–2 and 4–5 below): create the role, apply grants, point `DATABASE_URL` at it,
+> verify.
 
 ## What is already true
 
 | Piece | State |
 |---|---|
-| Policies on `talent_profiles`, `venue_profiles`, `gigs`, `audit_logs` | ✅ `migrations/0004_rls.sql` |
-| Least-privilege GRANTs (DML only, no DDL, no UPDATE/DELETE on `audit_logs`) | ✅ `migrations/0006_compliance_spine.sql`, applied conditionally when the role exists |
-| Per-request context helper | ✅ `src/app/api/utils/rls.ts` (`withRlsContext`) |
-| Proof the policies actually block cross-tenant reads/writes | ✅ `scripts/verify-rls.mjs` — 10/10 on a Neon branch |
-| App connects as that role | ⛔ **Not yet — see below** |
+| Policies on the 0004 tables (`talent_profiles`, `venue_profiles`, `gigs`, `audit_logs`) | ✅ `migrations/0004_rls.sql` |
+| Policies on every P3–P9 table (applications, conversations/messages, availabilities, shifts, payouts, stripe, reports, notifications) | ✅ shipped in-file with 0007–0011 |
+| **Completion policies** — SERVICE/ADMIN platform context, gig applicant/completed carve-outs, messages mark-read split, erasure pseudonymization, payout checkout INSERT, `legal_holds` | ✅ `migrations/0014_rls_completion.sql` (S2) |
+| Least-privilege GRANTs | ✅ conditional blocks in 0006/0011/0013/0014 **+ re-runnable `yarn db:grants`** (see below) |
+| Per-request context helper | ✅ `src/app/api/utils/rls.ts` (`withRlsContext`, single query or atomic batch, + `serviceContext` for cron/webhook/erasure) |
+| **Route wiring** | ✅ **complete (S2)** — every governed statement in `src/app/api` carries context: the original five routes, all P3–P9 marketplace routes, the admin surface (ADMIN context), and the system paths (escrow cron, Stripe webhook, retention purge, erasure — SERVICE context) |
+| Proof the policies enforce | ✅ `scripts/verify-rls.mjs` — **19 checks** on a Neon branch, covering isolation *and* the 0014 semantics (applicant deep links, mark-read, SERVICE-only payout release + pseudonymization, stripe_events deny-by-default) |
+| App connects as the non-owner role | ⛔ **The remaining operator step — see below** |
 
-Until the last row flips, the policies are **inert in production**: Postgres table owners
-bypass non-forced RLS. Nothing is broken, and nothing is protected by RLS either — app-level
-authZ (proven by the P2.3 matrix suite) is doing all the work.
+Until the flip, the policies are **inert in production**: Postgres table owners bypass
+non-forced RLS. Nothing is broken, and nothing is protected by RLS either — app-level authZ
+(proven by the P2.3 matrix suite) is doing all the work. The wiring is a no-op while
+owner-connected (`set_config` runs harmlessly), which is exactly why it was safe to land
+first.
 
-## Why the switch is not a one-line env change
+## Why the switch needs the wiring (kept for context)
 
 Neon's HTTP driver is **stateless per query**: there is no session to hold
-`SET app.user_id` across statements. So every query that needs request context must run as a
-small transaction that sets the context and then runs the statement — which is exactly what
-`withRlsContext` does.
-
-The consequence, measured during verification:
+`SET app.user_id` across statements, so every governed query runs as a small transaction
+that sets the context first — `withRlsContext`. Measured during verification:
 
 > Connected as `afterdark_app` **without** setting `app.user_id`, a venue sees only
 > `PUBLISHED` gigs — its own drafts vanish. The venue dashboard would silently go half-empty.
 
-So the cutover is gated on wiring, not on the env var. Flipping `DATABASE_URL` first would
-degrade the product without warning.
+The 2026-07-31 route audit for S2 found the same failure shape in every post-P2 slice
+(empty message threads, a cron that releases nothing, erasure that cannot pseudonymize),
+which is why the wiring now covers **all** governed routes and why 0014 adds the SERVICE
+context policies the system paths need.
 
-## Cutover steps
+## Cutover steps (operator)
 
 ### 1. Create the role (per environment)
 
 Neon Console → Roles → **New Role** → `afterdark_app` (or `neonctl roles create --name
 afterdark_app`). Neon generates the password; it must never enter git.
 
-### 2. Apply GRANTs
+### 2. Apply the GRANT set
 
 ```bash
-DATABASE_URL=<owner connection> yarn db:migrate
+DATABASE_URL=<owner connection> yarn db:grants
 ```
 
-`0006` is idempotent and re-runnable; its GRANT block is a no-op until the role exists, so this
-is the step that actually attaches privileges. Verify:
+`scripts/grants.sql` is the complete, idempotent, **re-runnable** privilege set — it exists
+because the migration runner is forward-only: if the role is created after 0006/0013/0014
+were applied, their conditional GRANT blocks already no-opped and will never run again.
+(On a fresh database where the role exists first, `yarn db:migrate` alone is sufficient;
+running `yarn db:grants` afterwards is still harmless.) Verify:
 
 ```sql
 SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type)
 FROM information_schema.role_table_grants
 WHERE grantee = 'afterdark_app' GROUP BY table_name;
--- audit_logs must show only INSERT,SELECT
+-- audit_logs must show only INSERT,SELECT,UPDATE — and the UPDATE must be
+-- column-scoped to actor_id (check information_schema.column_privileges).
 ```
 
-### 3. Wire request context (**the remaining engineering work**)
+### 3. Wire request context — ✅ done (S2)
 
-Route every query that touches an RLS-governed table through `withRlsContext`:
+Nothing to do. For review, the wiring pattern is:
 
-| Route | Why it needs context |
-|---|---|
-| `api/venue/gigs` GET | Reads the venue's own non-PUBLISHED gigs |
-| `api/gigs/[id]` GET, PATCH | Owner reads/writes non-PUBLISHED gigs |
-| `api/gigs` POST | Insert must satisfy the ownership `WITH CHECK` |
-| `api/talent/profile` PUT | Write scoped by `user_id = app.user_id` |
-| `api/venue/profile` PUT | Same |
+- user routes: `withRlsContext(user, sql`…`)` or `withRlsContext(user, [q1, q2, …])`
+  for atomic batches (hire, check-in/out, availability day-save);
+- system paths: `withRlsContext(serviceContext('system:cron'), …)` — escrow release,
+  Stripe webhook, retention purge, erasure pseudonymization;
+- public reads (`GET /api/gigs`, `GET /api/talent`, anonymous gig detail) intentionally
+  carry **no** context — their policies are `USING (true)` / marketplace-visible statuses.
 
-Public reads (`GET /api/gigs`, `GET /api/talent`) need **no** context — their policies are
-`USING (true)` / `status = 'PUBLISHED'`.
-
-`api/settings`, `api/account/*` and `api/user/role` touch only `user`, which is deliberately
-**not** RLS-governed (better-auth must manage it before a session exists).
-
-Wiring is safe to land *before* the cutover: while the app still connects as the owner,
-`set_config` runs harmlessly and behaviour is unchanged. Do it in that order.
+`api/settings`, `api/account/*` (except the audit rewrite) and `api/user/role` touch only
+better-auth tables, which are deliberately **not** RLS-governed.
 
 ### 4. Flip the connection
 
 Set `DATABASE_URL` to the `afterdark_app` **pooled** connection string in Vercel (Production
-and Preview), then redeploy. Keep the owner string somewhere safe — migrations still need it.
+and Preview), then redeploy. Keep the owner string somewhere safe — migrations and
+`yarn db:grants` still need it.
 
 ### 5. Verify
 
 ```bash
-OWNER_URL=<owner> RLS_URL=<afterdark_app> yarn db:verify-rls   # expect 10/10
+OWNER_URL=<owner> RLS_URL=<afterdark_app> yarn db:verify-rls   # expect 19/19
 ```
 
-Then walk TESTING.md §5 against the deployed app. The canary for a botched cutover is a venue
-dashboard whose Open Gigs table renders but shows no drafts.
+Then walk TESTING.md §5 against the deployed app. Canaries for a botched cutover, in the
+order they'd surface: a venue dashboard whose Open Gigs table shows no drafts; message
+threads that never mark read; a talent dashboard missing FILLED bookings; the 09:00 UTC
+escrow cron reporting `released: 0` despite due payouts.
 
 ## Rollback
 

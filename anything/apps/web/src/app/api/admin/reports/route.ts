@@ -3,6 +3,7 @@ import { authGuard } from '@/app/api/utils/auth-guard';
 import { parseQuery } from '@/app/api/utils/validation';
 import { AdminReportsQuerySchema } from '@/app/api/utils/schemas';
 import { withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 /**
  * GET /api/admin/reports (P9.1) — the moderation triage queue (wireframe p1).
@@ -11,11 +12,12 @@ import { withRoute } from '@/app/api/utils/route-kit';
  * (which may expose message content) and every transition are.
  */
 export const GET = withRoute('admin.reports.list', async (request) => {
-  await authGuard.requireRole('ADMIN');
+  const admin = await authGuard.requireRole('ADMIN');
   const { status } = parseQuery(request.url, AdminReportsQuerySchema);
 
+  // RLS (S2): reports_admin_read keys on the ADMIN context.
   const reports = status
-    ? await sql`
+    ? await withRlsContext<Record<string, unknown>[]>(admin, sql`
         SELECT r.id, r.entity_type, r.entity_id, r.reason, r.severity, r.status,
                r.created_at, r.reviewed_at, r.resolution_note,
                ru.email AS reporter_email, ru.name AS reporter_name,
@@ -27,8 +29,8 @@ export const GET = withRoute('admin.reports.list', async (request) => {
         ORDER BY CASE r.severity WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END,
                  r.created_at DESC
         LIMIT 100
-      `
-    : await sql`
+      `)
+    : await withRlsContext<Record<string, unknown>[]>(admin, sql`
         SELECT r.id, r.entity_type, r.entity_id, r.reason, r.severity, r.status,
                r.created_at, r.reviewed_at, r.resolution_note,
                ru.email AS reporter_email, ru.name AS reporter_name,
@@ -40,7 +42,7 @@ export const GET = withRoute('admin.reports.list', async (request) => {
                  CASE r.severity WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END,
                  r.created_at DESC
         LIMIT 100
-      `;
+      `);
 
   return Response.json({ reports });
 });

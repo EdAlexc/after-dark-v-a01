@@ -3,6 +3,7 @@ import sql from '@/app/api/utils/sql';
 import { getStripe, stripeEnabled, webhookSecret } from '@/lib/stripe';
 import { logger } from '@/app/api/utils/logger';
 import { withRoute, jsonError } from '@/app/api/utils/route-kit';
+import { serviceContext, withRlsContext } from '@/app/api/utils/rls';
 
 const log = logger.child('stripe.webhook');
 
@@ -19,7 +20,11 @@ const log = logger.child('stripe.webhook');
  *  3. Handlers are minimal and idempotent on top of that anyway.
  *
  * No session/auth: Stripe is the caller. The signature *is* the authn.
+ * RLS (S2): all writes run under SERVICE context — stripe_events is
+ * deny-by-default to user contexts, and the payout/account updates are
+ * platform bookkeeping, not user actions.
  */
+const STRIPE_SERVICE = serviceContext('system:stripe');
 export const POST = withRoute('stripe.webhook', async (request) => {
   if (!stripeEnabled() || !webhookSecret()) {
     // Not configured: acknowledge nothing, reveal nothing.
@@ -43,11 +48,14 @@ export const POST = withRoute('stripe.webhook', async (request) => {
   }
 
   // Replay guard: first delivery wins; duplicates are acknowledged and dropped.
-  const recorded = (await sql`
-    INSERT INTO stripe_events (id, type) VALUES (${event.id}, ${event.type})
-    ON CONFLICT (id) DO NOTHING
-    RETURNING id
-  `) as Array<{ id: string }>;
+  const recorded = await withRlsContext<Array<{ id: string }>>(
+    STRIPE_SERVICE,
+    sql`
+      INSERT INTO stripe_events (id, type) VALUES (${event.id}, ${event.type})
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id
+    `
+  );
   if (recorded.length === 0) {
     log.info('replayed webhook dropped', { eventId: event.id, type: event.type });
     return Response.json({ received: true, replay: true });
@@ -57,20 +65,26 @@ export const POST = withRoute('stripe.webhook', async (request) => {
     case 'account.updated': {
       const account = event.data.object as Stripe.Account;
       const onboarded = Boolean(account.charges_enabled && account.payouts_enabled);
-      await sql`
-        UPDATE stripe_accounts SET onboarded = ${onboarded}, updated_at = NOW()
-        WHERE stripe_account_id = ${account.id}
-      `;
+      await withRlsContext(
+        STRIPE_SERVICE,
+        sql`
+          UPDATE stripe_accounts SET onboarded = ${onboarded}, updated_at = NOW()
+          WHERE stripe_account_id = ${account.id}
+        `
+      );
       break;
     }
     case 'transfer.created': {
       const transfer = event.data.object as Stripe.Transfer;
       const payoutId = transfer.metadata?.afterdark_payout_id;
       if (payoutId) {
-        await sql`
-          UPDATE payouts SET stripe_transfer_id = ${transfer.id}
-          WHERE id = ${Number(payoutId)} AND stripe_transfer_id IS NULL
-        `;
+        await withRlsContext(
+          STRIPE_SERVICE,
+          sql`
+            UPDATE payouts SET stripe_transfer_id = ${transfer.id}
+            WHERE id = ${Number(payoutId)} AND stripe_transfer_id IS NULL
+          `
+        );
       }
       break;
     }

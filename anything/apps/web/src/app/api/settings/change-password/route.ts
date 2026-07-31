@@ -15,7 +15,7 @@ const passwordLimiter = getRateLimiter('change-password', {
 
 export const POST = withRoute('settings.change-password', async (request) => {
   const user = await authGuard.requireSession();
-  enforceRateLimit(passwordLimiter, clientKey(request, user.id));
+  await enforceRateLimit(passwordLimiter, clientKey(request, user.id));
 
   const { currentPassword, newPassword } = await parseBody(request, ChangePasswordSchema);
 

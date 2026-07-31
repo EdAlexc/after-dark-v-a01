@@ -5,6 +5,7 @@ import { parseBody } from '@/app/api/utils/validation';
 import { ConversationCreateSchema } from '@/app/api/utils/schemas';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 const createLimiter = getRateLimiter('conversations-create', {
   windowMs: 60 * 60 * 1000,
@@ -19,7 +20,10 @@ const createLimiter = getRateLimiter('conversations-create', {
 export const GET = withRoute('conversations.list', async () => {
   const user = await authGuard.requireSession();
 
-  const conversations = await sql`
+  // RLS (S2): conversations/messages resolve through participant policies.
+  const conversations = await withRlsContext<Record<string, unknown>[]>(
+    user,
+    sql`
     SELECT c.id, c.gig_id, c.kind, c.created_at,
            c.venue_user_id, c.counterpart_user_id,
            CASE WHEN c.venue_user_id = ${user.id} THEN cu.name ELSE vu.name END AS other_name,
@@ -41,7 +45,8 @@ export const GET = withRoute('conversations.list', async () => {
     WHERE c.venue_user_id = ${user.id} OR c.counterpart_user_id = ${user.id}
     ORDER BY COALESCE(last.created_at, c.created_at) DESC
     LIMIT 50
-  `;
+  `
+  );
   return Response.json({ conversations });
 });
 
@@ -54,7 +59,7 @@ export const GET = withRoute('conversations.list', async () => {
  */
 export const POST = withRoute('conversations.create', async (request) => {
   const user = await authGuard.requireRole('TALENT', 'VENUE', 'PARTY');
-  enforceRateLimit(createLimiter, clientKey(request, user.id));
+  await enforceRateLimit(createLimiter, clientKey(request, user.id));
   const body = await parseBody(request, ConversationCreateSchema);
 
   // Gig-anchored inquiries resolve the counterpart server-side from the gig,
@@ -107,21 +112,28 @@ export const POST = withRoute('conversations.create', async (request) => {
     if (gigRows.length === 0) throw ApiError.notFound('Gig not found');
   }
 
-  const existing = (await sql`
-    SELECT id FROM conversations
-    WHERE venue_user_id = ${venueUserId} AND counterpart_user_id = ${nonVenueUserId}
-      AND (gig_id = ${body.gig_id ?? null} OR (gig_id IS NULL AND ${body.gig_id ?? null}::uuid IS NULL))
-    LIMIT 1
-  `) as Array<{ id: string }>;
+  const existing = await withRlsContext<Array<{ id: string }>>(
+    user,
+    sql`
+      SELECT id FROM conversations
+      WHERE venue_user_id = ${venueUserId} AND counterpart_user_id = ${nonVenueUserId}
+        AND (gig_id = ${body.gig_id ?? null} OR (gig_id IS NULL AND ${body.gig_id ?? null}::uuid IS NULL))
+      LIMIT 1
+    `
+  );
   if (existing.length > 0) {
     return Response.json({ conversation: { id: existing[0].id }, created: false });
   }
 
-  const created = (await sql`
-    INSERT INTO conversations (gig_id, venue_user_id, counterpart_user_id, kind)
-    VALUES (${body.gig_id ?? null}, ${venueUserId}, ${nonVenueUserId}, ${kind})
-    RETURNING id, gig_id, kind, created_at
-  `) as Array<{ id: string }>;
+  // RLS (S2): conversations_participant WITH CHECKs the caller is a side.
+  const created = await withRlsContext<Array<{ id: string }>>(
+    user,
+    sql`
+      INSERT INTO conversations (gig_id, venue_user_id, counterpart_user_id, kind)
+      VALUES (${body.gig_id ?? null}, ${venueUserId}, ${nonVenueUserId}, ${kind})
+      RETURNING id, gig_id, kind, created_at
+    `
+  );
 
   await auditLogger.record({
     actorId: user.id,

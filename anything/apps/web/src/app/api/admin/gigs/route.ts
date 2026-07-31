@@ -3,6 +3,7 @@ import { authGuard } from '@/app/api/utils/auth-guard';
 import { parseQuery } from '@/app/api/utils/validation';
 import { AdminGigsQuerySchema } from '@/app/api/utils/schemas';
 import { withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 const PAGE_SIZE = 25;
 
@@ -12,11 +13,12 @@ const PAGE_SIZE = 25;
  * pressure. Admin is the one role allowed to see all tenants at once.
  */
 export const GET = withRoute('admin.gigs.list', async (request) => {
-  await authGuard.requireRole('ADMIN');
+  const admin = await authGuard.requireRole('ADMIN');
   const { status, page } = parseQuery(request.url, AdminGigsQuerySchema);
   const offset = (page - 1) * PAGE_SIZE;
 
-  const rows = (await sql`
+  // RLS (S2): cross-tenant read via the ADMIN context policies.
+  const rows = await withRlsContext<Array<Record<string, unknown>>>(admin, sql`
     SELECT g.id, g.title, g.role_needed, g.status, g.start_time, g.base_rate,
            g.age_requirement, g.created_at,
            vp.venue_name, vu.email AS venue_email,
@@ -37,7 +39,7 @@ export const GET = withRoute('admin.gigs.list', async (request) => {
     WHERE (${status ?? null}::text IS NULL OR g.status = ${status ?? null})
     ORDER BY g.created_at DESC
     LIMIT ${PAGE_SIZE + 1} OFFSET ${offset}
-  `) as Array<Record<string, unknown>>;
+  `);
 
   const hasMore = rows.length > PAGE_SIZE;
   return Response.json({ gigs: rows.slice(0, PAGE_SIZE), page, hasMore });

@@ -3,6 +3,7 @@ import { authGuard } from '@/app/api/utils/auth-guard';
 import { parseBody } from '@/app/api/utils/validation';
 import { NotificationsReadSchema } from '@/app/api/utils/schemas';
 import { withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 /**
  * GET /api/notifications (P3.4) — own latest notifications + unread count.
@@ -12,7 +13,11 @@ import { withRoute } from '@/app/api/utils/route-kit';
 export const GET = withRoute('notifications.list', async () => {
   const user = await authGuard.requireSession();
 
-  const [notifications, unread] = await Promise.all([
+  // RLS (S2): notifications_own scopes both reads via request context.
+  const [notifications, unread] = await withRlsContext<[
+    Record<string, unknown>[],
+    Array<{ count: number }>,
+  ]>(user, [
     sql`
       SELECT id, kind, payload, read_at, created_at
       FROM notifications
@@ -37,15 +42,21 @@ export const POST = withRoute('notifications.read', async (request) => {
   const body = await parseBody(request, NotificationsReadSchema);
 
   if (body.ids && body.ids.length > 0) {
-    await sql`
-      UPDATE notifications SET read_at = NOW()
-      WHERE user_id = ${user.id} AND read_at IS NULL AND id = ANY(${body.ids})
-    `;
+    await withRlsContext(
+      user,
+      sql`
+        UPDATE notifications SET read_at = NOW()
+        WHERE user_id = ${user.id} AND read_at IS NULL AND id = ANY(${body.ids})
+      `
+    );
   } else {
-    await sql`
-      UPDATE notifications SET read_at = NOW()
-      WHERE user_id = ${user.id} AND read_at IS NULL
-    `;
+    await withRlsContext(
+      user,
+      sql`
+        UPDATE notifications SET read_at = NOW()
+        WHERE user_id = ${user.id} AND read_at IS NULL
+      `
+    );
   }
   return Response.json({ success: true });
 });

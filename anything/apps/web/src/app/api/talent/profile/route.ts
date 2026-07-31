@@ -8,6 +8,7 @@ import { buildUpdateByKey, jsonify, stripUndefined } from '@/app/api/utils/sql-b
 import { computeTalentProfileCompletion } from '@/app/api/utils/profile-completion';
 import { MediaError, sanitizeMediaField } from '@/app/api/utils/media';
 import { ApiError } from '@/app/api/utils/route-kit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 /** Media-carrying route; raw uploads are processed by the P4 pipeline below. */
 const MAX_PROFILE_BODY_BYTES = 12_000_000;
@@ -55,6 +56,8 @@ export const PUT = withRoute('talent.profile.update', async (request) => {
   const merged = { ...(existing[0] ?? {}), ...stripUndefined(body) };
   const profile_completion_pct = computeTalentProfileCompletion(merged);
 
+  // RLS (S2): profile writes are scoped by talent_profiles_owner_write, which
+  // keys on the request context once the app runs as the non-owner role.
   let profile;
   if (existing.length > 0) {
     const statement = buildUpdateByKey({
@@ -78,27 +81,33 @@ export const PUT = withRoute('talent.profile.update', async (request) => {
         updated_at: new Date().toISOString(),
       },
     });
-    const result = await sql(statement!.text, statement!.values);
+    const result = await withRlsContext<Record<string, unknown>[]>(
+      user,
+      sql(statement!.text, statement!.values)
+    );
     profile = result[0];
   } else {
-    const result = await sql`
-      INSERT INTO talent_profiles (
-        user_id, stage_name, pronouns, neighborhood, bio,
-        primary_role, genres_vibes, hourly_rate_min, hourly_rate_max,
-        social_links, avatar_url, portfolio_images, available_tonight,
-        profile_completion_pct
-      ) VALUES (
-        ${user.id}, ${body.stage_name ?? null}, ${body.pronouns ?? null}, ${body.neighborhood ?? null},
-        ${body.bio ?? null}, ${body.primary_role ?? null},
-        ${jsonify(body.genres_vibes) ?? '[]'},
-        ${body.hourly_rate_min ?? null}, ${body.hourly_rate_max ?? null},
-        ${jsonify(body.social_links) ?? '{}'},
-        ${body.avatar_url ?? null},
-        ${jsonify(body.portfolio_images) ?? '[]'},
-        ${body.available_tonight ?? false},
-        ${profile_completion_pct}
-      ) RETURNING *
-    `;
+    const result = await withRlsContext<Record<string, unknown>[]>(
+      user,
+      sql`
+        INSERT INTO talent_profiles (
+          user_id, stage_name, pronouns, neighborhood, bio,
+          primary_role, genres_vibes, hourly_rate_min, hourly_rate_max,
+          social_links, avatar_url, portfolio_images, available_tonight,
+          profile_completion_pct
+        ) VALUES (
+          ${user.id}, ${body.stage_name ?? null}, ${body.pronouns ?? null}, ${body.neighborhood ?? null},
+          ${body.bio ?? null}, ${body.primary_role ?? null},
+          ${jsonify(body.genres_vibes) ?? '[]'},
+          ${body.hourly_rate_min ?? null}, ${body.hourly_rate_max ?? null},
+          ${jsonify(body.social_links) ?? '{}'},
+          ${body.avatar_url ?? null},
+          ${jsonify(body.portfolio_images) ?? '[]'},
+          ${body.available_tonight ?? false},
+          ${profile_completion_pct}
+        ) RETURNING *
+      `
+    );
     profile = result[0];
   }
 

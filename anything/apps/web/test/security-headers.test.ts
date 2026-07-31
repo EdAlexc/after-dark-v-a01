@@ -33,7 +33,9 @@ describe('buildCsp', () => {
     expect(dev).not.toContain('upgrade-insecure-requests');
   });
 
-  it('admits create.xyz builder origins into frame-ancestors and connect-src', () => {
+  it('locks frame-ancestors to self by default — builder origins are ignored (S1, Backlog #16)', () => {
+    // The embed lockdown: even with the create.xyz env vars configured, the
+    // origins must not appear anywhere in the policy without the opt-in flag.
     const csp: string = buildCsp({
       isDev: false,
       env: {
@@ -41,13 +43,51 @@ describe('buildCsp', () => {
         NEXT_PUBLIC_CREATE_HOST: 'app.create.xyz',
       },
     });
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(csp).not.toContain('create.xyz');
+  });
+
+  it('admits create.xyz builder origins only under CREATE_BUILDER_EMBED', () => {
+    const csp: string = buildCsp({
+      isDev: false,
+      env: {
+        CREATE_BUILDER_EMBED: '1',
+        NEXT_PUBLIC_CREATE_BASE_URL: 'https://www.create.xyz',
+        NEXT_PUBLIC_CREATE_HOST: 'app.create.xyz',
+      },
+    });
     expect(csp).toContain("frame-ancestors 'self' https://www.create.xyz https://app.create.xyz");
-    expect(csp).toContain('connect-src');
-    expect(csp).toContain('https://www.create.xyz');
+    expect(csp.match(/connect-src[^;]*/)?.[0]).toContain('https://www.create.xyz');
   });
 
   it('falls back to self-only frame-ancestors without platform env', () => {
     expect(buildCsp({ isDev: false, env: {} })).toContain("frame-ancestors 'self'");
+  });
+
+  it('keeps the permissive img-src only as the tokenless dev fallback (S3)', () => {
+    const csp: string = buildCsp({ isDev: false, env: {} });
+    expect(csp).toContain("img-src 'self' data: blob: https:");
+  });
+
+  it('pins img-src to the Blob store host when the token is set (S3, G11)', () => {
+    const csp: string = buildCsp({
+      isDev: false,
+      env: { BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_Abc123XYZ_secretpart' },
+    });
+    const img = csp.match(/img-src[^;]*/)?.[0] ?? '';
+    expect(img).toBe("img-src 'self' blob: https://abc123xyz.public.blob.vercel-storage.com");
+    expect(img).not.toContain('data:');
+    expect(img).not.toContain(' https: ');
+  });
+
+  it('falls back to the vercel-storage wildcard for an unparseable token — never broad https', () => {
+    const csp: string = buildCsp({
+      isDev: false,
+      env: { BLOB_READ_WRITE_TOKEN: 'not-a-normal-token' },
+    });
+    const img = csp.match(/img-src[^;]*/)?.[0] ?? '';
+    expect(img).toContain('https://*.public.blob.vercel-storage.com');
+    expect(img).not.toContain('data:');
   });
 
   it("allows the service worker via worker-src 'self' (P10.2)", () => {
@@ -110,14 +150,28 @@ describe('buildSecurityHeaders', () => {
   });
 });
 
-describe('createPlatformOrigins', () => {
-  it('handles missing, partial, and full env', () => {
+describe('createPlatformOrigins (S1 embed opt-in)', () => {
+  it('returns nothing without the opt-in flag, whatever else is set', () => {
     expect(createPlatformOrigins({})).toEqual([]);
-    expect(createPlatformOrigins({ NEXT_PUBLIC_CREATE_HOST: 'x.create.xyz' })).toEqual([
-      'https://x.create.xyz',
-    ]);
+    expect(createPlatformOrigins({ NEXT_PUBLIC_CREATE_HOST: 'x.create.xyz' })).toEqual([]);
+    for (const value of ['0', 'false', 'yes', '']) {
+      expect(
+        createPlatformOrigins({
+          CREATE_BUILDER_EMBED: value,
+          NEXT_PUBLIC_CREATE_HOST: 'x.create.xyz',
+        })
+      ).toEqual([]);
+    }
+  });
+
+  it('handles missing, partial, and full env when opted in', () => {
+    expect(createPlatformOrigins({ CREATE_BUILDER_EMBED: 'true' })).toEqual([]);
+    expect(
+      createPlatformOrigins({ CREATE_BUILDER_EMBED: '1', NEXT_PUBLIC_CREATE_HOST: 'x.create.xyz' })
+    ).toEqual(['https://x.create.xyz']);
     expect(
       createPlatformOrigins({
+        CREATE_BUILDER_EMBED: '1',
         NEXT_PUBLIC_CREATE_BASE_URL: 'https://a.example',
         NEXT_PUBLIC_CREATE_HOST: 'b.example',
       })

@@ -6,6 +6,7 @@ import { VenueProfileUpdateSchema } from '@/app/api/utils/schemas';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { MediaError, sanitizeMediaField } from '@/app/api/utils/media';
 import { buildUpdateByKey, jsonify } from '@/app/api/utils/sql-builder';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 /** Media-carrying route: base64 data URLs until object storage lands (P3). */
 const MAX_PROFILE_BODY_BYTES = 20_000_000;
@@ -66,25 +67,32 @@ export const PUT = withRoute('venue.profile.update', async (request) => {
         updated_at: new Date().toISOString(),
       },
     });
-    const result = await sql(statement!.text, statement!.values);
+    // RLS (S2): write scoped by venue_profiles_owner_write via request context.
+    const result = await withRlsContext<Record<string, unknown>[]>(
+      user,
+      sql(statement!.text, statement!.values)
+    );
     profile = result[0];
   } else {
-    const result = await sql`
-      INSERT INTO venue_profiles (
-        user_id, venue_name, neighborhood, address, description,
-        venue_type, capacity, music_genres, operating_hours,
-        avatar_url, gallery_images, social_links
-      ) VALUES (
-        ${user.id}, ${body.venue_name ?? null}, ${body.neighborhood ?? null},
-        ${body.address ?? null}, ${body.description ?? null},
-        ${body.venue_type ?? null}, ${body.capacity ?? null},
-        ${jsonify(body.music_genres) ?? '[]'},
-        ${jsonify(body.operating_hours) ?? '{}'},
-        ${body.avatar_url ?? null},
-        ${jsonify(body.gallery_images) ?? '[]'},
-        ${jsonify(body.social_links) ?? '{}'}
-      ) RETURNING *
-    `;
+    const result = await withRlsContext<Record<string, unknown>[]>(
+      user,
+      sql`
+        INSERT INTO venue_profiles (
+          user_id, venue_name, neighborhood, address, description,
+          venue_type, capacity, music_genres, operating_hours,
+          avatar_url, gallery_images, social_links
+        ) VALUES (
+          ${user.id}, ${body.venue_name ?? null}, ${body.neighborhood ?? null},
+          ${body.address ?? null}, ${body.description ?? null},
+          ${body.venue_type ?? null}, ${body.capacity ?? null},
+          ${jsonify(body.music_genres) ?? '[]'},
+          ${jsonify(body.operating_hours) ?? '{}'},
+          ${body.avatar_url ?? null},
+          ${jsonify(body.gallery_images) ?? '[]'},
+          ${jsonify(body.social_links) ?? '{}'}
+        ) RETURNING *
+      `
+    );
     profile = result[0];
   }
 

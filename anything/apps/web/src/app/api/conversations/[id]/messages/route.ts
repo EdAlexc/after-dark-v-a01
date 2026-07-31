@@ -6,6 +6,7 @@ import { MessageCreateSchema } from '@/app/api/utils/schemas';
 import { sanitizeMediaField } from '@/app/api/utils/media';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
+import { withRlsContext } from '@/app/api/utils/rls';
 import { z } from 'zod';
 
 const messageLimiter = getRateLimiter('messages-send', { windowMs: 60 * 1000, max: 30 });
@@ -19,13 +20,21 @@ interface ConversationRow {
 }
 
 /** Loads the conversation iff the caller participates; 404 otherwise. */
-async function requireParticipant(id: string, userId: string): Promise<ConversationRow> {
-  const rows = (await sql`
-    SELECT id, venue_user_id, counterpart_user_id, gig_id FROM conversations
-    WHERE id = ${id}
-      AND (venue_user_id = ${userId} OR counterpart_user_id = ${userId})
-    LIMIT 1
-  `) as ConversationRow[];
+async function requireParticipant(
+  user: { id: string; role?: string | null },
+  id: string
+): Promise<ConversationRow> {
+  // RLS (S2): the participant policy enforces the same predicate the WHERE
+  // clause states — defense in depth, same 404 semantics.
+  const rows = await withRlsContext<ConversationRow[]>(
+    user,
+    sql`
+      SELECT id, venue_user_id, counterpart_user_id, gig_id FROM conversations
+      WHERE id = ${id}
+        AND (venue_user_id = ${user.id} OR counterpart_user_id = ${user.id})
+      LIMIT 1
+    `
+  );
   if (rows.length === 0) throw ApiError.notFound();
   return rows[0];
 }
@@ -40,9 +49,12 @@ export const GET = withRoute('messages.list', async (_request, context) => {
   const parsed = ConversationIdSchema.safeParse(params?.id);
   if (!parsed.success) throw ApiError.notFound();
 
-  const conversation = await requireParticipant(parsed.data, user.id);
+  const conversation = await requireParticipant(user, parsed.data);
 
-  const [messages] = await Promise.all([
+  // RLS (S2): reading is messages_participant_read; the mark-read UPDATE is
+  // the recipient acting on the counterpart's rows — allowed by
+  // messages_participant_update (per-command policies, 0014).
+  const [messages] = await withRlsContext<[Record<string, unknown>[], unknown[]]>(user, [
     sql`
       SELECT id, sender_id, content, kind, rate_cents, attachment_url, created_at, read_at
       FROM messages
@@ -67,12 +79,12 @@ export const GET = withRoute('messages.list', async (_request, context) => {
  */
 export const POST = withRoute('messages.send', async (request, context) => {
   const user = await authGuard.requireSession();
-  enforceRateLimit(messageLimiter, clientKey(request, user.id));
+  await enforceRateLimit(messageLimiter, clientKey(request, user.id));
 
   const params = await context.params;
   const parsed = ConversationIdSchema.safeParse(params?.id);
   if (!parsed.success) throw ApiError.notFound();
-  const conversation = await requireParticipant(parsed.data, user.id);
+  const conversation = await requireParticipant(user, parsed.data);
 
   const body = await parseBody(request, MessageCreateSchema, { maxBytes: 8_000_000 });
 
@@ -80,12 +92,15 @@ export const POST = withRoute('messages.send', async (request, context) => {
     ? await sanitizeMediaField(body.attachment_url, 'attachment', user.id)
     : null;
 
-  const inserted = (await sql`
-    INSERT INTO messages (conversation_id, sender_id, content, kind, rate_cents, attachment_url)
-    VALUES (${conversation.id}, ${user.id}, ${body.content}, ${body.kind},
-            ${body.kind === 'RATE_PROPOSAL' ? body.rate_cents : null}, ${attachmentUrl})
-    RETURNING id, sender_id, content, kind, rate_cents, attachment_url, created_at, read_at
-  `) as Array<Record<string, unknown>>;
+  const inserted = await withRlsContext<Array<Record<string, unknown>>>(
+    user,
+    sql`
+      INSERT INTO messages (conversation_id, sender_id, content, kind, rate_cents, attachment_url)
+      VALUES (${conversation.id}, ${user.id}, ${body.content}, ${body.kind},
+              ${body.kind === 'RATE_PROPOSAL' ? body.rate_cents : null}, ${attachmentUrl})
+      RETURNING id, sender_id, content, kind, rate_cents, attachment_url, created_at, read_at
+    `
+  );
 
   const recipient =
     conversation.venue_user_id === user.id

@@ -6,6 +6,7 @@ import { parseBody } from '@/app/api/utils/validation';
 import { ApplicationCreateSchema, GigIdSchema } from '@/app/api/utils/schemas';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 const applyLimiter = getRateLimiter('applications-create', {
   windowMs: 60 * 60 * 1000,
@@ -24,7 +25,7 @@ const applyLimiter = getRateLimiter('applications-create', {
  */
 export const POST = withRoute('gigs.apply', async (request, context) => {
   const user = await authGuard.requireRole('TALENT');
-  enforceRateLimit(applyLimiter, clientKey(request, user.id));
+  await enforceRateLimit(applyLimiter, clientKey(request, user.id));
 
   const params = await context.params;
   const parsed = GigIdSchema.safeParse(params?.id);
@@ -53,18 +54,22 @@ export const POST = withRoute('gigs.apply', async (request, context) => {
   const gig = gigRows[0];
 
   // Upsert-with-revive: WITHDRAWN → PENDING again; any other live status is a
-  // duplicate application.
-  const result = (await sql`
-    INSERT INTO applications (gig_id, talent_id, proposed_rate_cents, cover_message)
-    VALUES (${gigId}, ${talentId}, ${body.proposed_rate_cents ?? null}, ${body.cover_message})
-    ON CONFLICT (gig_id, talent_id) DO UPDATE SET
-      proposed_rate_cents = EXCLUDED.proposed_rate_cents,
-      cover_message = EXCLUDED.cover_message,
-      status = 'PENDING',
-      updated_at = NOW()
-    WHERE applications.status = 'WITHDRAWN'
-    RETURNING *
-  `) as Array<Record<string, unknown>>;
+  // duplicate application. RLS (S2): applications_talent_own WITH CHECK keys
+  // on the request context.
+  const result = await withRlsContext<Array<Record<string, unknown>>>(
+    user,
+    sql`
+      INSERT INTO applications (gig_id, talent_id, proposed_rate_cents, cover_message)
+      VALUES (${gigId}, ${talentId}, ${body.proposed_rate_cents ?? null}, ${body.cover_message})
+      ON CONFLICT (gig_id, talent_id) DO UPDATE SET
+        proposed_rate_cents = EXCLUDED.proposed_rate_cents,
+        cover_message = EXCLUDED.cover_message,
+        status = 'PENDING',
+        updated_at = NOW()
+      WHERE applications.status = 'WITHDRAWN'
+      RETURNING *
+    `
+  );
 
   if (result.length === 0) {
     throw ApiError.badRequest('You already applied to this gig');

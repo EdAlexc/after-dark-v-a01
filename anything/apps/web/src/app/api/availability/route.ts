@@ -7,6 +7,7 @@ import {
   TIME_SLOTS,
 } from '@/app/api/utils/schemas';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext, type RlsUser } from '@/app/api/utils/rls';
 
 /**
  * Availability calendar (P6) — TALENT-only, self-scoped. GET returns a month
@@ -31,7 +32,12 @@ export const GET = withRoute('availability.get', async (request) => {
 
   const monthStart = `${month}-01`;
 
-  const [slots, shifts] = await Promise.all([
+  // RLS (S2): availabilities_talent_own + shifts_talent_own via context,
+  // batched in one context transaction.
+  const [slots, shifts] = await withRlsContext<[
+    Record<string, unknown>[],
+    Record<string, unknown>[],
+  ]>(user as RlsUser, [
     sql`
       SELECT date, time_slot, status, notes FROM availabilities
       WHERE talent_id = ${talentId}
@@ -80,8 +86,9 @@ export const PUT = withRoute('availability.put', async (request) => {
           DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes, updated_at = NOW()
         `
   );
-  // One transaction so a day never half-saves.
-  await sql.transaction(statements as never[]);
+  // One transaction so a day never half-saves — now carrying the RLS
+  // context (S2, availabilities_talent_own).
+  await withRlsContext(user, statements as never[]);
 
   return Response.json({ saved: true, date: body.date });
 });

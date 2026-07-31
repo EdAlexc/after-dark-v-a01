@@ -19,7 +19,7 @@ const exportLimiter = getRateLimiter('account-export', { windowMs: 60 * 60 * 100
 export const GET = withRoute('account.export', async (request) => {
   // Data-subject rights survive suspension (P9): allowSuspended is only here.
   const user = await authGuard.requireSession({ allowSuspended: true });
-  enforceRateLimit(exportLimiter, clientKey(request, user.id));
+  await enforceRateLimit(exportLimiter, clientKey(request, user.id));
 
   const data = await collectAccountExport(user.id);
 

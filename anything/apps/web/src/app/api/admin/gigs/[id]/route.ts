@@ -5,6 +5,7 @@ import { notify } from '@/app/api/utils/notify';
 import { parseBody } from '@/app/api/utils/validation';
 import { AdminGigUpdateSchema, GigIdSchema } from '@/app/api/utils/schemas';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 /**
  * PATCH /api/admin/gigs/[id] (P9.2) — moderation takedown. The ONLY admin gig
@@ -19,20 +20,30 @@ export const PATCH = withRoute('admin.gigs.update', async (request, context) => 
   if (!parsed.success) throw ApiError.notFound();
   const body = await parseBody(request, AdminGigUpdateSchema);
 
-  const gigs = (await sql`
-    SELECT g.id, g.title, g.status, vp.user_id AS venue_user_id
-    FROM gigs g JOIN venue_profiles vp ON vp.id = g.venue_id
-    WHERE g.id = ${parsed.data} LIMIT 1
-  `) as Array<{ id: string; title: string; status: string; venue_user_id: string }>;
+  // RLS (S2): reading any status and writing the takedown both need the
+  // ADMIN-context platform policies.
+  const gigs = await withRlsContext<
+    Array<{ id: string; title: string; status: string; venue_user_id: string }>
+  >(
+    admin,
+    sql`
+      SELECT g.id, g.title, g.status, vp.user_id AS venue_user_id
+      FROM gigs g JOIN venue_profiles vp ON vp.id = g.venue_id
+      WHERE g.id = ${parsed.data} LIMIT 1
+    `
+  );
   if (gigs.length === 0) throw ApiError.notFound();
   const gig = gigs[0];
   if (gig.status === 'CANCELLED') return Response.json({ gig }); // idempotent
 
-  const updated = (await sql`
-    UPDATE gigs SET status = 'CANCELLED'
-    WHERE id = ${parsed.data} AND status = ${gig.status}
-    RETURNING id, title, status
-  `) as Array<Record<string, unknown>>;
+  const updated = await withRlsContext<Array<Record<string, unknown>>>(
+    admin,
+    sql`
+      UPDATE gigs SET status = 'CANCELLED'
+      WHERE id = ${parsed.data} AND status = ${gig.status}
+      RETURNING id, title, status
+    `
+  );
   if (updated.length === 0) {
     throw new ApiError(409, 'Gig changed underneath you — reload');
   }

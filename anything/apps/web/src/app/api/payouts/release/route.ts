@@ -5,6 +5,7 @@ import { notify } from '@/app/api/utils/notify';
 import { getStripe, stripeEnabled } from '@/lib/stripe';
 import { logger } from '@/app/api/utils/logger';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
+import { serviceContext, withRlsContext } from '@/app/api/utils/rls';
 
 const log = logger.child('payouts.release');
 
@@ -30,28 +31,40 @@ function isCronRequest(request: Request): boolean {
 }
 
 async function runRelease(viaCron: boolean): Promise<Response> {
+  // RLS (S2): escrow release is a system batch over every tenant's rows —
+  // it runs under SERVICE context whether the cron or an admin triggered it
+  // (payouts have no user-context UPDATE policy at all).
+  const RELEASE_SERVICE = serviceContext(viaCron ? 'system:cron' : 'system:admin-release');
   // Claim the batch: HELD → RELEASED, 24h after checkout, all-or-nothing per row.
-  const released = (await sql`
-    UPDATE payouts p
-    SET status = 'RELEASED', released_at = NOW()
-    FROM shifts s
-    WHERE p.shift_id = s.id
-      AND p.status = 'HELD'
-      AND s.check_out_at IS NOT NULL
-      AND s.check_out_at < NOW() - INTERVAL '24 hours'
-    RETURNING p.id, p.net_cents, p.talent_user_id, p.shift_id
-  `) as Array<{ id: number; net_cents: number; talent_user_id: string | null; shift_id: string }>;
+  const released = await withRlsContext<
+    Array<{ id: number; net_cents: number; talent_user_id: string | null; shift_id: string }>
+  >(
+    RELEASE_SERVICE,
+    sql`
+      UPDATE payouts p
+      SET status = 'RELEASED', released_at = NOW()
+      FROM shifts s
+      WHERE p.shift_id = s.id
+        AND p.status = 'HELD'
+        AND s.check_out_at IS NOT NULL
+        AND s.check_out_at < NOW() - INTERVAL '24 hours'
+      RETURNING p.id, p.net_cents, p.talent_user_id, p.shift_id
+    `
+  );
 
   let transfers = 0;
   if (stripeEnabled() && released.length > 0) {
     const stripe = getStripe();
     for (const payout of released) {
       if (!payout.talent_user_id) continue;
-      const accounts = (await sql`
-        SELECT stripe_account_id FROM stripe_accounts
-        WHERE user_id = ${payout.talent_user_id} AND onboarded = TRUE
-        LIMIT 1
-      `) as Array<{ stripe_account_id: string }>;
+      const accounts = await withRlsContext<Array<{ stripe_account_id: string }>>(
+        RELEASE_SERVICE,
+        sql`
+          SELECT stripe_account_id FROM stripe_accounts
+          WHERE user_id = ${payout.talent_user_id} AND onboarded = TRUE
+          LIMIT 1
+        `
+      );
       if (accounts.length === 0) {
         log.warn('release without onboarded account — ledger advanced, transfer skipped', {
           payoutId: payout.id,
@@ -65,14 +78,20 @@ async function runRelease(viaCron: boolean): Promise<Response> {
           destination: accounts[0].stripe_account_id,
           metadata: { afterdark_payout_id: String(payout.id) },
         });
-        await sql`
-          UPDATE payouts SET stripe_transfer_id = ${transfer.id} WHERE id = ${payout.id}
-        `;
+        await withRlsContext(
+          RELEASE_SERVICE,
+          sql`
+            UPDATE payouts SET stripe_transfer_id = ${transfer.id} WHERE id = ${payout.id}
+          `
+        );
         transfers += 1;
       } catch (error) {
         // Ledger says RELEASED but the transfer failed → flag it loudly.
         log.error('stripe transfer failed', { payoutId: payout.id, error });
-        await sql`UPDATE payouts SET status = 'FAILED' WHERE id = ${payout.id}`;
+        await withRlsContext(
+          RELEASE_SERVICE,
+          sql`UPDATE payouts SET status = 'FAILED' WHERE id = ${payout.id}`
+        );
       }
     }
   }
@@ -80,10 +99,13 @@ async function runRelease(viaCron: boolean): Promise<Response> {
   // Mark the underlying shifts PAID (service-only edge in shift-lifecycle).
   if (released.length > 0) {
     const shiftIds = released.map((payout) => payout.shift_id);
-    await sql`
-      UPDATE shifts SET status = 'PAID', updated_at = NOW()
-      WHERE id = ANY(${shiftIds}) AND status = 'CHECKED_OUT'
-    `;
+    await withRlsContext(
+      RELEASE_SERVICE,
+      sql`
+        UPDATE shifts SET status = 'PAID', updated_at = NOW()
+        WHERE id = ANY(${shiftIds}) AND status = 'CHECKED_OUT'
+      `
+    );
     for (const payout of released) {
       if (payout.talent_user_id) {
         await notify(payout.talent_user_id, 'payout.released', {

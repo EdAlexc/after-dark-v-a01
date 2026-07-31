@@ -1,6 +1,7 @@
 import sql from '@/app/api/utils/sql';
 import { authGuard } from '@/app/api/utils/auth-guard';
 import { withRoute } from '@/app/api/utils/route-kit';
+import { withRlsContext } from '@/app/api/utils/rls';
 
 /**
  * GET /api/venue/shifts (P7) — the venue's live-ops board ("Active
@@ -10,7 +11,12 @@ import { withRoute } from '@/app/api/utils/route-kit';
 export const GET = withRoute('venue.shifts', async () => {
   const user = await authGuard.requireRole('VENUE');
 
-  const [shifts, pending] = await Promise.all([
+  // RLS (S2): both reads carry the venue's context (shifts_venue_own,
+  // payouts_participant_read); batched in one context transaction.
+  const [shifts, pending] = await withRlsContext<[
+    Record<string, unknown>[],
+    Array<{ pending_cents: number; pending_count: number }>,
+  ]>(user, [
     sql`
       SELECT s.id, s.status, s.call_time, s.check_in_at, s.check_out_at,
              s.agreed_rate_cents, s.shift_pay_cents,
