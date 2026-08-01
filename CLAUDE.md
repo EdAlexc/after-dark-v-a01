@@ -27,6 +27,7 @@ with high multi-user/multi-tenant concurrency and PII/transactional data protect
 | `TESTING.md` | Verification playbook: automated suites, manual E2E checklists, security probes, shared preview accounts (2026-07-30) |
 | `docs/ropa.md` · `docs/retention.md` | GDPR Art. 30 record of processing + retention schedule (P2; keep in sync with `/legal/privacy`) |
 | `docs/incident-runbook.md` | G9 breach/incident runbook: 72 h drill, contact tree, tabletop log (2026-07-31) |
+| `docs/mobile-decision.md` · `docs/id-verification.md` | S11 mobile ADR (PWA-first, Expo deferred; #24 flatten plan) · S8 ID-verification vendor ADR |
 | `docs/rls-cutover.md` | Runbook for switching the app to the least-privilege DB role (P2.4 remainder) |
 
 ## 2. Commands & environment
@@ -47,6 +48,9 @@ yarn db:preview-accounts    # shared preview accounts; passwords derived from PR
 yarn db:verify-rls          # proves RLS isolation against a non-owner role (never run on prod; 19 checks)
 yarn db:backfill-media      # move inline data: images into Blob; --verify asserts zero remain (S3)
 yarn pwa:icons              # regenerate public/icons/* deterministically from vector art (P10.1)
+yarn gate:axe               # P10.4 axe smoke: 10 screens, fail on critical (needs running server)
+yarn gate:lhci              # P10.4 Lighthouse §3.2 budgets, 3 passes (needs running server)
+# k6 run k6/alpha-gates.js  # P10.4 Apdex smoke (k6 binary; CI runs it via setup-k6-action)
 ```
 
 - **Required env**: `DATABASE_URL` (Neon Postgres) and `BETTER_AUTH_SECRET` (signs sessions

@@ -261,7 +261,7 @@ export default function BrowseGigsPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
+            <button aria-label="Notifications" className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
               <Bell className="w-4 h-4 text-white/60" />
             </button>
           </div>

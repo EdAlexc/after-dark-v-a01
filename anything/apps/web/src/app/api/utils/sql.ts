@@ -1,4 +1,8 @@
 import { neon, NeonQueryFunction } from '@neondatabase/serverless';
+import { configureNeonLocalProxy } from './neon-local';
+
+// No-op unless NEON_LOCAL_PROXY=1 (CI alpha-gates / keyless local dev).
+configureNeonLocalProxy();
 
 type SqlQueryFunction = NeonQueryFunction<false, false> & {
   query: NeonQueryFunction<false, false>;

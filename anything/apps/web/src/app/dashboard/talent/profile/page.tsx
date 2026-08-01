@@ -308,7 +308,7 @@ export default function TalentProfilePage() {
             <p className="text-xs text-white/40">How the city sees you</p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
+            <button aria-label="Notifications" className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
               <Bell className="w-4 h-4 text-white/60" />
             </button>
             <Button
@@ -349,7 +349,7 @@ export default function TalentProfilePage() {
                 <p className="text-xs font-semibold text-white/60">Profile Completion</p>
                 <span className="text-xs font-black text-[#00FFCC]">{pct}%</span>
               </div>
-              <Progress value={pct} className="h-1.5 bg-white/10" />
+              <Progress value={pct} aria-label="Profile completion" className="h-1.5 bg-white/10" />
             </div>
             <Badge
               className={`flex-shrink-0 text-xs font-bold px-3 py-1 ${

@@ -23,8 +23,12 @@ import { verifyPassword } from 'better-auth/crypto';
 import { bearer, twoFactor } from 'better-auth/plugins';
 import ws from 'ws';
 import { vercelOrigins } from './deployment-origins';
+import { configureNeonLocalProxy } from '@/app/api/utils/neon-local';
 
 neonConfig.webSocketConstructor = ws;
+// Additive config (platform header allows): no-op unless NEON_LOCAL_PROXY=1
+// (P10.4 CI gates run against a proxied vanilla Postgres).
+configureNeonLocalProxy();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,

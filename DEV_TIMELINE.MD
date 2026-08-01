@@ -10,6 +10,30 @@
 
 - **Date:** 2026-07-31 (late) · **Branch:** `claude/backlog-slices-4-10-b73087` (worktree
   off `main`; S1–S3 merged in PR #15)
+- **P10.4 + S11 delivered this session (2026-07-31 — §5 is now fully landed except the
+  externally-parked items):**
+  - **P10.4 alpha exit gates, all in CI** (`alpha-gates` job): self-contained — vanilla
+    Postgres + the local Neon-protocol proxy sidecar (opt-in `NEON_LOCAL_PROXY=1`,
+    `api/utils/neon-local.ts`) stand in for Neon, so CI holds **zero DB secrets**; the
+    app is migrated + seeded + built + served per run. Gate 1: **axe smoke** over the 10
+    wireframe screens (fails on `critical`; `serious` warns until the #13 deep pass) —
+    running it found and fixed 13 unnamed controls (bells, month-nav chevrons, switches,
+    the role select, venue drill-ins) + 2 unnamed progress bars. Gate 2: **Lighthouse**
+    §3.2 budgets over the 5 target URLs in 3 passes (public/talent/venue, session cookie
+    via extraHeaders); CLS/TTFB/image-weight/a11y-score enforce, LCP/TBT/FCP/JS-weight
+    warn until the RSC refactor §3.2 itself predicts (levels documented in
+    lighthouserc.cjs) — the gate immediately caught the create.xyz-hosted hero image
+    (~budget-blowing AND already blocked by the S3 CSP pin in prod); replaced with a
+    deterministic self-hosted 11 KB webp. Gate 3: **k6** — §3.4 scenario shapes at smoke
+    scale (browse surge, message poll fan-out, fixed-key check-in double-tap) asserting
+    **Apdex ≥ 0.85 @ T=300 ms** and error rate <1%; the full 500-VU/15-min/soak lab
+    stays a pre-release manual procedure (TESTING.md §11).
+  - **S11 deploy & repo hygiene:** #23 `installCommand: yarn workspaces focus web` in
+    vercel.json (this PR's Vercel preview is the verify-before-adopt step); #4 decided —
+    **PWA-first, Expo deferred** (`docs/mobile-decision.md`, with revisit triggers);
+    #24 flatten disposition: PWA-only shape, executed as an operator-coordinated change
+    (Root Directory dashboard flip must land in the same window — plan in the ADR);
+    #9 closed as moot-on-Vercel (decision note in `publisher/open-next.config.ts`).
 - **Functionality wave S4–S10 delivered this session (2026-07-31 — closes Backlog #1,
   #5, #6, #7, #8 core, #14, #27, #28; 791 tests green; migrations 0015–0020 applied to a
   disposable Neon branch off prod and the loop browser-verified end-to-end):**
@@ -889,10 +913,12 @@ enforcing role; the `DATABASE_URL` flip is the documented ~10-min operator step)
   until an AV step exists — document, don't widen.
 - *Security gate:* zero `data:` rows remain; G11 egress audit re-run; CSP pinned.
 
-**P10.4 (not backlog, the alpha exit gate) slots here** — after S1, because the k6 Apdex
-numbers are meaningless until rate limits are shared. Lighthouse budgets + k6 scenarios +
-axe smoke on the 10 screens, all in CI. The a11y **deep** pass (#13 — keyboard calendar,
-contrast sweep, reduced-motion) is a follow-on slice once the axe baseline exists.
+**P10.4 (not backlog, the alpha exit gate) slots here** — ✅ **landed 2026-07-31** (the
+`alpha-gates` CI job: axe smoke on the 10 screens (critical = fail), Lighthouse §3.2
+budgets on the 5 URLs, k6 §3.4 smoke shapes with Apdex ≥ 0.85 — all against a
+self-contained Postgres+proxy stack, zero CI secrets). The a11y **deep** pass (#13 —
+keyboard calendar, contrast sweep, reduced-motion; ratchets axe `serious` + the warn-level
+CWV budgets) remains the documented follow-on.
 
 ### Functionality wave (cohesion-grouped; parallel tracks marked)
 
@@ -942,12 +968,14 @@ SSRF guard, `api/utils/safe-fetch.ts`)
 
 ### Modularity / platform wave (opportunistic — schedule into gaps)
 
-**S11 — Deploy & repo hygiene** — Backlog #23, #4→#24, #9
-- `installCommand: yarn workspaces focus web` (#23; verify on a preview first).
-- Mobile decision (#4: PWA-only vs Expo) — a product call; **then** #24 (flatten
-  `anything/`, which also removes the Vercel Root Directory footgun) in the shape that
-  decision dictates. #9 (`revalidateTag` no-op): close as moot-on-Vercel with a decision
-  note unless ISR is ever adopted.
+**S11 — Deploy & repo hygiene** — Backlog #23, #4→#24, #9 — ✅ **landed 2026-07-31**
+- #23 `installCommand: yarn workspaces focus web` shipped in vercel.json (the PR preview
+  deploy is the verification step; revert the one line if it misbehaves).
+- #4 decided: **PWA-first, Expo deferred** — `docs/mobile-decision.md` (revisit triggers
+  included). #24 executes in that shape as an operator-coordinated follow-on (the Vercel
+  Root Directory dashboard flip must land in the same window; plan in the ADR).
+- #9 closed as moot-on-Vercel — decision note at the `tagCache: "dummy"` site in
+  `publisher/open-next.config.ts`.
 
 ### Parked (blocked on definitions external to the repo)
 

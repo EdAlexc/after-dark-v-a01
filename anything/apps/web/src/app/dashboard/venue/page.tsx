@@ -279,7 +279,7 @@ export default function VenueDashboard() {
                 Post a Gig
               </Button>
             </Link>
-            <button className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
+            <button aria-label="Notifications" className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
               <Bell className="w-4 h-4 text-white/60" />
             </button>
             <div className="w-9 h-9 rounded-xl bg-[#00FFCC]/20 border border-[#00FFCC]/30 flex items-center justify-center">
@@ -466,6 +466,7 @@ export default function VenueDashboard() {
                                   <Button
                                     size="sm"
                                     variant="ghost"
+                                    aria-label={`View ${gig.title}`}
                                     className="text-white/40 hover:text-white hover:bg-white/5 text-xs flex items-center gap-1 h-7 px-2"
                                   >
                                     <Eye className="w-3.5 h-3.5" />

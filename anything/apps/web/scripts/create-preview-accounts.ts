@@ -20,10 +20,12 @@
  * deployment of this codebase (scrypt hashes don't depend on the auth secret).
  */
 
-import { createHmac } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import { auth } from '../src/lib/auth';
 import sql from '../src/app/api/utils/sql';
+import { derivePreviewPassword } from './preview-password';
+
+export { derivePreviewPassword };
 
 interface PreviewAccount {
   email: string;
@@ -44,15 +46,8 @@ export const PREVIEW_ACCOUNTS: PreviewAccount[] = [
   },
 ];
 
-/**
- * Deterministic per-environment password: HMAC keeps it un-derivable without
- * the secret; the fixed prefix keeps it self-evidently a preview credential
- * and satisfies complexity rules.
- */
-export function derivePreviewPassword(secret: string, email: string): string {
-  const digest = createHmac('sha256', secret).update(email).digest('base64url');
-  return `Ad!${digest.slice(0, 18)}`;
-}
+// Password derivation lives in scripts/preview-password.ts (shared with the
+// P10.4 gate runners, which must sign in as these accounts).
 
 if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL is not set. See .env.example.');

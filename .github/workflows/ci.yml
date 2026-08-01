@@ -41,6 +41,103 @@ jobs:
       - name: Production build
         run: yarn workspace web run build
 
+  alpha-gates:
+    # P10.4 — the alpha exit gate (TENANT_GUARDRAIL §3.2/§3.4; DEV_TIMELINE §5).
+    # Self-contained: a vanilla Postgres + the local Neon-protocol proxy stand
+    # in for Neon (NEON_LOCAL_PROXY=1 — see api/utils/neon-local.ts), so no
+    # database secrets exist in CI. The app is migrated, seeded, built, and
+    # served, then gated three ways: axe smoke (10 screens, fail on critical),
+    # Lighthouse budgets (§3.2 levels in lighthouserc.cjs), and k6 Apdex ≥ 0.85
+    # at T=300 ms (scaled §3.4 shapes; the full load lab stays pre-release).
+    name: Alpha gates — axe, Lighthouse, k6 (P10.4)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: anything
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: afterdark
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      neon-proxy:
+        # Community image implementing Neon's SQL-over-HTTP (:4444/sql) and
+        # WebSocket (:4444/v2) endpoints in front of vanilla Postgres — the
+        # standard keyless local recipe from Neon's own local-dev guide.
+        image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+        env:
+          PG_CONNECTION_STRING: postgres://postgres:postgres@postgres:5432/afterdark
+        ports:
+          - 4444:4444
+    env:
+      # db.localtest.me resolves to 127.0.0.1 → the proxy service port.
+      DATABASE_URL: postgres://postgres:postgres@db.localtest.me:5432/afterdark
+      NEON_LOCAL_PROXY: '1'
+      BETTER_AUTH_URL: http://localhost:4000
+      BASE_URL: http://localhost:4000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable corepack (Yarn 4)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Ephemeral run secrets
+        # Generated per run, never stored: the auth secret signs this run's
+        # sessions only; the preview secret derives this run's account
+        # passwords (same S1 scheme as every environment).
+        run: |
+          echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+          echo "PREVIEW_ACCOUNTS_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      - name: Migrate, seed, provision preview accounts
+        run: |
+          yarn workspace web run db:migrate
+          yarn workspace web run db:seed
+          yarn workspace web run db:preview-accounts > /dev/null
+
+      - name: Build & start (production server)
+        run: |
+          yarn workspace web run build
+          nohup yarn workspace web run start -p 4000 > /tmp/next-start.log 2>&1 &
+          npx --yes wait-on@8 http://localhost:4000 --timeout 60000
+
+      - name: Gate 1 — axe smoke (10 screens, fail on critical)
+        run: |
+          yarn workspace web exec playwright install --with-deps chromium
+          yarn workspace web run gate:axe
+
+      - name: Gate 2 — Lighthouse budgets (§3.2)
+        run: yarn workspace web run gate:lhci
+
+      - name: Gate 3 — k6 Apdex (§3.4 shapes, smoke scale)
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run k6
+        working-directory: anything/apps/web
+        run: k6 run k6/alpha-gates.js -e BASE_URL="$BASE_URL" -e PREVIEW_ACCOUNTS_SECRET="$PREVIEW_ACCOUNTS_SECRET"
+
+      - name: Server log (on failure)
+        if: failure()
+        run: tail -80 /tmp/next-start.log || true
+
+      - name: Keep Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports
+          path: anything/apps/web/.lighthouseci/reports
+          if-no-files-found: ignore
+
   security:
     name: Security — dependency audit & secret scan
     runs-on: ubuntu-latest
