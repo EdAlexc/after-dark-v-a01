@@ -969,8 +969,12 @@ SSRF guard, `api/utils/safe-fetch.ts`)
 ### Modularity / platform wave (opportunistic — schedule into gaps)
 
 **S11 — Deploy & repo hygiene** — Backlog #23, #4→#24, #9 — ✅ **landed 2026-07-31**
-- #23 `installCommand: yarn workspaces focus web` shipped in vercel.json (the PR preview
-  deploy is the verification step; revert the one line if it misbehaves).
+- #23 **attempted 2026-08-01 and reverted per its own gate**: with
+  `installCommand: yarn workspaces focus web` in vercel.json the PR preview deploy
+  errored twice; build logs are dashboard-only, so the one line was reverted (the plan's
+  "verify on a preview first" doing its job). Reopen with the operator reading the failed
+  deploy log (deployment AVdat6R5uf2Jq3TbEz9s3amuKnAQ) — likely a Yarn-1→4 handoff or
+  focus/lockfile interaction that only reproduces in Vercel's install context.
 - #4 decided: **PWA-first, Expo deferred** — `docs/mobile-decision.md` (revisit triggers
   included). #24 executes in that shape as an operator-coordinated follow-on (the Vercel
   Root Directory dashboard flip must land in the same window; plan in the ADR).

@@ -1,6 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "yarn workspaces focus web",
   "crons": [
     {
       "path": "/api/payouts/release",
