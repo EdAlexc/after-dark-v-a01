@@ -89,13 +89,10 @@ function signIn(email) {
     { headers: { 'Content-Type': 'application/json', Origin: BASE_URL } }
   );
   if (res.status !== 200) throw new Error(`sign-in failed for ${email}: ${res.status}`);
-  const cookies = res.headers['Set-Cookie'];
-  if (!cookies) throw new Error(`no session cookie for ${email}`);
-  // k6 folds multiple Set-Cookie headers; keep every pair before attributes.
-  return String(cookies)
-    .split(/,(?=[^;]+?=)/)
-    .map((cookie) => cookie.split(';')[0].trim())
-    .join('; ');
+  // k6 parses Set-Cookie into res.cookies: { name: [{ value, … }] }.
+  const names = Object.keys(res.cookies || {});
+  if (names.length === 0) throw new Error(`no session cookie for ${email}`);
+  return names.map((name) => `${name}=${res.cookies[name][0].value}`).join('; ');
 }
 
 export function setup() {
