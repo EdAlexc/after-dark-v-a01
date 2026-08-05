@@ -8,6 +8,32 @@
 
 ## 1. Current status — YOU ARE HERE
 
+- **Date:** 2026-08-05 · **Branch:** `claude/webapp-audit-refactor-fec5a4` (worktree off
+  `main`; S4–S10 + P10.4 + S11 merged in PR #18)
+- **UX/UI/env audit delivered this session (2026-08-05 — docs only, no app code changed):**
+  - **[CURRENT_STATUS.md](CURRENT_STATUS.md)** — live-verified defect list with
+    file:line evidence: unreadable hero "Browse Gigs" (`text-black` over the dark hero,
+    ≈1.1:1 contrast), hero `h-screen`+`overflow-hidden` clipping both CTAs at short
+    viewport heights, broken mobile landing nav (Sign-In/logo collision at 375 px, dead
+    hamburger, no search entry), **no password-reset flow** (and no transactional-email
+    capability anywhere), social sign-in buttons invisible because
+    `NEXT_PUBLIC_CREATE_AUTH_PROVIDERS` is undocumented, 7 decorative dead notification
+    bells vs 4 real mounts (and none on the two main dashboards), auth/role-blind
+    marketing nav, conversations not URL-addressable (PRD §5), Personal-account (PARTY)
+    signup dead end, **848 KB Font Awesome Pro CSS proxied through the app to every
+    visitor with zero FA usage + a committed kit token**, CTA texture blocked by the
+    prod CSP `img-src` pin, no robots/sitemap/OG surface. Env-contract drift
+    reconciled into §6 below (5 missing rows added, 1 misfiled row corrected).
+  - **[REFACTOR_GUIDE.md](REFACTOR_GUIDE.md)** — behavior-preserving code-structure
+    plan with sequencing: typed API client (61 raw `fetch` sites), shared query-key
+    registry for the S9 SSE contract, `DashboardHeader`/`BrowseShell` extractions
+    (~197 duplicated lines between the browse pages), design tokens (`#00FFCC`
+    hardcoded in 34 files), monolith page splits (settings 1116 lines, create-gig
+    910), nested-interactive a11y sweep, comment-style codification.
+  - Remediation tracked as **Backlog #29–#34** (§3); decisions **D1–D6** in
+    CURRENT_STATUS §4 gate three of them (public browse surface, email provider,
+    PARTY scope).
+- **Previous status (2026-07-31 late, backlog-slices session):**
 - **Date:** 2026-07-31 (late) · **Branch:** `claude/backlog-slices-4-10-b73087` (worktree
   off `main`; S1–S3 merged in PR #15)
 - **P10.4 + S11 delivered this session (2026-07-31 — §5 is now fully landed except the
@@ -700,6 +726,45 @@ Items noted during the audit that are **not** required for the alpha gate but mu
     definer probe (cutover-safe), then completion. Gigs already order soonest-first, which
     IS the tonight boost — decision recorded in `gigs-query.ts`.
 
+> **#29–#34 added by the 2026-08-05 UX/UI/env audit** — full evidence and severity in
+> [CURRENT_STATUS.md](CURRENT_STATUS.md); structure-only counterparts in
+> [REFACTOR_GUIDE.md](REFACTOR_GUIDE.md).
+
+29. **Landing/marketing surface repairs** (CURRENT_STATUS §2.1–§2.3, §2.6–§2.8): hero
+    "Browse Gigs" `text-black` contrast bug (≈1.1:1 — the 404 page shows the correct
+    rendering of the same button); hero `h-screen`+`overflow-hidden` clipping both CTAs
+    at short viewports (`min-h-screen` fix); mobile nav collision + dead hamburger + no
+    mobile search (wants the session-aware `MarketingNav` + drawer, REFACTOR_GUIDE
+    §3.2); dead controls (Talk to Sales, Learn More, footer social circles, Preview
+    Profile/Listing); role-aware CTA routing (talent clicking "Post a Gig" currently
+    403s at publish). High visibility, mostly one-line-to-one-component fixes.
+30. **Remove the Font Awesome Pro proxy** (CURRENT_STATUS §3.1): delete the
+    `layout.tsx` stylesheet link + the `next.config.js` `/fontawesome/*` rewrite —
+    FA usage in the app is zero (lucide-react is the icon system) yet every page view
+    ships 848 KB of render-blocking CSS through a serverless proxy hop. Revoke/rotate
+    the committed kit token out-of-band (it stays in git history). Cheapest CWV win
+    available (the P10.4 LCP/FCP warns) + closes a G11 egress path.
+31. **Password reset + transactional email** (CURRENT_STATUS §2.4, decision D2):
+    choose a provider (Resend/Postmark/SES), add `RESEND_API_KEY`/`EMAIL_FROM` to the
+    env contract (sketch in CURRENT_STATUS §5.4), wire better-auth
+    `sendResetPassword` + an `/account/reset-password` page, add "Forgot password?" to
+    sign-in. Revisit `requireEmailVerification: false` once sending exists. Today a
+    forgotten password is permanent lock-out (social sign-in is also invisible, #29/§2.5).
+32. **URL-addressable conversations** (CURRENT_STATUS §2.9, decision D5): a
+    `?conversation=<id>` search param in `MessagesView` (read on mount, written on
+    select), Inquire pushes it, notification click-throughs gain a deep link. Closes
+    the PRD §5 routing requirement (`/messages/[conversationId]` equivalence) without
+    a route restructure.
+33. **PARTY scope or retire the "Personal Account" signup** (CURRENT_STATUS §2.10,
+    decisions D1/D4): either the minimal consumer scope from CLAUDE.md §6.3 (public
+    read-only browse + venue inquiry through conversations + PARTY row in the authz
+    matrix) or remove the option until built — today it creates roleless accounts
+    that wander into role-gated shells and see nothing but 403-backed skeletons.
+34. **Public-surface SEO** (CURRENT_STATUS §3.3): `robots.ts` + `sitemap.ts`
+    (landing, legal, contact, search, published gigs), OG/twitter defaults in the
+    layout metadata, per-gig `generateMetadata` — the last needs the REFACTOR_GUIDE
+    §4.5 RSC seam on `/gigs/[id]`, so sequence them together.
+
 ---
 
 ## 4. Alpha production-readiness assessment — 2026-07-31
@@ -1036,7 +1101,7 @@ flowchart TD
 
 ---
 
-## 6. Environment Variables — 2026-07-31
+## 6. Environment Variables — 2026-07-31 (synced 2026-08-05 by the UX/env audit)
 
 > The complete env contract, cross-checked against `apps/web/.env.example` and every
 > `process.env.*` read in `src/` + `scripts/`. "Sensitive" = store as a **Sensitive**
@@ -1050,7 +1115,7 @@ flowchart TD
 | `DATABASE_URL` | Neon console → project `after-dark` → Connect → **pooled** string (`…-pooler…?sslmode=require`). Read by `api/utils/sql.ts`, `scripts/migrate.mjs`, seed/preview scripts | Neon console → Roles → reset password (or switch to the least-privilege role per `docs/rls-cutover.md`, slice S2) → update Vercel env → redeploy | On compromise or staff change; changes once at the S2 RLS cutover | Every DB read/write | **Sensitive** |
 | `BETTER_AUTH_SECRET` | Generate: `openssl rand -base64 32`. Read by `src/lib/auth.ts` | New value → Vercel env → redeploy. ⚠ Invalidates **every session and every 2FA enrollment** (users re-enroll) | Only on compromise (P1 incident, see `docs/incident-runbook.md` §3) — deliberately not routine because of the 2FA cost | Signs session cookies **and** encrypts 2FA TOTP secrets/backup codes at rest | **Sensitive** |
 | `BETTER_AUTH_URL` | The canonical app origin (production domain; `http://localhost:4000` locally). Read by `auth.ts` as a trusted origin | Change only on domain move | n/a | CSRF trusted-origin + canonical URL | Public |
-| `CRON_SECRET` | Generate + set without shell echo: `openssl rand -hex 32 \| tr -d '\n' \| vercel env add CRON_SECRET production`. Read by `/api/payouts/release`; Vercel Cron sends it as the bearer automatically | Same command with `vercel env rm CRON_SECRET production` first; redeploy (cron picks up the new value on the next run) | ~Quarterly, or on leak | Authenticates the scheduled escrow-release cron (daily 09:00 UTC, `vercel.json`) | **Sensitive** |
+| `CRON_SECRET` | Generate + set without shell echo: `openssl rand -hex 32 \| tr -d '\n' \| vercel env add CRON_SECRET production`. Read by `/api/payouts/release` **and** `/api/retention/purge`; Vercel Cron sends it as the bearer automatically | Same command with `vercel env rm CRON_SECRET production` first; redeploy (cron picks up the new value on the next run) | ~Quarterly, or on leak | Authenticates the scheduled escrow-release + retention-purge crons (daily 09:00/09:30 UTC, `vercel.json`). Unset ⇒ **both jobs fail auth silently**: payouts never release, the G7 purge never runs | **Sensitive** |
 | `BLOB_READ_WRITE_TOKEN` | **Injected by Vercel** when the Blob store is connected (Dashboard → Storage → Blob → Connect Project); locally via `vercel env pull`. Read by `api/utils/media.ts` (`@vercel/blob`) | Vercel Dashboard → the store → Tokens → cycle (or disconnect/reconnect the project) | On leak; otherwise Vercel-managed | P4 media storage — uploaded images land in Blob instead of inline `data:` URLs in Postgres | **Sensitive** |
 | `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | Sentry → Project Settings → Client Keys (DSN); same value in both. Read by `instrumentation.ts` / `instrumentation-client.ts`; the public one is client-bundled and its origin auto-joins CSP `connect-src` (`security-headers.js`) | Sentry → Client Keys → revoke key + create new → update both vars | Only on abuse (DSNs are designed to be client-visible ingest addresses) | Error tracking (server/edge + browser); all events pass `src/lib/sentry-scrub.ts` | Public by design (low sensitivity — don't advertise, but not a secret) |
 | `WEB_PUSH_VAPID_PUBLIC_KEY` / `WEB_PUSH_VAPID_PRIVATE_KEY` / `WEB_PUSH_VAPID_SUBJECT` | Generate once: `npx web-push generate-vapid-keys`; subject = `mailto:` contact. Read by `api/utils/push.ts` + `/api/push/subscribe` | New pair → env → redeploy. ⚠ Invalidates every existing browser subscription (users re-toggle the opt-in) | On leak of the private key — deliberately not routine | S9 Hot-gig Web Push; whole surface inert (503/no-op) without the pair | Public key: Public · Private key: **Sensitive** |
@@ -1059,12 +1124,23 @@ flowchart TD
 | `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard → Webhooks → endpoint for `/api/stripe/webhook` → signing secret (`whsec_…`); locally from `stripe listen`. Read by the webhook route (`constructEventAsync`) | Roll the endpoint's signing secret in the dashboard → update env | When rotating the endpoint or on compromise | Webhook signature verification + replay guard | **Sensitive** |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client. Read by `auth.ts` (social sign-in self-activates when both are set) | Console supports two active secrets: add new → deploy → delete old (zero-downtime) | Secret: on compromise (no expiry) | Google sign-in | ID: Public · Secret: **Sensitive** |
 | `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET` / `APPLE_APP_BUNDLE_IDENTIFIER` | Apple Developer portal → Certificates, IDs & Profiles → Services ID. The client secret is a **self-signed JWT generated from your `.p8` key, valid ≤ 6 months** | Regenerate the JWT from the `.p8` signing key → update env | **≤ every 6 months — hard expiry** (calendar it; sign-in breaks silently when it lapses) | Apple sign-in | IDs: Public · Secret: **Sensitive** |
-| `NEXT_PUBLIC_CREATE_BASE_URL` / `NEXT_PUBLIC_CREATE_HOST` / `NEXT_PUBLIC_CREATE_ENV` / `NEXT_PUBLIC_PROJECT_GROUP_ID` / `NEXT_PUBLIC_CREATE_AUTH_PROVIDERS` | create.xyz platform values (inherited from the export). Read by `security-headers.js` (frame-ancestors/connect-src) and platform glue | n/a — config, not credentials | n/a — slice **S1 makes them off-by-default** (builder embed becomes opt-in) | create.xyz builder iframe embedding + CSP origins | Public (client-bundled) |
+| `NEXT_PUBLIC_CREATE_BASE_URL` / `NEXT_PUBLIC_CREATE_HOST` / `NEXT_PUBLIC_CREATE_ENV` / `NEXT_PUBLIC_PROJECT_GROUP_ID` | create.xyz platform values (inherited from the export). Read by `security-headers.js` (frame-ancestors/connect-src) and platform glue | n/a — config, not credentials | n/a — slice **S1 makes them off-by-default** (builder embed becomes opt-in) | create.xyz builder iframe embedding + CSP origins | Public (client-bundled) |
+| `NEXT_PUBLIC_CREATE_AUTH_PROVIDERS` | CSV subset of `google,apple` naming providers whose server creds are set (e.g. `google`). Read by `SocialSignInButtons.tsx` — **gates whether the social sign-in buttons render at all**, independent of the server-side `GOOGLE_*`/`APPLE_*` self-activation. Build-time public var: set in `.env.local` + Vercel, then **redeploy** | Edit + redeploy | n/a — config | Social sign-in UI visibility (2026-08-05 audit: previously misfiled here as embed config; also missing from `.env.example` — CURRENT_STATUS §5.1) | Public (client-bundled) |
+| `CREATE_BUILDER_EMBED` | Manual opt-in flag: `1` restores the pre-S1 builder embed (create.xyz frame-ancestors + `SameSite=None` cookies). Read by `security-headers.js` + `auth.ts` | Unset to re-lock | n/a | S1 embed-lockdown escape hatch — leave unset outside the builder | Public (a flag) |
+| `RATE_LIMIT_STORE` | Optional `getRateLimiter` backend override (`memory` \| `postgres`); auto = shared Postgres store in production, in-memory in dev/test. Read by `api/utils/rate-limit.ts` | n/a — config | n/a | S1 shared rate-limit backend selection | Public (a flag) |
+| `PREVIEW_ACCOUNTS_SECRET` | Generate: `openssl rand -hex 32`. Read by `scripts/create-preview-accounts.ts` (`yarn db:preview-accounts`) — shared preview-account passwords derive from it (TESTING.md §2) | New value → rerun the script (rotates every preview password) | On leak, or when rotating tester access | Deterministic preview-account passwords that never enter git | **Sensitive** |
+| `NEON_LOCAL_PROXY` | CI/keyless-local flag: `1` points the Neon driver at the local proxy sidecar on `:4444` (`api/utils/neon-local.ts`) so vanilla Postgres backs the app | n/a | n/a | P10.4 zero-secret CI stack. **Never set in Vercel** | Public (a flag) |
+| `BASE_URL` | Optional target origin for the gate scripts (`scripts/axe-smoke.ts`, `scripts/lhci-gate.ts`); defaults to `http://localhost:4000`. Never set in Vercel | n/a | n/a | Points `yarn gate:axe` / `yarn gate:lhci` at a non-local server | Public |
 | `EXPO_PUBLIC_PROXY_BASE_URL` | Mobile auth-bridge base URL (unused until the Backlog #4 decision) | n/a | n/a | Expo scaffold auth bridge | Public |
 | `VERCEL_URL` / `VERCEL_BRANCH_URL` / `VERCEL_PROJECT_PRODUCTION_URL` / `VERCEL_ENV` | **System-injected by Vercel** — nothing to set; requires "Automatically expose System Environment Variables" (on by default). Read by `src/lib/deployment-origins.ts` (preview-deploy trusted origins) and Sentry env tagging | n/a | n/a | Per-deploy trusted origins so preview sign-in passes CSRF | Public |
 | `RLS_URL` / `OWNER_URL` | Two connection strings for a **disposable Neon branch**, passed inline when running `yarn db:verify-rls` (`scripts/verify-rls.mjs`). Never set in Vercel | Delete the branch after the run | Ephemeral per run | RLS verification harness (never against prod) | **Sensitive** (but ephemeral, local-only) |
 | `FORCE_SEED` | Manual flag for `scripts/seed.ts` (which refuses prod without it). Never set in Vercel | n/a | n/a | Seed-script safety interlock | Public (a flag, not a secret) |
 | `AUTH_SECRET_ENCRYPTION_KEY` | **Obsolete** since migration 0005 (hand-rolled 2FA replaced by the better-auth twoFactor plugin). Harmless if still set — delete on sight | Delete, don't rotate | n/a | None (legacy) | — |
+
+> **Proposed additions awaiting decision D2 (transactional email, Backlog #31)** — not
+> yet read by any code, so deliberately NOT rows above: `RESEND_API_KEY` (or the chosen
+> provider's key) + `EMAIL_FROM`. Contract sketch in CURRENT_STATUS §5.4; add to
+> `.env.example` + this table in the same PR that wires the sender.
 
 **House rules:** secrets enter Vercel via piped stdin (`… \| vercel env add NAME production`)
 or the dashboard's Sensitive type — never shell args (history), never `NEXT_PUBLIC_*`,
