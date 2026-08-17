@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { authGuard } from '@/app/api/utils/auth-guard';
+import { withRlsContext } from '@/app/api/utils/rls';
 import { parseQuery } from '@/app/api/utils/validation';
 import { MatchPreviewQuerySchema } from '@/app/api/utils/schemas';
 import {
@@ -33,15 +34,21 @@ export const GET = withRoute('gigs.match-preview', async (request) => {
   const candidatesQuery = buildTopCandidatesQuery(input);
   const pricingQuery = buildPricingHintQuery(query.role);
 
-  const [countRows, candidateRows, pricingRows] = (await Promise.all([
+  // S12: one atomic batch under the venue's RLS context. The reads happen to
+  // survive context-less (talent_profiles/published gigs are public-read),
+  // but an authenticated surface must not lean on that implicitly — and the
+  // batch is one round trip where Promise.all was three.
+  const [countRows, candidateRows, pricingRows] = await withRlsContext<
+    [
+      Array<{ total: number; tonight: number; on_date: number }>,
+      CandidateRow[],
+      Array<{ sample: number; p25: number | null; p50: number | null; p75: number | null }>,
+    ]
+  >(user, [
     sql(countQuery.text, countQuery.values),
     sql(candidatesQuery.text, candidatesQuery.values),
     sql(pricingQuery.text, pricingQuery.values),
-  ])) as [
-    Array<{ total: number; tonight: number; on_date: number }>,
-    CandidateRow[],
-    Array<{ sample: number; p25: number | null; p50: number | null; p75: number | null }>,
-  ];
+  ]);
 
   const counts = countRows[0] ?? { total: 0, tonight: 0, on_date: 0 };
   const pricing = pricingRows[0] ?? { sample: 0, p25: null, p50: null, p75: null };

@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { authGuard } from '@/app/api/utils/auth-guard';
+import { withRlsContext, type RlsUser } from '@/app/api/utils/rls';
 import { withRoute } from '@/app/api/utils/route-kit';
 import { logger } from '@/app/api/utils/logger';
 import {
@@ -26,9 +27,15 @@ const log = logger.child('stream');
  * their own authenticated routes.
  */
 
-async function fingerprintFor(userId: string): Promise<StreamFingerprint> {
-  // One round trip; every subquery is indexed and user-scoped.
-  const rows = (await sql`
+async function fingerprintFor(user: RlsUser): Promise<StreamFingerprint> {
+  // One round trip; every subquery is indexed and user-scoped. Runs under the
+  // caller's RLS context (S12): notifications/messages/shifts are all
+  // policy-scoped to the requesting user, so a context-less read would return
+  // the empty shape post-cutover and the stream would go permanently silent.
+  const userId = user.id;
+  const rows = await withRlsContext<Array<StreamFingerprint>>(
+    user,
+    sql`
     SELECT
       (SELECT COALESCE(MAX(id), 0) FROM notifications WHERE user_id = ${userId})::text AS notif,
       (SELECT COALESCE(MAX(m.id::text), '')
@@ -44,7 +51,8 @@ async function fingerprintFor(userId: string): Promise<StreamFingerprint> {
          JOIN venue_profiles vp ON vp.id = g.venue_id
         WHERE tp.user_id = ${userId} OR vp.user_id = ${userId}
       ) AS shift
-  `) as Array<StreamFingerprint>;
+  `
+  );
   return rows[0] ?? EMPTY_FINGERPRINT;
 }
 
@@ -86,7 +94,7 @@ export const GET = withRoute('stream.events', async (request) => {
       let previous: StreamFingerprint | null = null;
       const tick = async () => {
         try {
-          const next = await fingerprintFor(user.id);
+          const next = await fingerprintFor({ id: user.id });
           if (previous !== null) {
             const keys = changedKeys(previous, next);
             if (keys.length > 0) emit('invalidate', { keys });

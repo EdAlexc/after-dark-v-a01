@@ -74,7 +74,7 @@ are not live (`src/lib/legal.ts` `ALPHA_NOTICE`), so the briefing and the produc
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 656 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 812 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
@@ -120,6 +120,16 @@ Coverage highlights by area:
   no `unsafe-inline` script-src), security headers, Sentry PII scrub, RLS migration structure,
   **deleted-account session invalidation**, rate-limit windows, redirect sanitizer, migration
   runner ordering.
+- **RLS wiring (S12)**: `test/rls-wiring.test.ts` — the structural counterpart of the authZ
+  matrix for tenant isolation: derives the governed-table list from the migrations, then
+  fails CI when any file under `src/app/api` executes (or builds) SQL against a governed
+  table without a declared wiring mode (`wrapped` / `public-read` / `policy-insert` /
+  `builder`), with per-mode invariants (wrapped files must enter a context; public-read
+  files may never write; policy-insert files may only INSERT into the any-context-insert
+  tables, and the allowlist is re-checked against the committed policies). Plus unit suites
+  for `withRlsContext`/`serviceContext` themselves and for the CI verify driver
+  (`scripts/pool-sql.mjs`). The live proof is `yarn db:verify-rls` (23 checks), which the
+  CI `alpha-gates` job now runs on every PR as a provisioned non-owner role.
 
 ## 4. Local end-to-end verification (repeatable procedure)
 
@@ -416,7 +426,9 @@ Re-verify against any Neon branch:
 #    CREATE ROLE afterdark_app WITH LOGIN PASSWORD '…' NOBYPASSRLS;
 yarn db:migrate && yarn db:grants && yarn db:seed
 
-# 2. Prove isolation as the non-owner role (19 checks; exits non-zero on any failure)
+# 2. Prove isolation as the non-owner role (23 checks; exits non-zero on any failure)
+#    S12: CI also runs this on every PR — the alpha-gates job provisions a throwaway
+#    non-owner role on its Postgres (scripts/ci-rls-role.mjs) and runs the same suite.
 OWNER_URL=<owner conn> RLS_URL=<afterdark_app conn> yarn db:verify-rls
 ```
 
@@ -504,7 +516,7 @@ Manual, against a **production build or deployed preview** (the worker is produc
 
 ## 10. S4–S10 functionality wave (added 2026-07-31)
 
-Automated coverage: 791 vitest tests including the generated authZ matrix rows for every
+Automated coverage: 812 vitest tests including the generated authZ matrix rows for every
 new route (`search.list`, `venue.stats`, `gigs.match-preview`, `reviews.list/create`,
 `stream.events`, `push.status/subscribe/unsubscribe`), the SQLi/plainto invariants for
 the search and match builders, the A10 SSRF guard spec (`safe-fetch.test.ts`), the S6

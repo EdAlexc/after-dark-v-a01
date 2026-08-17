@@ -105,6 +105,21 @@ jobs:
           yarn workspace web run db:seed
           yarn workspace web run db:preview-accounts > /dev/null
 
+      - name: Gate 0 — RLS enforcement proof (S12, db:verify-rls as the non-owner role)
+        # Proves the committed policies actually enforce, on every PR: a
+        # throwaway least-privilege role is provisioned on the job's Postgres
+        # (ci-rls-role.mjs), granted via scripts/grants.sql, and the 23-check
+        # verify suite runs as that role over the WebSocket tunnel — the
+        # credential-faithful path; verify-rls's check 0 fails loudly if role
+        # identity ever doesn't survive the proxy.
+        run: |
+          RLS_ROLE_PASSWORD="$(openssl rand -hex 24)"
+          RLS_ROLE_PASSWORD="$RLS_ROLE_PASSWORD" node apps/web/scripts/ci-rls-role.mjs
+          yarn workspace web run db:grants
+          OWNER_URL="$DATABASE_URL" \
+          RLS_URL="postgres://afterdark_app:${RLS_ROLE_PASSWORD}@db.localtest.me:5432/afterdark" \
+          yarn workspace web run db:verify-rls
+
       - name: Build & start (production server)
         run: |
           yarn workspace web run build

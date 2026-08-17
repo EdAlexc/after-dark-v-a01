@@ -8,6 +8,25 @@
 
 ## 1. Current status — YOU ARE HERE
 
+- **Date:** 2026-08-18 · **Branch:** `claude/s12-rls-truth` (stacked on the §7 analysis
+  branch) — **S12 landed: RLS truth & cutover unblock** (812 tests green; typecheck, lint,
+  build clean; details in §7.3 S12):
+  - The three bare-`sql` gaps wired through `withRlsContext` — `/api/stream` (SSE
+    fingerprint), `/api/gigs/match-preview` (atomic 3-query batch), and `/api/user/role`
+    (profile writes — a third instance the S12 sweep itself found; onboarding would have
+    500'd post-cutover).
+  - The invariant is now machine-checked: `test/rls-wiring.test.ts` (registry-style, like
+    the authZ matrix — governed tables derived from the migrations, builder refs
+    attributed to executing routes, per-mode invariants). `rls.ts` and the new CI driver
+    are unit-tested.
+  - `yarn db:verify-rls` grew 19 → **23 checks** (S12 wiring canaries) and now runs as
+    **Gate 0 of the CI `alpha-gates` job** on every PR, as a provisioned non-owner role
+    over the credential-faithful WebSocket tunnel — RLS enforcement is no longer a
+    manual-only proof.
+  - `docs/rls-cutover.md` corrected (its "wiring complete" claim was false); **the
+    operator `DATABASE_URL` flip is re-opened once this merges.**
+  - Slice-verification note: S1–S11 were re-confirmed complete first (per the §7 audit,
+    only documented operator steps remain), which is why work proceeded to S12.
 - **Date:** 2026-08-17 · **Branch:** `claude/alpha-missing-features-84e9eb` — **alpha gap
   analysis, recorded as §7.** Full code audit of missing features/functionality vs the alpha
   definition, assessed at `4e8f0ab` (= `main`; nothing landed since the 2026-08-03 merge of
@@ -345,11 +364,10 @@
 1. **§4.6 ops activation** (~10 min, Vercel dashboard): Sentry DSN (B2), `CRON_SECRET`
    (B4 — until it is set, the escrow release **and the G7 retention purge** silently 400
    every day, §7.2 A5), Blob token (B5 — until it is set, the CSP `img-src` stays
-   permissive and media lands inline, §7.2 A4); then one redeploy. **Do NOT flip
-   `DATABASE_URL` to the RLS role yet — blocked until S12 lands (§7.2 A1).**
-2. **S12 — RLS truth & cutover unblock** (~1–2 d): wire `withRlsContext` into the two
-   missed routes, machine-check the invariant, put `yarn db:verify-rls` in CI. This is
-   what re-opens the RLS flip.
+   permissive and media lands inline, §7.2 A4); then one redeploy.
+2. ~~**S12 — RLS truth & cutover unblock**~~ — ✅ **landed 2026-08-18** (§7.3). Once its
+   PR merges, the **RLS `DATABASE_URL` flip is re-opened** — execute per
+   `docs/rls-cutover.md` (expect 23/23) at the operator's convenience.
 3. **S13 — Account recovery & email spine** (~3 d): password reset + email verification.
    Hard tester-safety blocker — a forgotten password is currently unrecoverable; invite
    no one before this lands.
@@ -1133,7 +1151,7 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 
 | # | Finding | Evidence |
 |---|---|---|
-| A1 | **RLS route wiring is NOT complete — the cutover flip is blocked.** `/api/stream`'s fingerprint query reads 8 governed tables (`notifications`, `messages`, `conversations`, `shifts`, …) with bare `sql` and no context; post-cutover it returns the default-deny shape, the fingerprint goes static, and **SSE realtime silently stops delivering invalidations** — exactly the canary class `docs/rls-cutover.md` §"canaries" describes, but S9 landed after the runbook was written. `/api/gigs/match-preview` runs its 3 builder queries with no context either (the 0017 SECURITY DEFINER probe covers only the availability yes/no). `docs/rls-cutover.md:20`'s "every governed statement carries context" is therefore false. | `api/stream/route.ts:31-45`; `api/gigs/match-preview/route.ts:36-39` |
+| A1 | **RLS route wiring is NOT complete — the cutover flip is blocked.** `/api/stream`'s fingerprint query reads 8 governed tables (`notifications`, `messages`, `conversations`, `shifts`, …) with bare `sql` and no context; post-cutover it returns the default-deny shape, the fingerprint goes static, and **SSE realtime silently stops delivering invalidations** — exactly the canary class `docs/rls-cutover.md` §"canaries" describes, but S9 landed after the runbook was written. `/api/gigs/match-preview` runs its 3 builder queries with no context either (the 0017 SECURITY DEFINER probe covers only the availability yes/no). `docs/rls-cutover.md:20`'s "every governed statement carries context" is therefore false. **→ FIXED in S12 (2026-08-18):** both routes wired; the sweep found a **third** instance — `/api/user/role`'s profile INSERT/UPDATEs violate the owner-write `WITH CHECK` post-cutover (onboarding would 500) — also wired. Refinement recorded for honesty: match-preview *degrades* (leans implicitly on public-read policies) rather than breaks. The invariant is now machine-checked (`test/rls-wiring.test.ts`) and `db:verify-rls` runs per-PR in CI. **The operator flip is un-blocked once S12 merges.** | `api/stream/route.ts:31-45`; `api/gigs/match-preview/route.ts:36-39`; `api/user/role/route.ts:31-59` |
 | A2 | **No account recovery and no email infrastructure at all.** No password-reset flow, no forgot-password link on sign-in, no mail-provider dependency anywhere; `requireEmailVerification: false` means anyone can register with someone else's address. A tester who forgets their password is **permanently locked out** — compounded when 2FA is enrolled. | `lib/auth.ts:123`; `app/account/` (no reset surface); `package.json` (no mail dep) |
 | A3 | **The payout ledger advances without money moving, and the UI shows it as earnings.** With Stripe unkeyed (the current state everywhere), `payouts/release` flips HELD→RELEASED and skips transfers; the talent dashboard sums RELEASED rows into "Total Earnings" with no simulated marker. The route is honest in its response (`transfers: 0`) — the UI ignores it. | `api/payouts/release/route.ts:56-69,125`; `dashboard/talent/page.tsx:216-217` |
 | A4 | **Media/CSP posture degrades silently when Blob is unkeyed**: `img-src` falls back to broad `https:` (re-opening the G11 egress finding S3 closed), and already-processed inline `data:` URLs pass `sanitizeMediaField` — the "inline path is dead" invariant only holds with the token set. | `security-headers.js:64-72`; `api/utils/media.ts:103-117,162` |
@@ -1149,7 +1167,7 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 | Q3 | **The k6 CI gate is 5.3× looser than the documented bar**: CI passes `APDEX_T=1600` while `ci.yml`'s own comments and TESTING.md still say T=300 (the calibration is legitimate — 2-core co-hosted runner — but the docs contradict the invocation). Scenario coverage is 3 of 6: #2 apply-spike, **#5 noisy-neighbor (a tenant-fairness security property)** and #6 soak are missing; no p99 ≤ 1.2 s threshold; the check-in burst silently no-ops if setup yields no shift. The 500-VU/15-min lab and 2 h soak have **never been run**. | `.github/workflows/ci.yml:127-134`; `k6/alpha-gates.js:38-74,172` |
 | Q4 | Gates below their stated bars: axe `serious` warn-only (guardrail says 0 critical/serious — the ratchet is Backlog #13); Lighthouse LCP/TBT/FCP/JS-weight warn-only pending the RSC refactor; `numberOfRuns: 1`. Documented in-file, but the guardrail-§7 boxes don't close at these levels. | `scripts/axe-smoke.ts:117-133`; `lighthouserc.cjs:35-43` |
 | Q5 | **No RUM**: zero `web-vitals`/`useReportWebVitals` usage. The scorecard rows (CWV p75, per-endpoint Apdex, front-end JS error rate) are unmeasurable in production; guardrail-§7's "RUM dashboards live" box has no implementation at all. | repo-wide grep |
-| Q6 | Ready-made security gates not wired into CI: `yarn db:verify-rls` (19 checks — the single proof RLS enforces) and `yarn db:backfill-media --verify` (the S3 zero-`data:`-rows gate, written to exit non-zero) are manual-only. | `scripts/verify-rls.mjs`; `scripts/backfill-media.ts:10,21` |
+| Q6 | Ready-made security gates not wired into CI: `yarn db:verify-rls` (the single proof RLS enforces) and `yarn db:backfill-media --verify` (the S3 zero-`data:`-rows gate, written to exit non-zero) are manual-only. **→ verify-rls half CLOSED in S12** (now 23 checks, Gate 0 of the CI `alpha-gates` job); the backfill-media half stays with S15. | `scripts/verify-rls.mjs`; `scripts/backfill-media.ts:10,21` |
 | Q7 | **No audit-coverage gate**: nothing fails CI when a mutating route forgets `auditLogger` — unlike authZ, where the matrix machine-checks its concern. | contrast `api/utils/__tests__/authz-matrix.test.ts:5-8` |
 | Q8 | **25 of 49 routes have no dedicated test suite.** The consequential ones are the money paths: `payouts/release` (**zero tests** — double-release, cron auth, unkeyed behavior all unasserted), `stripe/webhook` (**zero tests** — guardrail-§7 explicitly requires signature + fee-tamper tests; fee-tamper is argued structurally, never tested), `shifts/[id]` idempotency (k6-only, and that check can no-op), `upload` (caps/MediaError mapping), the DSR routes' two-factor confirm gates, `age-confirm` (G12), `push/subscribe`, `match-preview`; `/api/stream` is tested only with `STREAM_MAX_MS=0` so real-timing window/reconnect behavior is never exercised. Untested utils include **`rls.ts` itself**, `route-kit`, `schemas`, and both lifecycle matrices (`shift-lifecycle`, `application-lifecycle`). | route tree sweep |
 | Q9 | **No DAST**: OWASP ZAP baseline (required by guardrail-§7 and CLAUDE.md §9's definition of done) does not exist in any form, so "no *new* ZAP high/medium" is unmeasurable; no stored-XSS regression suite (the probes in TESTING.md §10 #5 are manual). | repo-wide |
@@ -1206,18 +1224,30 @@ shippable, revertable) apply to every slice unchanged.
 
 #### Security wave (do first, in this order)
 
-**S12 — RLS truth & cutover unblock (~1–2 d)** — closes A1 + the verify half of Q6
-- Wire `withRlsContext` into `/api/stream`'s fingerprint and `/api/gigs/match-preview`'s
-  builder queries; sweep every remaining bare-`sql` call site against the governed-table
-  list.
-- Make the invariant machine-checked like the authZ matrix: a structural test that fails CI
-  when a route touching a governed table never enters an RLS context.
-- Unit-test `rls.ts` itself (`withRlsContext`/`serviceContext` — currently zero tests for
-  the mechanism the whole isolation story rests on); wire `yarn db:verify-rls` into the CI
-  `alpha-gates` job (its Postgres+proxy stack is already there) and extend it with an
-  SSE-fingerprint canary; correct `docs/rls-cutover.md`.
-- *Security gate:* verify-rls green **in CI**; the cutover runbook truthful again. **Until
-  this lands, the operator `DATABASE_URL` flip is a do-not-execute** (A1).
+**S12 — RLS truth & cutover unblock (~1–2 d)** — closes A1 + the verify half of Q6 —
+✅ **landed 2026-08-18** (812 tests green; build/typecheck/lint clean)
+- ☑ `withRlsContext` wired into `/api/stream`'s fingerprint and `/api/gigs/match-preview`'s
+  builder batch (now one atomic round trip instead of `Promise.all`×3); the full sweep of
+  every `sql`-executing file found and fixed a **third** gap — `/api/user/role`'s profile
+  INSERT/UPDATEs (onboarding would 500 post-cutover). Everything else verified exempt with
+  reasons: better-auth tables ungoverned; anon surfaces (search, talent directory) ride the
+  public-read policies by design; `notify`/`audit`/`events` INSERTs ride deliberate
+  `WITH CHECK (true)` policies; `account-data`/`push` were already wired.
+- ☑ Machine-checked like the authZ matrix: `test/rls-wiring.test.ts` derives the
+  governed-table list from the migrations, attributes builder-module refs to the routes
+  executing them, and fails CI on any undeclared/undeclarable file — with per-mode
+  invariants (`wrapped`/`public-read`/`policy-insert`/`builder`) and a policy re-check on
+  the any-context-insert allowlist.
+- ☑ `rls.ts` unit-tested (context-first-in-same-transaction, role default `''`, atomic
+  array form, error propagation); `yarn db:verify-rls` extended 19 → **23 checks** (SSE
+  fingerprint with/without context; onboarding INSERT denied bare / allowed contexted) and
+  wired into CI as **Gate 0** of `alpha-gates` — a throwaway non-owner role is provisioned
+  per run (`scripts/ci-rls-role.mjs`) and the suite runs as that role over the
+  credential-faithful WebSocket tunnel (`scripts/pool-sql.mjs`, unit-tested; check 0 fails
+  loudly if role identity ever doesn't survive the proxy).
+- ☑ `docs/rls-cutover.md` corrected (wiring claim, 23 checks, two new cutover canaries).
+- *Security gate met:* verify-rls green in CI; the cutover runbook truthful again. **The
+  operator `DATABASE_URL` flip is un-blocked once this merges.**
 
 **S13 — Account recovery & email spine (~3 d)** — closes A2 (+ the email half of F9) —
 *parallel with S12 (no shared files)*
@@ -1360,4 +1390,6 @@ release **and the G7 purge** silently 400 daily, A5), B5 (Blob token — until s
 VAPID pair, the human tabletop (owed since 2026-07-31), and `yarn db:backfill-media
 --verify` once B5 lands. **New:** the RLS `DATABASE_URL` flip is **blocked until S12
 merges** — the runbook's premise ("every governed statement carries context") is currently
-false, and flipping today would silently break SSE realtime (A1).
+false, and flipping today would silently break SSE realtime (A1). *(Update 2026-08-18: S12
+landed — once its PR merges, the flip is re-opened; follow `docs/rls-cutover.md`, expect
+23/23.)*
