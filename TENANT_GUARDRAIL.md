@@ -115,7 +115,7 @@ Neon, Stripe, AWS/Vercel, error-tracking = **processors**.
 |---|---|---|
 | Email, name, phone, recovery email | `user` | account PII |
 | Password hash | better-auth `account` | keep argon2/scrypt; never log |
-| TOTP secret | `user.totp_secret` | **currently plaintext — encrypt (P0)**; never to third parties (qrserver leak must go) |
+| TOTP secret | better-auth `twoFactor` table (since migration 0005; `user.totp_secret` retired) | **encrypted at rest** under `BETTER_AUTH_SECRET` by the better-auth twoFactor plugin; QR rendered locally (the qrserver leak was removed in P0) — *stale "currently plaintext" row corrected 2026-08-18, S15* |
 | Stage name, pronouns, bio, neighborhood, photos, social links, rates | `talent_profiles` | pronouns ≈ gender-adjacent — treat as sensitive-by-caution; photos are biometric-adjacent content, EXIF may embed GPS → strip on upload |
 | Venue address, contacts, gallery | `venue_profiles` | business PII |
 | Messages + attachments | (P3) | private comms; export & erasure must cover them |

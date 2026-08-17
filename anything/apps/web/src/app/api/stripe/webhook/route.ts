@@ -1,5 +1,6 @@
 import type Stripe from 'stripe';
 import sql from '@/app/api/utils/sql';
+import { auditLogger } from '@/app/api/utils/audit';
 import { getStripe, stripeEnabled, webhookSecret } from '@/lib/stripe';
 import { logger } from '@/app/api/utils/logger';
 import { withRoute, jsonError } from '@/app/api/utils/route-kit';
@@ -90,6 +91,19 @@ export const POST = withRoute('stripe.webhook', async (request) => {
     }
     default:
       log.info('unhandled webhook type', { type: event.type });
+  }
+
+  // S15 audit-coverage: webhook-driven money/account state changes join the
+  // trail like every other mutation (first deliveries only — replays return
+  // above; unhandled types write no state, so nothing to record).
+  if (event.type === 'account.updated' || event.type === 'transfer.created') {
+    await auditLogger.record({
+      actorId: 'system:stripe',
+      action: 'stripe.webhook',
+      entityType: 'stripe_event',
+      entityId: event.id,
+      metadata: { type: event.type },
+    });
   }
 
   return Response.json({ received: true });
