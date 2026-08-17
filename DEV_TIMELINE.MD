@@ -8,6 +8,32 @@
 
 ## 1. Current status — YOU ARE HERE
 
+- **Date:** 2026-08-17 · **Branch:** `claude/alpha-missing-features-84e9eb` — **alpha gap
+  analysis, recorded as §7.** Full code audit of missing features/functionality vs the alpha
+  definition, assessed at `4e8f0ab` (= `main`; nothing landed since the 2026-08-03 merge of
+  PR #18). Baseline re-verified, not read off status notes: 791/791 tests, typecheck and
+  lint clean. Headline findings, each with file:line evidence in §7.2:
+  - **The RLS route wiring is NOT complete** — `/api/stream` and `/api/gigs/match-preview`
+    run bare `sql` on governed tables, so the operator `DATABASE_URL` flip is **blocked
+    until S12** (flipping today silently kills SSE realtime). `docs/rls-cutover.md`'s
+    "wiring complete" claim is false.
+  - **No password reset and no email infrastructure exist** — a tester who forgets their
+    password is permanently locked out (worse with 2FA), and `requireEmailVerification:
+    false` lets anyone sign up with someone else's address (S13).
+  - **Simulated money renders as real earnings** — with Stripe unkeyed, payout release
+    advances the ledger to RELEASED and dashboards show it as earned (S14).
+  - **The verification layer under-delivers its own bar**: zero frontend/component tests,
+    zero Playwright E2E, no ZAP/DAST, no RUM, no stored-XSS suite, money-path routes
+    (payouts/release, stripe/webhook, shifts idempotency) have zero route tests, and the
+    CI k6 gate runs at T=1600 ms while the docs still claim T=300 (S14–S18).
+  - **The PARTY persona is complete and tested server-side but unreachable in the UI** —
+    signup writes a dead `'PERSONAL'` sentinel, `/dashboard` 404s for everyone (no root
+    router), and no venue directory / inquiry path / PARTY messages surface exists (S19).
+  - Assorted tester-facing breakage: dead notification bells on both dashboard homes,
+    draft-duplicating Save Draft, ephemeral Saved Talent, dead Preview / Talk-to-Sales
+    buttons, page-scoped browse search (S17/S20).
+  Everything is inventoried and sliced as **S12–S20 in §7 — security wave first, then
+  quality, then functionality**.
 - **Date:** 2026-07-31 (late) · **Branch:** `claude/backlog-slices-4-10-b73087` (worktree
   off `main`; S1–S3 merged in PR #15)
 - **P10.4 + S11 delivered this session (2026-07-31 — §5 is now fully landed except the
@@ -313,23 +339,25 @@
 
 ### Pick-up-here: next five tasks (in order)
 
-> P10.1–P10.2 landed 2026-07-31; §4.3 is closed except the operator env steps.
+> Rewritten 2026-08-17 by the §7 gap analysis (the old list was stale — P10.3/P10.4 landed
+> 2026-07-31; the §4.5 cosmetic caveats closed in S4).
 
 1. **§4.6 ops activation** (~10 min, Vercel dashboard): Sentry DSN (B2), `CRON_SECRET`
-   (B4), Blob store (B5); then one redeploy. This is what stands between the repo and
-   inviting the first testers.
-2. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min) before the first tester
-   invite — the desk check validated the document, not the operator's muscle memory.
-3. **P10.3** — Shared rate-limit store (Upstash Redis or Postgres token bucket, Backlog
-   #21): back `getRateLimiter` with it so limits hold across serverless instances; the k6
-   Apdex gate is meaningless until this lands. Required before any **open** (non-invite)
-   signup.
-4. **P10.4** — CI gates: Lighthouse CWV budgets (TENANT_GUARDRAIL §3.2), k6 Apdex ≥ 0.85 @
-   T=300 ms (§3.4 scenarios), `@axe-core/playwright` on the 10 core screens (dark-theme
-   contrast!) — these are the formal alpha *exit* checklist.
-5. **Ops carry-overs** — RLS cutover (`docs/rls-cutover.md`); Stripe test keys when ready
-   (§4.6 step 4); alpha-cosmetic caveats from §4.5: hide/label the mock Live Analytics
-   rail and the decorative global search box.
+   (B4 — until it is set, the escrow release **and the G7 retention purge** silently 400
+   every day, §7.2 A5), Blob token (B5 — until it is set, the CSP `img-src` stays
+   permissive and media lands inline, §7.2 A4); then one redeploy. **Do NOT flip
+   `DATABASE_URL` to the RLS role yet — blocked until S12 lands (§7.2 A1).**
+2. **S12 — RLS truth & cutover unblock** (~1–2 d): wire `withRlsContext` into the two
+   missed routes, machine-check the invariant, put `yarn db:verify-rls` in CI. This is
+   what re-opens the RLS flip.
+3. **S13 — Account recovery & email spine** (~3 d): password reset + email verification.
+   Hard tester-safety blocker — a forgotten password is currently unrecoverable; invite
+   no one before this lands.
+4. **S14 + S15 — money-path integrity, ZAP, gate truthing** (~5 d, parallelizable):
+   closes the open guardrail-§7 security boxes (webhook signature + fee-tamper tests,
+   DAST baseline, audit-coverage gate, doc drift, honest simulated-payout display).
+5. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min — owed since 2026-07-31)
+   + **S16 E2E journeys** to close the G4/G12/PWA-§6.6 proof gaps.
 
 ---
 
@@ -1072,3 +1100,264 @@ never logged (`api/utils/logger.ts` redacts, but don't test it). Local dev uses
 `.env.local` (gitignored; `vercel env pull` syncs it). Any **new** variable must be added
 to `apps/web/.env.example` *and* this table in the same PR — they are the same contract in
 two audiences.
+
+---
+
+## 7. Alpha gap analysis & remediation slices (S12–S20) — 2026-08-17
+
+> Requested audit: **analyze the code and note missing features/functionality for the alpha
+> release, split into development slices prioritizing data security and quality.** Assessed
+> at `4e8f0ab` (= `main`; nothing landed since PR #18, 2026-08-03) against the alpha
+> definition (CLAUDE.md §8), the wireframe inventory (CLAUDE.md §5.2), and the release gate
+> (TENANT_GUARDRAIL §7). Method: three parallel code audits (UI-vs-wireframe sweep,
+> PARTY-role completeness, ops/CI/test-coverage) plus a guardrail-checklist cross-check;
+> every load-bearing claim below was re-verified against source at file:line this session,
+> not read off prior status notes. All paths are under `anything/apps/web/src` unless noted.
+
+### 7.1 Verification snapshot (evidence)
+
+| Check | Result |
+|---|---|
+| `yarn test` | ✅ 791/791 (47 files) |
+| `yarn typecheck` | ✅ clean |
+| `yarn lint` | ✅ 0 warnings (`--no-ignore` inside the worktree — oxlint quirk) |
+| CI on `main` | ✅ green through PR #18; `alpha-gates` (axe/LHCI/k6) running |
+| New code since the 2026-07-31 status | none (PR #18 merge only) |
+
+The marketplace loop (P0–P10, S1–S11) stands as documented. What follows is what the audit
+found still **missing, fake, dark, or unverified** — inventoried in §7.2, sliced in §7.3.
+
+### 7.2 Gap inventory
+
+#### A. Security & data-integrity gaps
+
+| # | Finding | Evidence |
+|---|---|---|
+| A1 | **RLS route wiring is NOT complete — the cutover flip is blocked.** `/api/stream`'s fingerprint query reads 8 governed tables (`notifications`, `messages`, `conversations`, `shifts`, …) with bare `sql` and no context; post-cutover it returns the default-deny shape, the fingerprint goes static, and **SSE realtime silently stops delivering invalidations** — exactly the canary class `docs/rls-cutover.md` §"canaries" describes, but S9 landed after the runbook was written. `/api/gigs/match-preview` runs its 3 builder queries with no context either (the 0017 SECURITY DEFINER probe covers only the availability yes/no). `docs/rls-cutover.md:20`'s "every governed statement carries context" is therefore false. | `api/stream/route.ts:31-45`; `api/gigs/match-preview/route.ts:36-39` |
+| A2 | **No account recovery and no email infrastructure at all.** No password-reset flow, no forgot-password link on sign-in, no mail-provider dependency anywhere; `requireEmailVerification: false` means anyone can register with someone else's address. A tester who forgets their password is **permanently locked out** — compounded when 2FA is enrolled. | `lib/auth.ts:123`; `app/account/` (no reset surface); `package.json` (no mail dep) |
+| A3 | **The payout ledger advances without money moving, and the UI shows it as earnings.** With Stripe unkeyed (the current state everywhere), `payouts/release` flips HELD→RELEASED and skips transfers; the talent dashboard sums RELEASED rows into "Total Earnings" with no simulated marker. The route is honest in its response (`transfers: 0`) — the UI ignores it. | `api/payouts/release/route.ts:56-69,125`; `dashboard/talent/page.tsx:216-217` |
+| A4 | **Media/CSP posture degrades silently when Blob is unkeyed**: `img-src` falls back to broad `https:` (re-opening the G11 egress finding S3 closed), and already-processed inline `data:` URLs pass `sanitizeMediaField` — the "inline path is dead" invariant only holds with the token set. | `security-headers.js:64-72`; `api/utils/media.ts:103-117,162` |
+| A5 | **Cron dead-man gap**: without `CRON_SECRET`, `isCronRequest()` is unconditionally false, so both scheduled jobs 400 **every day, forever, silently** (no Sentry DSN exists either). Escrow release and the GDPR **G7 retention purge** are dark and nothing alerts — while `docs/retention.md` marks the purge "✅ Automated". | `api/payouts/release/route.ts:27-31`; `api/retention/purge/route.ts:34-38`; `vercel.json` |
+| A6 | Minor hardening: `user.role` is plain TEXT with no CHECK (any string storable — zod is the only enforcement); gitleaks-action v2 needs `GITLEAKS_LICENSE` if the repo ever moves under a GitHub org; `yarn npm audit` workspace scoping worth confirming (`--all`). | `migrations/0001_baseline.sql:22`; `.github/workflows/ci.yml:169-174` |
+
+#### B. Quality / verification gaps
+
+| # | Finding | Evidence |
+|---|---|---|
+| Q1 | **The frontend is entirely untested**: zero `.test.tsx` files across 28 pages + 53 components; `@testing-library/react` is installed and unused (only the `jest-dom` matchers are wired, for the sw.js sandbox). | `package.json`; repo-wide grep |
+| Q2 | **No Playwright E2E exists.** Playwright is installed but its only consumer is the axe smoke. Missing per CLAUDE.md §9: the alpha-loop journey per role, deep-link refresh survival, the **DSR export/delete E2E that is G4's own specified proof**, the signup/age-gate E2E (G12), and the real-browser PWA §6.6 check TESTING.md calls *"a release blocker, full stop"* — currently eyeball-only. | `scripts/axe-smoke.ts:21`; no spec files/config repo-wide |
+| Q3 | **The k6 CI gate is 5.3× looser than the documented bar**: CI passes `APDEX_T=1600` while `ci.yml`'s own comments and TESTING.md still say T=300 (the calibration is legitimate — 2-core co-hosted runner — but the docs contradict the invocation). Scenario coverage is 3 of 6: #2 apply-spike, **#5 noisy-neighbor (a tenant-fairness security property)** and #6 soak are missing; no p99 ≤ 1.2 s threshold; the check-in burst silently no-ops if setup yields no shift. The 500-VU/15-min lab and 2 h soak have **never been run**. | `.github/workflows/ci.yml:127-134`; `k6/alpha-gates.js:38-74,172` |
+| Q4 | Gates below their stated bars: axe `serious` warn-only (guardrail says 0 critical/serious — the ratchet is Backlog #13); Lighthouse LCP/TBT/FCP/JS-weight warn-only pending the RSC refactor; `numberOfRuns: 1`. Documented in-file, but the guardrail-§7 boxes don't close at these levels. | `scripts/axe-smoke.ts:117-133`; `lighthouserc.cjs:35-43` |
+| Q5 | **No RUM**: zero `web-vitals`/`useReportWebVitals` usage. The scorecard rows (CWV p75, per-endpoint Apdex, front-end JS error rate) are unmeasurable in production; guardrail-§7's "RUM dashboards live" box has no implementation at all. | repo-wide grep |
+| Q6 | Ready-made security gates not wired into CI: `yarn db:verify-rls` (19 checks — the single proof RLS enforces) and `yarn db:backfill-media --verify` (the S3 zero-`data:`-rows gate, written to exit non-zero) are manual-only. | `scripts/verify-rls.mjs`; `scripts/backfill-media.ts:10,21` |
+| Q7 | **No audit-coverage gate**: nothing fails CI when a mutating route forgets `auditLogger` — unlike authZ, where the matrix machine-checks its concern. | contrast `api/utils/__tests__/authz-matrix.test.ts:5-8` |
+| Q8 | **25 of 49 routes have no dedicated test suite.** The consequential ones are the money paths: `payouts/release` (**zero tests** — double-release, cron auth, unkeyed behavior all unasserted), `stripe/webhook` (**zero tests** — guardrail-§7 explicitly requires signature + fee-tamper tests; fee-tamper is argued structurally, never tested), `shifts/[id]` idempotency (k6-only, and that check can no-op), `upload` (caps/MediaError mapping), the DSR routes' two-factor confirm gates, `age-confirm` (G12), `push/subscribe`, `match-preview`; `/api/stream` is tested only with `STREAM_MAX_MS=0` so real-timing window/reconnect behavior is never exercised. Untested utils include **`rls.ts` itself**, `route-kit`, `schemas`, and both lifecycle matrices (`shift-lifecycle`, `application-lifecycle`). | route tree sweep |
+| Q9 | **No DAST**: OWASP ZAP baseline (required by guardrail-§7 and CLAUDE.md §9's definition of done) does not exist in any form, so "no *new* ZAP high/medium" is unmeasurable; no stored-XSS regression suite (the probes in TESTING.md §10 #5 are manual). | repo-wide |
+
+#### C. Missing functionality (testers will hit these)
+
+| # | Finding | Evidence |
+|---|---|---|
+| F1 | **The PARTY persona is unreachable end-to-end.** Server side is complete and tested (all 63 authZ rows carry PARTY incl. a standing "never a principal" invariant; RLS is user-id-keyed so PARTY is least-privilege by construction). But: "Personal Account" signup writes a **`'PERSONAL'` sentinel nothing reads** → `role = NULL` forever; onboarding offers no PARTY card; **`/dashboard` 404s for every role** (no root router page); `DashboardSidebar` silently falls through to the **venue** nav for unknown roles; the post-2FA redirect hardcodes `/dashboard/talent`; there is **no venue directory** (API or page) though §6.3 requires "browse venues to book for private parties"; **no client can open a PARTY_INQUIRY** (`counterpart_user_id` deliberately never rides the client and no server-side resolver exists — the gig-detail Inquire button 403s for PARTY); no PARTY messages surface (`MessagesView` accepts only `'talent' \| 'venue'`). The venue *side* of inquiries works and renders the badge. | `account/signup/page.tsx:176,208`; `onboarding/page.tsx:7-30,54,86`; `app/dashboard/` (no `page.tsx`); `components/DashboardSidebar.tsx:30,476`; `account/two-factor/page.tsx:48`; `api/conversations/route.ts:97-102`; `components/MessagesView.tsx:53` |
+| F2 | **Dead controls on first-click surfaces**: bare notification-bell buttons with no `onClick` and no unread badge on **8 pages including both dashboard homes** (the real `NotificationsBell` is mounted on only 5 surfaces); create-gig "Preview" has no handler; landing "Talk to Sales" has no handler. | `dashboard/talent/page.tsx:256`; `dashboard/venue/page.tsx:282-283`; `create-gig/page.tsx:880-887`; `app/page.tsx:277-284` |
+| F3 | **Create-gig draft integrity**: Save Draft never retains the created id, so each click INSERTs a **duplicate draft**; blank fields are silently replaced with fabricated `2026-01-01` dates and "Untitled Gig"; "✓ Draft saved" implies autosave that doesn't exist (the wizard is lost on navigation). | `create-gig/page.tsx:243-278,862-873` |
+| F4 | **Saved Talent is ephemeral**: plain `useState` — not even localStorage — lost on refresh, and filtered against the current results page only; "Message Saved Talent" links to messages with no talent context. | `dashboard/venue/browse/page.tsx:249,294-301,594-597` |
+| F5 | Notifications have no history surface — bell dropdown only, no View-all page. | `components/NotificationsBell.tsx:64-130` |
+| F6 | The gig **detail** page has no map (*"Map view coming soon"* — S10's `GigsMap` is browse-only) and no address show/hide toggle (wireframe p4); create-gig step 2 shows a dead "Map preview" box; the Location card disappears entirely for address-less gigs (neighborhood fallback unused). | `gigs/[id]/page.tsx:333-344`; `create-gig/page.tsx:464-469` |
+| F7 | Browse text-search only filters the currently fetched page on **both** browse surfaces — matching rows beyond page 1 are unfindable by text. | `dashboard/talent/browse/page.tsx:79`; `dashboard/venue/browse/page.tsx:277-286` |
+| F8 | The search-page "Message" CTA hardcodes `/dashboard/venue/messages` — wrong for talent, broken for PARTY. | `app/search/page.tsx:237` |
+| F9 | No notification preferences exist in Settings (the only opt-in in the app is the push toggle on the availability page) and no email preferences (nothing sends email — A2). | `dashboard/settings/page.tsx` section list |
+
+#### D. Wireframe deltas — decide or descope (record the decision; don't ship silently)
+
+| # | Wireframe promise | Status / recommendation |
+|---|---|---|
+| D1 | "Sync Calendar" (p7) | Absent. External-integration scope — stays parked with Backlog #2. One line in the tester briefing. |
+| D2 | PDF tech-rider attachments (p6) | Image-only by the documented AV stance (`media.ts`, Backlog #10). Keep until an AV step exists; brief testers. |
+| D3 | Venue "response rate" (p4) | No data model behind it. Define (reply latency over conversations) in S20 — or drop it from the venue card. |
+| D4 | Profile-view count + 24/7 concierge card (p8) | Absent; no view tracking exists. Descope for alpha (the S6 `events` table can carry views post-alpha). |
+| D5 | "Viewing as: Talent / Venue" toggle (p4) | Never built. Descope — the shared preview accounts serve the need. |
+| D6 | Admin "uptime / traffic req/s" KPI (p1, PRD §3.4) | Needs RUM/metrics — arrives with S18 or stays descoped. |
+
+#### E. Doc drift (docs contradict code — fixed in S15)
+
+1. `ci.yml:50-51` + `TESTING.md:544` state the k6 gate asserts T=300 ms; CI passes
+   `APDEX_T=1600` (`ci.yml:134`).
+2. `docs/rls-cutover.md:20` claims route wiring is complete — false (A1).
+3. `TESTING.md:472-473` ("no automated retention purge yet") contradicts
+   `docs/retention.md:18-20` ("✅ Automated (S2)").
+4. `TESTING.md:445-447` still lists P10.4 as outstanding — it landed 2026-07-31.
+5. `TENANT_GUARDRAIL.md` §4.1 still marks TOTP "currently plaintext — encrypt (P0)" —
+   stale since migration 0005.
+6. `TESTING.md:463-464` describes messaging as polling "by design until post-alpha" —
+   S9 shipped SSE.
+
+#### Guardrail release-checklist tally (TENANT_GUARDRAIL §7)
+
+**4 boxes cleanly DONE** (authZ matrix suite, security-header assertions, `yarn npm audit`,
+gitleaks), **12 PARTIAL, 5 OPEN**. The unambiguous absences — ZAP, RUM, the DSR E2E, the
+soak, and the k6 scenario/threshold gap — are each owned by a slice below.
+
+### 7.3 Remediation slices (S12–S20)
+
+Ordering follows the standing rule — **data security first, then verification/quality, then
+functionality**. The §2.0 definition of done and §2.1 sizing rules (≤ ~3 d, independently
+shippable, revertable) apply to every slice unchanged.
+
+#### Security wave (do first, in this order)
+
+**S12 — RLS truth & cutover unblock (~1–2 d)** — closes A1 + the verify half of Q6
+- Wire `withRlsContext` into `/api/stream`'s fingerprint and `/api/gigs/match-preview`'s
+  builder queries; sweep every remaining bare-`sql` call site against the governed-table
+  list.
+- Make the invariant machine-checked like the authZ matrix: a structural test that fails CI
+  when a route touching a governed table never enters an RLS context.
+- Unit-test `rls.ts` itself (`withRlsContext`/`serviceContext` — currently zero tests for
+  the mechanism the whole isolation story rests on); wire `yarn db:verify-rls` into the CI
+  `alpha-gates` job (its Postgres+proxy stack is already there) and extend it with an
+  SSE-fingerprint canary; correct `docs/rls-cutover.md`.
+- *Security gate:* verify-rls green **in CI**; the cutover runbook truthful again. **Until
+  this lands, the operator `DATABASE_URL` flip is a do-not-execute** (A1).
+
+**S13 — Account recovery & email spine (~3 d)** — closes A2 (+ the email half of F9) —
+*parallel with S12 (no shared files)*
+- Key-gated email provider in the house pattern (inert without the key, loud in dev);
+  better-auth password reset (`sendResetPassword`) + "Forgot password?" on sign-in; email
+  verification ON for new signups (existing accounts grandfathered with a re-verify nudge);
+  the 2FA-lockout recovery path (backup codes) stated at enroll time.
+- *Security gate:* uniform responses (no user enumeration); single-use, expiring, hashed
+  reset tokens; a successful reset revokes existing sessions; rate-limited per user + IP;
+  every event audited; no PII beyond the address in provider payloads. New env vars land in
+  `.env.example` **and** the §6 table in the same PR.
+
+**S14 — Money-path integrity (~2–3 d)** — closes A3, A5 + the worst of Q8 — *parallel with S13*
+- Route tests where money moves: `payouts/release` (double-release, cron/admin auth, and
+  the unkeyed ledger-advance behavior asserted explicitly), `stripe/webhook` (signature
+  verification, replay guard), `shifts/[id]` idempotency replay at the route level, an
+  **explicit fee-tamper test** (today the argument is structural only), `upload` caps, the
+  DSR confirm gates, `age-confirm`.
+- A3 honesty: when a release moves no transfer (unkeyed or not onboarded), ledger rows and
+  both dashboards must label the amount **simulated** — testers must not read fake money as
+  earned.
+- A5 dead-man: unauthenticated scheduled-cron requests log loudly + Sentry-capture; the
+  admin overview surfaces "cron has not run in 24 h".
+- *Security gate:* the guardrail-§7 "webhook signature + fee-tamper tests green" box
+  closes; simulated money never renders as real.
+
+**S15 — DAST & gate truthing (~2–3 d)** — closes Q9, Q7, the backfill half of Q6, part of
+Q3/Q4, all of E
+- OWASP ZAP baseline in CI against the existing self-contained alpha-gates stack, **0
+  High/Medium enforced**; a stored-XSS regression suite (bios, gig descriptions, review
+  comments, messages rendered on another user's screen).
+- Audit-coverage gate: every mutating authz-matrix row declares its audit action; a test
+  fails CI when a route mutates without recording.
+- Wire `yarn db:backfill-media --verify` into CI; k6: add the p99 ≤ 1.2 s threshold and the
+  apply-spike scenario, and make the check-in burst **fail** (not skip) when setup yields
+  no shift.
+- Fix all six doc-drift items (E1–E6), recording T=1600 as the documented CI calibration
+  and the T=300 bar as the load-lab's job.
+- *Security gate:* ZAP job red on any High/Medium; the drift list is empty.
+
+#### Quality wave
+
+**S16 — E2E journeys (~3–4 d)** — closes Q2 + the G4/G12 proof gaps — *parallel with S14/S15*
+- Playwright on the CI stack (reuse the axe-smoke session plumbing): the alpha loop as one
+  journey per role; deep-link refresh survival; the **DSR export/delete E2E** (G4's
+  specified proof); signup + 18/21 age-gate E2E (G12); PWA install/offline/logout-cache-
+  purge in a real browser — automating the §6.6 check TESTING.md declares a release
+  blocker.
+
+**S17 — Frontend truth & component tests (~3 d)** — closes F2, F3, F7 + starts Q1
+- Replace the 8 dead bell buttons with the real `NotificationsBell`; wire or remove
+  create-gig "Preview" and landing "Talk to Sales"; create-gig drafts retain their id
+  (PATCH on re-save), drop the fabricated dates/title, and the saved-state label matches
+  reality (or implement real autosave).
+- First component-test beachhead with the installed-but-unused `@testing-library/react`:
+  `NotificationsBell`, `DashboardSidebar` (all role variants), `MessagesView`, the browse
+  filter panel, the create-gig wizard steps.
+- Browse text-search goes server-side (`q` param on the list endpoints) or is visibly
+  labeled page-scoped (F7).
+
+**S18 — RUM & ops observability (~2 d)** — closes Q5, D6 — *parallel with S17*
+- `useReportWebVitals` → a first-party beacon (G11-clean, no third party) into a small
+  rollup table (or Sentry metrics once the DSN is live); per-endpoint Apdex derived from
+  `route-kit` timings in the structured logs; the admin overview gains traffic/uptime
+  cards (PRD p1); `withSentryConfig` source-map wiring.
+- *Security gate:* beacon payloads carry no PII and no ids beyond role; rate-limited.
+
+#### Functionality wave
+
+**S19 — PARTY persona completion (~3–4 d)** — closes F1, F8
+- Become-a-PARTY path: signup sentinel fix (`'PERSONAL'` → `PARTY`), onboarding PARTY
+  card, role-aware completion redirect; a `/dashboard` **root router page** (fixes the
+  universal 404); a `party` sidebar variant with exhaustive ternaries (no more silent
+  venue fallthrough); role-aware post-2FA redirect; `NotificationsBell` role union widened.
+- Venue discovery: public `GET /api/venues` (+ detail) with a public-column projection, a
+  `/venues` page, and a `venues` arm in `/api/search`.
+- Inquiry path: `POST /api/conversations { venue_id }` resolves the counterpart
+  **server-side** (user ids still never ride the client); an "Inquire about a private
+  party" CTA on the venue page; a PARTY messages surface (widen `MessagesView`); seed a
+  PARTY fixture + inquiry so the already-working venue side has local data.
+- *Security gate:* the standing "PARTY is never a principal" matrix invariant stays green;
+  the venue directory leaks nothing beyond public profile columns; inquiries are
+  rate-limited and reportable (they already flow to `reports` via P5).
+
+**S20 — Discovery & dashboard completion (~2–3 d)** — closes F4, F5, F6 + the D3 decision
+- Saved talent persisted server-side (`saved_talent` table with RLS in-file, matrix row,
+  venue-scoped API) replacing the ephemeral `useState`; a notifications history page +
+  "View all" from the bell; gig-detail map (reuse `GigsMap`, single pin) + address
+  fallback to neighborhood; create-gig step-2 live map preview; define-or-drop the p4
+  "response rate" (D3).
+
+**Descoped for alpha, recorded:** D1 (→ Backlog #2), D2 (→ #10 AV stance), D4, D5 — the
+tester briefing (TESTING.md §2.1) gains one line each.
+
+**Still manual by design after these slices:** the 500-VU/15-min k6 lab, the noisy-neighbor
+scenario at scale, and the 2 h soak (TESTING.md §11) — schedule once against prod-grade
+infra before declaring alpha exit; the §3 T=300 ms Apdex bar is proven there, not in CI.
+
+Rough serial total: **~4–5 focused weeks**; the graph below cuts it to **~2.5–3** with the
+marked parallel tracks. As with §5: tester feedback may reorder the functionality wave —
+the security wave is not negotiable.
+
+### 7.4 Dependency graph
+
+```mermaid
+flowchart TD
+    subgraph SEC["Security wave — first, non-negotiable"]
+        S12["S12 · RLS truth<br/>+ verify-rls in CI"]
+        S13["S13 · account recovery<br/>+ email spine"]
+        S14["S14 · money-path integrity"]
+        S15["S15 · ZAP + gate truthing"]
+    end
+    subgraph QUAL["Quality wave"]
+        S16["S16 · Playwright E2E journeys"]
+        S17["S17 · frontend truth<br/>+ component tests"]
+        S18["S18 · RUM + observability"]
+    end
+    subgraph FUN["Functionality wave"]
+        S19["S19 · PARTY persona"]
+        S20["S20 · discovery & dashboard"]
+    end
+
+    S12 --> FLIP[("operator: RLS DATABASE_URL flip<br/>(docs/rls-cutover.md) — BLOCKED until S12")]
+    S13 --> INVITE(["first tester invites"])
+    OPS[("§4.6 operator steps B2/B4/B5<br/>+ human tabletop (owed)")] --> INVITE
+    S17 -- "bell fix feeds View-all" --> S20
+    S17 -- "component harness reused" --> S19
+    S14 --> EXIT(["guardrail-§7 alpha exit gate"])
+    S15 --> EXIT
+    S16 --> EXIT
+    S18 --> EXIT
+    LAB[("manual: 500-VU k6 lab + 2 h soak<br/>(TESTING.md §11, prod-grade infra)")] --> EXIT
+```
+
+### 7.5 Operator gate (§4.6 unchanged, one new warning)
+
+Still outstanding and unchanged: B2 (Sentry DSN), B4 (`CRON_SECRET` — until set, escrow
+release **and the G7 purge** silently 400 daily, A5), B5 (Blob token — until set, the CSP
+`img-src` stays permissive and media lands inline, A4), optional Stripe test keys and the
+VAPID pair, the human tabletop (owed since 2026-07-31), and `yarn db:backfill-media
+--verify` once B5 lands. **New:** the RLS `DATABASE_URL` flip is **blocked until S12
+merges** — the runbook's premise ("every governed statement carries context") is currently
+false, and flipping today would silently break SSE realtime (A1).
