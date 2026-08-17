@@ -2,6 +2,7 @@ import sql from '@/app/api/utils/sql';
 import { authGuard } from '@/app/api/utils/auth-guard';
 import { withRoute } from '@/app/api/utils/route-kit';
 import { withRlsContext } from '@/app/api/utils/rls';
+import { stripeEnabled } from '@/lib/stripe';
 
 /**
  * GET /api/venue/shifts (P7) — the venue's live-ops board ("Active
@@ -43,5 +44,8 @@ export const GET = withRoute('venue.shifts', async () => {
     shifts,
     payoutsPendingCents: aggregate?.pending_cents ?? 0,
     payoutsPendingCount: aggregate?.pending_count ?? 0,
+    // S14 (A3): pending sums are bookkeeping until Stripe is live — the
+    // dashboard labels them simulated when this is false.
+    paymentsLive: stripeEnabled(),
   });
 });

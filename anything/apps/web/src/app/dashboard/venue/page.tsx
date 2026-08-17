@@ -157,6 +157,7 @@ export default function VenueDashboard() {
         shifts: LiveShift[];
         payoutsPendingCents: number;
         payoutsPendingCount: number;
+        paymentsLive?: boolean;
       }>;
     },
     refetchInterval: 15_000,
@@ -314,7 +315,10 @@ export default function VenueDashboard() {
               }
               change={
                 shiftsData && shiftsData.payoutsPendingCount > 0
-                  ? `${shiftsData.payoutsPendingCount} awaiting release`
+                  ? shiftsData.paymentsLive === false
+                    ? // S14 (A3): the ledger runs, but no money moves unkeyed.
+                      `${shiftsData.payoutsPendingCount} awaiting release — simulated, payments not live`
+                    : `${shiftsData.payoutsPendingCount} awaiting release`
                   : 'no pending payouts'
               }
               icon={<DollarSign className="w-5 h-5" />}

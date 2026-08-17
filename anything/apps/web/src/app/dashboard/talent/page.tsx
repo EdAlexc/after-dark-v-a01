@@ -47,6 +47,7 @@ interface TalentShift {
   venue_neighborhood: string | null;
   payout_status: 'PENDING' | 'HELD' | 'RELEASED' | 'FAILED' | null;
   payout_net_cents: number | null;
+  payout_transfer_id: string | null;
 }
 
 interface TalentApplication {
@@ -152,7 +153,7 @@ export default function TalentDashboard() {
     queryFn: async () => {
       const res = await fetch('/api/talent/shifts');
       if (!res.ok) throw new Error('Failed to load shifts');
-      return res.json() as Promise<{ shifts: TalentShift[] }>;
+      return res.json() as Promise<{ shifts: TalentShift[]; paymentsLive?: boolean }>;
     },
     refetchInterval: 15_000,
   });
@@ -218,6 +219,11 @@ export default function TalentDashboard() {
   const heldCents = shifts
     .filter((s) => s.payout_status === 'HELD')
     .reduce((sum, s) => sum + (s.payout_net_cents ?? 0), 0);
+  // S14 (A3): RELEASED with no transfer id = the ledger advanced but no money
+  // moved (Stripe unkeyed, or account not onboarded). Never show that as real.
+  const simulatedEarnings =
+    releasedCents > 0 &&
+    shifts.some((s) => s.payout_status === 'RELEASED' && !s.payout_transfer_id);
   const activeApps = applications.filter(
     (a) => a.status === 'PENDING' || a.status === 'SHORTLISTED'
   );
@@ -291,8 +297,14 @@ export default function TalentDashboard() {
             <StatCard
               label="Total Earnings"
               value={dollars(releasedCents)}
-              change={heldCents > 0 ? `${dollars(heldCents)} in escrow` : 'released payouts'}
-              positive={releasedCents > 0}
+              change={
+                simulatedEarnings
+                  ? 'Simulated — payments not live'
+                  : heldCents > 0
+                    ? `${dollars(heldCents)} in escrow`
+                    : 'released payouts'
+              }
+              positive={releasedCents > 0 && !simulatedEarnings}
               icon={<DollarSign className="w-5 h-5" />}
             />
             <StatCard

@@ -84,7 +84,9 @@ describe('retention purge (S2 / G7)', () => {
     expect(body.held).toBe(false);
     expect(body.purged.sessions).toBe(2);
     expect(deletions).toEqual(['session', 'verification', 'rate_limit_counters', 'rateLimit']);
-    expect(auditCalls).toEqual(['retention.purge']);
+    // S14 (A5): every scheduled run also leaves a cron.heartbeat trail row —
+    // the admin overview's cron-health check depends on it.
+    expect(auditCalls).toEqual(['retention.purge', 'cron.heartbeat']);
   });
 
   it('a GLOBAL legal hold suspends every deletion — and still audits', async () => {
@@ -98,7 +100,9 @@ describe('retention purge (S2 / G7)', () => {
     const body = await res.json();
     expect(body.held).toBe(true);
     expect(deletions).toEqual([]); // nothing deleted under hold
-    expect(auditCalls).toEqual(['retention.purge']); // the hold itself is on the record
+    // The hold itself is on the record; the heartbeat still fires (S14 A5) —
+    // a held run is a LIVE cron, not a dead schedule.
+    expect(auditCalls).toEqual(['retention.purge', 'cron.heartbeat']);
   });
 
   it('a USER hold shields that user’s sessions while everything else purges', async () => {

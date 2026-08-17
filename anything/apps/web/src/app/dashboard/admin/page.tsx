@@ -32,6 +32,16 @@ interface Overview {
   payouts: Array<{ status: string; count: number; net_cents: string | number }>;
   activeShifts: number;
   stripeConfigured: boolean;
+  cronHealth?: { payoutsRelease: string | null; retentionPurge: string | null };
+}
+
+/** S14 (A5): a cron that hasn't run in >26 h (daily schedule + slack) is stale. */
+function cronStatus(lastRun: string | null | undefined): { label: string; healthy: boolean } {
+  if (!lastRun) return { label: 'never ran', healthy: false };
+  const ageMs = Date.now() - new Date(lastRun).getTime();
+  const healthy = ageMs < 26 * 60 * 60 * 1000;
+  const hours = Math.floor(ageMs / (60 * 60 * 1000));
+  return { label: healthy ? `ran ${hours}h ago` : `stale — last ran ${hours}h ago`, healthy };
 }
 
 interface AdminReport {
@@ -342,6 +352,28 @@ export default function AdminDashboard() {
                 <p className="text-xs text-white/40">
                   In Escrow ({heldPayouts?.count ?? 0} payouts)
                 </p>
+                {overview && (
+                  <p className="text-[11px] mt-1.5 space-x-2">
+                    <span
+                      className={cn(
+                        cronStatus(overview.cronHealth?.payoutsRelease).healthy
+                          ? 'text-white/40'
+                          : 'text-red-400 font-semibold'
+                      )}
+                    >
+                      release cron: {cronStatus(overview.cronHealth?.payoutsRelease).label}
+                    </span>
+                    <span
+                      className={cn(
+                        cronStatus(overview.cronHealth?.retentionPurge).healthy
+                          ? 'text-white/40'
+                          : 'text-red-400 font-semibold'
+                      )}
+                    >
+                      purge cron: {cronStatus(overview.cronHealth?.retentionPurge).label}
+                    </span>
+                  </p>
+                )}
               </CardContent>
             </Card>
             <Card className="bg-[#1E1E1E] border-white/5">

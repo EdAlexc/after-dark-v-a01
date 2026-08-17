@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs';
 import sql from '@/app/api/utils/sql';
 import { authGuard } from '@/app/api/utils/auth-guard';
 import { auditLogger } from '@/app/api/utils/audit';
@@ -70,6 +71,17 @@ async function runPurge(viaCron: boolean): Promise<Response> {
       entityType: 'retention',
       metadata: { held: true, scope: 'GLOBAL', activeHolds: holds.length },
     });
+    // S14 (A5): a held run is still a LIVE cron — heartbeat regardless, or a
+    // long legal hold would read as a dead schedule on the admin overview.
+    if (viaCron) {
+      await auditLogger.record({
+        actorId: 'system:cron',
+        action: 'cron.heartbeat',
+        entityType: 'job',
+        entityId: 'retention-purge',
+        metadata: { held: true },
+      });
+    }
     return Response.json({ held: true, activeHolds: holds.length });
   }
 
@@ -114,6 +126,18 @@ async function runPurge(viaCron: boolean): Promise<Response> {
   });
   log.info('retention purge complete', { ...counts, userHolds: heldUserIds.length });
 
+  // S14 (A5) heartbeat — mirrors payouts/release: the admin overview's
+  // cron-health check reads the latest of these per job.
+  if (viaCron) {
+    await auditLogger.record({
+      actorId: 'system:cron',
+      action: 'cron.heartbeat',
+      entityType: 'job',
+      entityId: 'retention-purge',
+      metadata: counts as unknown as Record<string, unknown>,
+    });
+  }
+
   return Response.json({ held: false, purged: counts, userHolds: heldUserIds.length });
 }
 
@@ -131,5 +155,13 @@ export const POST = withRoute('retention.purge', async (request) => {
 // still fails loudly so a misconfigured cron shows up fast.
 export const GET = withRoute('retention.purge.get', async (request) => {
   if (isCronRequest(request)) return runPurge(true);
+  // S14 (A5) dead-man: unset CRON_SECRET means the G7 retention purge never
+  // runs — a GDPR obligation silently going unmet. Scream until it is set.
+  if (!process.env.CRON_SECRET) {
+    log.error(
+      'CRON_SECRET is not set — the G7 retention-purge cron is DARK; expired sessions/tokens are accumulating (DEV_TIMELINE §4.6 B4)'
+    );
+    Sentry.captureMessage('cron dark: CRON_SECRET unset (retention/purge)', 'error');
+  }
   throw ApiError.badRequest('Use POST (admin) or the cron bearer');
 });

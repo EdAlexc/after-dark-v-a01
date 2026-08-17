@@ -2,6 +2,7 @@ import sql from '@/app/api/utils/sql';
 import { authGuard } from '@/app/api/utils/auth-guard';
 import { withRoute } from '@/app/api/utils/route-kit';
 import { withRlsContext } from '@/app/api/utils/rls';
+import { stripeEnabled } from '@/lib/stripe';
 
 /**
  * GET /api/talent/shifts (P7) — the talent's bookings ("Upcoming Bookings" +
@@ -19,7 +20,8 @@ export const GET = withRoute('talent.shifts', async () => {
              s.agreed_rate_cents, s.shift_pay_cents,
              g.title AS gig_title, g.id AS gig_id, g.start_time, g.end_time,
              vp.venue_name, vp.neighborhood AS venue_neighborhood,
-             p.status AS payout_status, p.net_cents AS payout_net_cents
+             p.status AS payout_status, p.net_cents AS payout_net_cents,
+             p.stripe_transfer_id AS payout_transfer_id
       FROM shifts s
       JOIN gigs g ON g.id = s.gig_id
       JOIN venue_profiles vp ON vp.id = g.venue_id
@@ -30,5 +32,7 @@ export const GET = withRoute('talent.shifts', async () => {
       LIMIT 50
     `
   );
-  return Response.json({ shifts });
+  // S14 (A3): a RELEASED payout with no transfer id is bookkeeping, not money
+  // that moved — the dashboard must be able to say so.
+  return Response.json({ shifts, paymentsLive: stripeEnabled() });
 });

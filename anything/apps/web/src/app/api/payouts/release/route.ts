@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs';
 import sql from '@/app/api/utils/sql';
 import { authGuard } from '@/app/api/utils/auth-guard';
 import { auditLogger } from '@/app/api/utils/audit';
@@ -122,6 +123,19 @@ async function runRelease(viaCron: boolean): Promise<Response> {
     });
   }
 
+  // S14 (A5) heartbeat: EVERY scheduled run leaves a trace, even a zero-row
+  // one — the admin overview's cron-health check reads the latest of these,
+  // so a schedule that stops firing becomes visible instead of silent.
+  if (viaCron) {
+    await auditLogger.record({
+      actorId: 'system:cron',
+      action: 'cron.heartbeat',
+      entityType: 'job',
+      entityId: 'payouts-release',
+      metadata: { released: released.length, transfers, stripe: stripeEnabled() },
+    });
+  }
+
   return Response.json({ released: released.length, transfers, stripe: stripeEnabled() });
 }
 
@@ -139,5 +153,15 @@ export const POST = withRoute('payouts.release', async (request) => {
 // still fails loudly so a misconfigured cron shows up fast.
 export const GET = withRoute('payouts.release.get', async (request) => {
   if (isCronRequest(request)) return runRelease(true);
+  // S14 (A5) dead-man: with CRON_SECRET unset, isCronRequest() can never be
+  // true — Vercel's scheduled GET 400s daily, forever, silently, and HELD
+  // payouts accumulate. Scream on every failed attempt until the secret is
+  // set (Sentry no-ops without a DSN, the log line always lands).
+  if (!process.env.CRON_SECRET) {
+    log.error(
+      'CRON_SECRET is not set — the escrow-release cron is DARK; payouts will never release on schedule (DEV_TIMELINE §4.6 B4)'
+    );
+    Sentry.captureMessage('cron dark: CRON_SECRET unset (payouts/release)', 'error');
+  }
   throw ApiError.badRequest('Use POST (admin) or the cron bearer');
 });
