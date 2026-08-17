@@ -101,8 +101,16 @@ function SignInForm() {
 
           {/* Password */}
           <label className="flex flex-col gap-2">
-            <span className="text-xs font-semibold text-white/40 uppercase tracking-widest">
-              Password
+            <span className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-white/40 uppercase tracking-widest">
+                Password
+              </span>
+              <Link
+                href="/account/forgot-password"
+                className="text-xs text-[#00FFCC] hover:underline font-semibold"
+              >
+                Forgot password?
+              </Link>
             </span>
             <input
               type="password"
