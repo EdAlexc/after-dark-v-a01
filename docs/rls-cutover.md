@@ -17,8 +17,8 @@
 | **Completion policies** — SERVICE/ADMIN platform context, gig applicant/completed carve-outs, messages mark-read split, erasure pseudonymization, payout checkout INSERT, `legal_holds` | ✅ `migrations/0014_rls_completion.sql` (S2) |
 | Least-privilege GRANTs | ✅ conditional blocks in 0006/0011/0013/0014 **+ re-runnable `yarn db:grants`** (see below) |
 | Per-request context helper | ✅ `src/app/api/utils/rls.ts` (`withRlsContext`, single query or atomic batch, + `serviceContext` for cron/webhook/erasure) |
-| **Route wiring** | ✅ **complete (S2)** — every governed statement in `src/app/api` carries context: the original five routes, all P3–P9 marketplace routes, the admin surface (ADMIN context), and the system paths (escrow cron, Stripe webhook, retention purge, erasure — SERVICE context) |
-| Proof the policies enforce | ✅ `scripts/verify-rls.mjs` — **19 checks** on a Neon branch, covering isolation *and* the 0014 semantics (applicant deep links, mark-read, SERVICE-only payout release + pseudonymization, stripe_events deny-by-default) |
+| **Route wiring** | ✅ **complete — S2, repaired and machine-checked in S12 (2026-08-17).** The §7 audit falsified the original S2 claim: three surfaces that post-date the S2 sweep ran bare `sql` — `/api/stream`'s SSE fingerprint (realtime would freeze post-cutover), `/api/gigs/match-preview` (worked only by leaning implicitly on public-read policies), and `/api/user/role`'s profile INSERTs (onboarding would 500). S12 wired all three **and added `test/rls-wiring.test.ts`**: a structural gate, registry-style like the authz matrix, that fails CI whenever a file touching a governed table never enters an RLS context — this claim can no longer silently rot. |
+| Proof the policies enforce | ✅ `scripts/verify-rls.mjs` — **23 checks**: isolation, the 0014 semantics (applicant deep links, mark-read, SERVICE-only payout release + pseudonymization, stripe_events deny-by-default), and the S12 wiring canaries (SSE fingerprint with/without context; onboarding INSERT denied bare / allowed contexted). **Runs on every PR**: the CI `alpha-gates` job provisions a throwaway non-owner role (`scripts/ci-rls-role.mjs` + `yarn db:grants`) on its Postgres and executes the full suite as that role over the credential-faithful WebSocket tunnel (`scripts/pool-sql.mjs`). |
 | App connects as the non-owner role | ⛔ **The remaining operator step — see below** |
 
 Until the flip, the policies are **inert in production**: Postgres table owners bypass
@@ -91,12 +91,14 @@ and Preview), then redeploy. Keep the owner string somewhere safe — migrations
 ### 5. Verify
 
 ```bash
-OWNER_URL=<owner> RLS_URL=<afterdark_app> yarn db:verify-rls   # expect 19/19
+OWNER_URL=<owner> RLS_URL=<afterdark_app> yarn db:verify-rls   # expect 23/23
 ```
 
 Then walk TESTING.md §5 against the deployed app. Canaries for a botched cutover, in the
 order they'd surface: a venue dashboard whose Open Gigs table shows no drafts; message
-threads that never mark read; a talent dashboard missing FILLED bookings; the 09:00 UTC
+threads that never mark read; **a message/notification stream that never updates without a
+manual refresh (the S12 SSE-fingerprint class)**; onboarding failing at the role step (the
+S12 profile-INSERT class); a talent dashboard missing FILLED bookings; the 09:00 UTC
 escrow cron reporting `released: 0` despite due payouts.
 
 ## Rollback

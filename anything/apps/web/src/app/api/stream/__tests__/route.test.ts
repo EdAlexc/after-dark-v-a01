@@ -22,6 +22,10 @@ beforeEach(() => {
     if (text.includes('SELECT role, suspended_at')) return [{ role: 'TALENT' }];
     return [{ notif: '5', msg: 'm-9', shift: 't-2' }];
   });
+  // S12: the fingerprint runs inside withRlsContext → sql.transaction([...]).
+  (mocks.sql as unknown as { transaction: unknown }).transaction = async (
+    queries: Array<Promise<unknown>>
+  ) => Promise.all(queries);
 });
 
 describe('GET /api/stream', () => {
@@ -55,6 +59,16 @@ describe('GET /api/stream', () => {
     const res = await streamGet(new Request('http://t.local/api/stream'), {});
     const text = await res.text(); // stream closes because of the test env
     expect(text).toContain('event: hello');
+  });
+
+  it('runs the fingerprint under the RLS context (S12 — a bare read goes silent post-cutover)', async () => {
+    const res = await streamGet(new Request('http://t.local/api/stream'), {});
+    await res.text(); // drain: the first tick has run by close
+    const texts = mocks.sql.mock.calls.map(([first]) =>
+      Array.isArray(first) ? (first as string[]).join('') : String(first)
+    );
+    expect(texts.some((t) => t.includes('set_config'))).toBe(true);
+    expect(texts.some((t) => t.includes('FROM notifications'))).toBe(true);
   });
 });
 
