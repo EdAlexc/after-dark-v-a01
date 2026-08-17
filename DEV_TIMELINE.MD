@@ -8,6 +8,17 @@
 
 ## 1. Current status — YOU ARE HERE
 
+- **Date:** 2026-08-18 (later) · **Branch:** `claude/s13-account-recovery` — **S13 landed:
+  account recovery & email spine** (829 tests green; typecheck/lint/build clean; the three
+  new page states browser-verified; details in §7.3 S13). Key-gated Resend transport
+  (`api/utils/email.ts`, no SDK dep) + testable handlers (`lib/auth-email.ts`) + additive
+  `auth.ts` config: password reset (single-use 1 h tokens, session revocation, audited,
+  rate-limited, uniform no-enumeration responses), forgot/reset pages + sign-in link,
+  email verification enforced-when-keyed with the 0021 grandfather migration, 2FA
+  backup-code recovery copy at enroll. **Operator:** set `RESEND_API_KEY` + `EMAIL_FROM`
+  (§6) to activate delivery. *Also this session:* discovered the stacked S12 PR (#21) had
+  merged into its base branch but **never reached `main`** — corrective PR opened landing
+  `claude/alpha-missing-features-84e9eb` (= S12) into main; S13 is stacked on it.
 - **Date:** 2026-08-18 · **Branch:** `claude/s12-rls-truth` (stacked on the §7 analysis
   branch) — **S12 landed: RLS truth & cutover unblock** (812 tests green; typecheck, lint,
   build clean; details in §7.3 S12):
@@ -368,9 +379,10 @@
 2. ~~**S12 — RLS truth & cutover unblock**~~ — ✅ **landed 2026-08-18** (§7.3). Once its
    PR merges, the **RLS `DATABASE_URL` flip is re-opened** — execute per
    `docs/rls-cutover.md` (expect 23/23) at the operator's convenience.
-3. **S13 — Account recovery & email spine** (~3 d): password reset + email verification.
-   Hard tester-safety blocker — a forgotten password is currently unrecoverable; invite
-   no one before this lands.
+3. ~~**S13 — Account recovery & email spine**~~ — ✅ **landed 2026-08-18** (§7.3). The
+   tester-lockout blocker is closed in code; **operator**: set `RESEND_API_KEY` +
+   `EMAIL_FROM` in Vercel (§6) so resets/verification actually deliver — unkeyed, the
+   surface no-ops loudly and unverified signups are not enforced against.
 4. **S14 + S15 — money-path integrity, ZAP, gate truthing** (~5 d, parallelizable):
    closes the open guardrail-§7 security boxes (webhook signature + fee-tamper tests,
    DAST baseline, audit-coverage gate, doc drift, honest simulated-payout display).
@@ -1099,6 +1111,7 @@ flowchart TD
 | `CRON_SECRET` | Generate + set without shell echo: `openssl rand -hex 32 \| tr -d '\n' \| vercel env add CRON_SECRET production`. Read by `/api/payouts/release`; Vercel Cron sends it as the bearer automatically | Same command with `vercel env rm CRON_SECRET production` first; redeploy (cron picks up the new value on the next run) | ~Quarterly, or on leak | Authenticates the scheduled escrow-release cron (daily 09:00 UTC, `vercel.json`) | **Sensitive** |
 | `BLOB_READ_WRITE_TOKEN` | **Injected by Vercel** when the Blob store is connected (Dashboard → Storage → Blob → Connect Project); locally via `vercel env pull`. Read by `api/utils/media.ts` (`@vercel/blob`) | Vercel Dashboard → the store → Tokens → cycle (or disconnect/reconnect the project) | On leak; otherwise Vercel-managed | P4 media storage — uploaded images land in Blob instead of inline `data:` URLs in Postgres | **Sensitive** |
 | `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | Sentry → Project Settings → Client Keys (DSN); same value in both. Read by `instrumentation.ts` / `instrumentation-client.ts`; the public one is client-bundled and its origin auto-joins CSP `connect-src` (`security-headers.js`) | Sentry → Client Keys → revoke key + create new → update both vars | Only on abuse (DSNs are designed to be client-visible ingest addresses) | Error tracking (server/edge + browser); all events pass `src/lib/sentry-scrub.ts` | Public by design (low sensitivity — don't advertise, but not a secret) |
+| `RESEND_API_KEY` / `EMAIL_FROM` | Resend dashboard → API Keys (create sending-only key); `EMAIL_FROM` = verified-domain sender, e.g. `AfterDark <no-reply@domain>`. Read by `api/utils/email.ts` (S13) | Resend dashboard → revoke key + create new → update env → redeploy | ~Quarterly, or on leak | S13 account-recovery spine: password-reset + verification emails. **With both set, email verification is ENFORCED for new signups** (unverified sign-ins re-send the link — self-healing); unset = whole email surface no-ops loudly, reset requests still answer uniformly | Key: **Sensitive** · From: Public |
 | `WEB_PUSH_VAPID_PUBLIC_KEY` / `WEB_PUSH_VAPID_PRIVATE_KEY` / `WEB_PUSH_VAPID_SUBJECT` | Generate once: `npx web-push generate-vapid-keys`; subject = `mailto:` contact. Read by `api/utils/push.ts` + `/api/push/subscribe` | New pair → env → redeploy. ⚠ Invalidates every existing browser subscription (users re-toggle the opt-in) | On leak of the private key — deliberately not routine | S9 Hot-gig Web Push; whole surface inert (503/no-op) without the pair | Public key: Public · Private key: **Sensitive** |
 | `STREAM_MAX_MS` / `STREAM_TICK_MS` | Optional SSE tuning (defaults 50000/4000 fit serverless limits). Read by `/api/stream`; tests pin `STREAM_MAX_MS=0` | n/a — config | n/a | S9 realtime stream window + DB fingerprint interval | Public |
 | `STRIPE_SECRET_KEY` | Stripe Dashboard → Developers → API keys. **Use `sk_test_…` until GA.** Read by `src/lib/stripe.ts` — its absence 503-gates the whole `/api/stripe/*` surface | Stripe Dashboard → roll key (supports overlap window) → update env → redeploy | On compromise or staff change; Stripe supports scheduled rolls | Stripe Connect onboarding + transfers (P8) | **Sensitive** (highest — money) |
@@ -1152,7 +1165,7 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 | # | Finding | Evidence |
 |---|---|---|
 | A1 | **RLS route wiring is NOT complete — the cutover flip is blocked.** `/api/stream`'s fingerprint query reads 8 governed tables (`notifications`, `messages`, `conversations`, `shifts`, …) with bare `sql` and no context; post-cutover it returns the default-deny shape, the fingerprint goes static, and **SSE realtime silently stops delivering invalidations** — exactly the canary class `docs/rls-cutover.md` §"canaries" describes, but S9 landed after the runbook was written. `/api/gigs/match-preview` runs its 3 builder queries with no context either (the 0017 SECURITY DEFINER probe covers only the availability yes/no). `docs/rls-cutover.md:20`'s "every governed statement carries context" is therefore false. **→ FIXED in S12 (2026-08-18):** both routes wired; the sweep found a **third** instance — `/api/user/role`'s profile INSERT/UPDATEs violate the owner-write `WITH CHECK` post-cutover (onboarding would 500) — also wired. Refinement recorded for honesty: match-preview *degrades* (leans implicitly on public-read policies) rather than breaks. The invariant is now machine-checked (`test/rls-wiring.test.ts`) and `db:verify-rls` runs per-PR in CI. **The operator flip is un-blocked once S12 merges.** | `api/stream/route.ts:31-45`; `api/gigs/match-preview/route.ts:36-39`; `api/user/role/route.ts:31-59` |
-| A2 | **No account recovery and no email infrastructure at all.** No password-reset flow, no forgot-password link on sign-in, no mail-provider dependency anywhere; `requireEmailVerification: false` means anyone can register with someone else's address. A tester who forgets their password is **permanently locked out** — compounded when 2FA is enrolled. | `lib/auth.ts:123`; `app/account/` (no reset surface); `package.json` (no mail dep) |
+| A2 | **No account recovery and no email infrastructure at all.** No password-reset flow, no forgot-password link on sign-in, no mail-provider dependency anywhere; `requireEmailVerification: false` means anyone can register with someone else's address. A tester who forgets their password is **permanently locked out** — compounded when 2FA is enrolled. **→ FIXED in S13 (2026-08-18):** key-gated email spine + reset flow + verification-when-keyed + 0021 grandfather; operator sets `RESEND_API_KEY`/`EMAIL_FROM` to activate delivery. | `lib/auth.ts:123`; `app/account/` (no reset surface); `package.json` (no mail dep) |
 | A3 | **The payout ledger advances without money moving, and the UI shows it as earnings.** With Stripe unkeyed (the current state everywhere), `payouts/release` flips HELD→RELEASED and skips transfers; the talent dashboard sums RELEASED rows into "Total Earnings" with no simulated marker. The route is honest in its response (`transfers: 0`) — the UI ignores it. | `api/payouts/release/route.ts:56-69,125`; `dashboard/talent/page.tsx:216-217` |
 | A4 | **Media/CSP posture degrades silently when Blob is unkeyed**: `img-src` falls back to broad `https:` (re-opening the G11 egress finding S3 closed), and already-processed inline `data:` URLs pass `sanitizeMediaField` — the "inline path is dead" invariant only holds with the token set. | `security-headers.js:64-72`; `api/utils/media.ts:103-117,162` |
 | A5 | **Cron dead-man gap**: without `CRON_SECRET`, `isCronRequest()` is unconditionally false, so both scheduled jobs 400 **every day, forever, silently** (no Sentry DSN exists either). Escrow release and the GDPR **G7 retention purge** are dark and nothing alerts — while `docs/retention.md` marks the purge "✅ Automated". | `api/payouts/release/route.ts:27-31`; `api/retention/purge/route.ts:34-38`; `vercel.json` |
@@ -1250,15 +1263,31 @@ shippable, revertable) apply to every slice unchanged.
   operator `DATABASE_URL` flip is un-blocked once this merges.**
 
 **S13 — Account recovery & email spine (~3 d)** — closes A2 (+ the email half of F9) —
-*parallel with S12 (no shared files)*
-- Key-gated email provider in the house pattern (inert without the key, loud in dev);
-  better-auth password reset (`sendResetPassword`) + "Forgot password?" on sign-in; email
-  verification ON for new signups (existing accounts grandfathered with a re-verify nudge);
-  the 2FA-lockout recovery path (backup codes) stated at enroll time.
-- *Security gate:* uniform responses (no user enumeration); single-use, expiring, hashed
-  reset tokens; a successful reset revokes existing sessions; rate-limited per user + IP;
-  every event audited; no PII beyond the address in provider payloads. New env vars land in
-  `.env.example` **and** the §6 table in the same PR.
+✅ **landed 2026-08-18** (829 tests green; pages browser-verified)
+- ☑ Key-gated email spine (`api/utils/email.ts` — Resend via plain fetch, no SDK dep;
+  inert-and-loud without `RESEND_API_KEY`+`EMAIL_FROM`; payloads carry nothing but the
+  address + link, G11). Handlers live in `src/lib/auth-email.ts` (testable module);
+  `auth.ts` gets only additive config per its platform header.
+- ☑ Password reset: `sendResetPassword` + `/account/forgot-password` +
+  `/account/reset-password` pages + "Forgot password?" on sign-in. Tokens single-use,
+  1 h expiry; **a completed reset revokes every session**
+  (`revokeSessionsOnPasswordReset`); request + completion audited; recovery endpoints
+  rate-limited.
+- ☑ Email verification ON for new signups — **enforced only while the spine is keyed**
+  (`requireEmailVerification: emailConfigured()`), so nothing breaks unkeyed and
+  key-flips self-heal (unverified sign-in re-sends the link). Migration
+  `0021_email_verification_grandfather.sql` backfills `emailVerified` for every pre-S13
+  account (they attested under the old regime; documented trade-off in-file). *(Deviation
+  from plan: grandfathered accounts are marked verified rather than nudged — a nudge
+  would demand the very email spine that wasn't configured when they signed up.)*
+- ☑ 2FA-lockout recovery stated at enroll: the backup-codes step now says they are the
+  only way back in if the authenticator is lost (a password reset does NOT bypass the
+  second factor).
+- *Security gate met:* uniform no-enumeration responses (better-auth answers identically
+  for unknown addresses; the forgot page mirrors it — and the handlers never throw, so
+  the contract can't break on a send failure); single-use expiring tokens; session
+  revocation on reset; rate limits on all three recovery endpoints; audit events for
+  request/completion/verification-send; env vars in `.env.example` + §6 + CLAUDE.md.
 
 **S14 — Money-path integrity (~2–3 d)** — closes A3, A5 + the worst of Q8 — *parallel with S13*
 - Route tests where money moves: `payouts/release` (double-release, cron/admin auth, and
