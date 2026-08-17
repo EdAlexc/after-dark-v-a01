@@ -74,7 +74,7 @@ are not live (`src/lib/legal.ts` `ALPHA_NOTICE`), so the briefing and the produc
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 829 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 867 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
@@ -120,6 +120,14 @@ Coverage highlights by area:
   no `unsafe-inline` script-src), security headers, Sentry PII scrub, RLS migration structure,
   **deleted-account session invalidation**, rate-limit windows, redirect sanitizer, migration
   runner ordering.
+- **Money paths (S14)**: route suites where money changes state — `payouts/release`
+  (privilege boundary incl. the CRON_SECRET dead-man, double-release impossibility,
+  unkeyed ledger-advance = A3, keyed/not-onboarded/failed transfer modes, cron
+  heartbeats), `stripe/webhook` (503 unkeyed, 400 unsigned/forged with zero state
+  written, DB-PK replay guard — the TENANT_GUARDRAIL §7 signature box), `shifts/[id]`
+  (idempotency replay returns the recorded outcome; the **explicit fee-tamper test**:
+  smuggled fee/gross/net fields never reach the payout INSERT), `upload`, the account
+  DELETE two-factor confirm gates, and `age-confirm` (G12 pinned until the S16 E2E).
 - **RLS wiring (S12)**: `test/rls-wiring.test.ts` — the structural counterpart of the authZ
   matrix for tenant isolation: derives the governed-table list from the migrations, then
   fails CI when any file under `src/app/api` executes (or builds) SQL against a governed
@@ -516,7 +524,7 @@ Manual, against a **production build or deployed preview** (the worker is produc
 
 ## 10. S4–S10 functionality wave (added 2026-07-31)
 
-Automated coverage: 829 vitest tests including the generated authZ matrix rows for every
+Automated coverage: 867 vitest tests including the generated authZ matrix rows for every
 new route (`search.list`, `venue.stats`, `gigs.match-preview`, `reviews.list/create`,
 `stream.events`, `push.status/subscribe/unsubscribe`), the SQLi/plainto invariants for
 the search and match builders, the A10 SSRF guard spec (`safe-fetch.test.ts`), the S6

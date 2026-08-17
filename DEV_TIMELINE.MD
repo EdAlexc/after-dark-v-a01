@@ -8,6 +8,17 @@
 
 ## 1. Current status — YOU ARE HERE
 
+- **Date:** 2026-08-18 (later still) · **Branch:** `claude/s14-money-path` — **S14 landed:
+  money-path integrity** (867 tests green — 38 new route tests; typecheck/lint/build
+  clean; details in §7.3 S14). The money paths finally have route-level proof:
+  payouts/release (double-release, privilege, unkeyed ledger-advance, transfer modes),
+  stripe/webhook (signature/replay — the guardrail-§7 box closes), shifts idempotency +
+  the explicit fee-tamper test, upload, DSR confirm gates, age-confirm. A3: both
+  dashboards now label simulated money ("Simulated — payments not live"). A5: dark crons
+  scream (log + Sentry), every scheduled run heartbeats, and the admin dashboard shows
+  per-job cron health with staleness. *Merge-order note:* S13 (#23) was found stranded on
+  the base branch again — corrective PR opened (**merge it with "Delete branch" checked**,
+  which is what breaks this cycle); S14 is stacked on it.
 - **Date:** 2026-08-18 (later) · **Branch:** `claude/s13-account-recovery` — **S13 landed:
   account recovery & email spine** (829 tests green; typecheck/lint/build clean; the three
   new page states browser-verified; details in §7.3 S13). Key-gated Resend transport
@@ -383,9 +394,9 @@
    tester-lockout blocker is closed in code; **operator**: set `RESEND_API_KEY` +
    `EMAIL_FROM` in Vercel (§6) so resets/verification actually deliver — unkeyed, the
    surface no-ops loudly and unverified signups are not enforced against.
-4. **S14 + S15 — money-path integrity, ZAP, gate truthing** (~5 d, parallelizable):
-   closes the open guardrail-§7 security boxes (webhook signature + fee-tamper tests,
-   DAST baseline, audit-coverage gate, doc drift, honest simulated-payout display).
+4. ~~**S14 — money-path integrity**~~ — ✅ **landed 2026-08-18** (§7.3; the guardrail-§7
+   webhook + fee-tamper box is closed). **S15 — ZAP + gate truthing** (~2–3 d) is next:
+   DAST baseline, stored-XSS suite, audit-coverage gate, backfill-media in CI, doc drift.
 5. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min — owed since 2026-07-31)
    + **S16 E2E journeys** to close the G4/G12/PWA-§6.6 proof gaps.
 
@@ -1166,9 +1177,9 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 |---|---|---|
 | A1 | **RLS route wiring is NOT complete — the cutover flip is blocked.** `/api/stream`'s fingerprint query reads 8 governed tables (`notifications`, `messages`, `conversations`, `shifts`, …) with bare `sql` and no context; post-cutover it returns the default-deny shape, the fingerprint goes static, and **SSE realtime silently stops delivering invalidations** — exactly the canary class `docs/rls-cutover.md` §"canaries" describes, but S9 landed after the runbook was written. `/api/gigs/match-preview` runs its 3 builder queries with no context either (the 0017 SECURITY DEFINER probe covers only the availability yes/no). `docs/rls-cutover.md:20`'s "every governed statement carries context" is therefore false. **→ FIXED in S12 (2026-08-18):** both routes wired; the sweep found a **third** instance — `/api/user/role`'s profile INSERT/UPDATEs violate the owner-write `WITH CHECK` post-cutover (onboarding would 500) — also wired. Refinement recorded for honesty: match-preview *degrades* (leans implicitly on public-read policies) rather than breaks. The invariant is now machine-checked (`test/rls-wiring.test.ts`) and `db:verify-rls` runs per-PR in CI. **The operator flip is un-blocked once S12 merges.** | `api/stream/route.ts:31-45`; `api/gigs/match-preview/route.ts:36-39`; `api/user/role/route.ts:31-59` |
 | A2 | **No account recovery and no email infrastructure at all.** No password-reset flow, no forgot-password link on sign-in, no mail-provider dependency anywhere; `requireEmailVerification: false` means anyone can register with someone else's address. A tester who forgets their password is **permanently locked out** — compounded when 2FA is enrolled. **→ FIXED in S13 (2026-08-18):** key-gated email spine + reset flow + verification-when-keyed + 0021 grandfather; operator sets `RESEND_API_KEY`/`EMAIL_FROM` to activate delivery. | `lib/auth.ts:123`; `app/account/` (no reset surface); `package.json` (no mail dep) |
-| A3 | **The payout ledger advances without money moving, and the UI shows it as earnings.** With Stripe unkeyed (the current state everywhere), `payouts/release` flips HELD→RELEASED and skips transfers; the talent dashboard sums RELEASED rows into "Total Earnings" with no simulated marker. The route is honest in its response (`transfers: 0`) — the UI ignores it. | `api/payouts/release/route.ts:56-69,125`; `dashboard/talent/page.tsx:216-217` |
+| A3 | **The payout ledger advances without money moving, and the UI shows it as earnings.** With Stripe unkeyed (the current state everywhere), `payouts/release` flips HELD→RELEASED and skips transfers; the talent dashboard sums RELEASED rows into "Total Earnings" with no simulated marker. The route is honest in its response (`transfers: 0`) — the UI ignores it. **→ FIXED in S14 (2026-08-18):** both dashboards label simulated money (transfer-id-based on talent, key-based on venue). | `api/payouts/release/route.ts:56-69,125`; `dashboard/talent/page.tsx:216-217` |
 | A4 | **Media/CSP posture degrades silently when Blob is unkeyed**: `img-src` falls back to broad `https:` (re-opening the G11 egress finding S3 closed), and already-processed inline `data:` URLs pass `sanitizeMediaField` — the "inline path is dead" invariant only holds with the token set. | `security-headers.js:64-72`; `api/utils/media.ts:103-117,162` |
-| A5 | **Cron dead-man gap**: without `CRON_SECRET`, `isCronRequest()` is unconditionally false, so both scheduled jobs 400 **every day, forever, silently** (no Sentry DSN exists either). Escrow release and the GDPR **G7 retention purge** are dark and nothing alerts — while `docs/retention.md` marks the purge "✅ Automated". | `api/payouts/release/route.ts:27-31`; `api/retention/purge/route.ts:34-38`; `vercel.json` |
+| A5 | **Cron dead-man gap**: without `CRON_SECRET`, `isCronRequest()` is unconditionally false, so both scheduled jobs 400 **every day, forever, silently** (no Sentry DSN exists either). Escrow release and the GDPR **G7 retention purge** are dark and nothing alerts — while `docs/retention.md` marks the purge "✅ Automated". **→ FIXED in S14 (2026-08-18):** both cron GETs scream when dark; per-run heartbeat audit rows; admin overview + dashboard show per-job cron health with staleness. B4 (setting the secret) remains the operator step. | `api/payouts/release/route.ts:27-31`; `api/retention/purge/route.ts:34-38`; `vercel.json` |
 | A6 | Minor hardening: `user.role` is plain TEXT with no CHECK (any string storable — zod is the only enforcement); gitleaks-action v2 needs `GITLEAKS_LICENSE` if the repo ever moves under a GitHub org; `yarn npm audit` workspace scoping worth confirming (`--all`). | `migrations/0001_baseline.sql:22`; `.github/workflows/ci.yml:169-174` |
 
 #### B. Quality / verification gaps
@@ -1182,7 +1193,7 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 | Q5 | **No RUM**: zero `web-vitals`/`useReportWebVitals` usage. The scorecard rows (CWV p75, per-endpoint Apdex, front-end JS error rate) are unmeasurable in production; guardrail-§7's "RUM dashboards live" box has no implementation at all. | repo-wide grep |
 | Q6 | Ready-made security gates not wired into CI: `yarn db:verify-rls` (the single proof RLS enforces) and `yarn db:backfill-media --verify` (the S3 zero-`data:`-rows gate, written to exit non-zero) are manual-only. **→ verify-rls half CLOSED in S12** (now 23 checks, Gate 0 of the CI `alpha-gates` job); the backfill-media half stays with S15. | `scripts/verify-rls.mjs`; `scripts/backfill-media.ts:10,21` |
 | Q7 | **No audit-coverage gate**: nothing fails CI when a mutating route forgets `auditLogger` — unlike authZ, where the matrix machine-checks its concern. | contrast `api/utils/__tests__/authz-matrix.test.ts:5-8` |
-| Q8 | **25 of 49 routes have no dedicated test suite.** The consequential ones are the money paths: `payouts/release` (**zero tests** — double-release, cron auth, unkeyed behavior all unasserted), `stripe/webhook` (**zero tests** — guardrail-§7 explicitly requires signature + fee-tamper tests; fee-tamper is argued structurally, never tested), `shifts/[id]` idempotency (k6-only, and that check can no-op), `upload` (caps/MediaError mapping), the DSR routes' two-factor confirm gates, `age-confirm` (G12), `push/subscribe`, `match-preview`; `/api/stream` is tested only with `STREAM_MAX_MS=0` so real-timing window/reconnect behavior is never exercised. Untested utils include **`rls.ts` itself**, `route-kit`, `schemas`, and both lifecycle matrices (`shift-lifecycle`, `application-lifecycle`). | route tree sweep |
+| Q8 | **25 of 49 routes have no dedicated test suite.** The consequential ones are the money paths: `payouts/release` (**zero tests** — double-release, cron auth, unkeyed behavior all unasserted), `stripe/webhook` (**zero tests** — guardrail-§7 explicitly requires signature + fee-tamper tests; fee-tamper is argued structurally, never tested), `shifts/[id]` idempotency (k6-only, and that check can no-op), `upload` (caps/MediaError mapping), the DSR routes' two-factor confirm gates, `age-confirm` (G12), `push/subscribe`, `match-preview`; `/api/stream` is tested only with `STREAM_MAX_MS=0` so real-timing window/reconnect behavior is never exercised. Untested utils include **`rls.ts` itself**, `route-kit`, `schemas`, and both lifecycle matrices (`shift-lifecycle`, `application-lifecycle`). **→ worst-of CLOSED across S12–S14:** `rls.ts` (S12); `payouts/release`, `stripe/webhook`, `shifts/[id]` + the explicit fee-tamper, `upload`, DSR confirm gates, `age-confirm` (S14). Still open: `push/subscribe`, `match-preview`, stream-under-real-timing, `route-kit`/`schemas`/lifecycle utils — tracked with S15/S17. | route tree sweep |
 | Q9 | **No DAST**: OWASP ZAP baseline (required by guardrail-§7 and CLAUDE.md §9's definition of done) does not exist in any form, so "no *new* ZAP high/medium" is unmeasurable; no stored-XSS regression suite (the probes in TESTING.md §10 #5 are manual). | repo-wide |
 
 #### C. Missing functionality (testers will hit these)
@@ -1289,18 +1300,27 @@ shippable, revertable) apply to every slice unchanged.
   revocation on reset; rate limits on all three recovery endpoints; audit events for
   request/completion/verification-send; env vars in `.env.example` + §6 + CLAUDE.md.
 
-**S14 — Money-path integrity (~2–3 d)** — closes A3, A5 + the worst of Q8 — *parallel with S13*
-- Route tests where money moves: `payouts/release` (double-release, cron/admin auth, and
-  the unkeyed ledger-advance behavior asserted explicitly), `stripe/webhook` (signature
-  verification, replay guard), `shifts/[id]` idempotency replay at the route level, an
-  **explicit fee-tamper test** (today the argument is structural only), `upload` caps, the
-  DSR confirm gates, `age-confirm`.
-- A3 honesty: when a release moves no transfer (unkeyed or not onboarded), ledger rows and
-  both dashboards must label the amount **simulated** — testers must not read fake money as
-  earned.
-- A5 dead-man: unauthenticated scheduled-cron requests log loudly + Sentry-capture; the
-  admin overview surfaces "cron has not run in 24 h".
-- *Security gate:* the guardrail-§7 "webhook signature + fee-tamper tests green" box
+**S14 — Money-path integrity (~2–3 d)** — closes A3, A5 + the worst of Q8 —
+✅ **landed 2026-08-18** (867 tests green; typecheck/lint/build clean)
+- ☑ **38 new route tests where money moves**: `payouts/release` (13 — privilege boundary
+  incl. the A5 dead-man scream, double-release impossibility asserted structurally +
+  behaviorally, unkeyed ledger-advance, keyed/not-onboarded/transfer-failed modes,
+  heartbeat semantics), `stripe/webhook` (8 — 503 unkeyed/half-keyed, 400 unsigned/forged
+  with zero state written, PK replay guard, idempotent handlers), `shifts/[id]` (6 —
+  replay-by-key returns the recorded outcome, cross-tenant 404, matrix denial, and the
+  **explicit §6.4 fee-tamper test**: smuggled fee/gross/net fields never survive into the
+  payout INSERT — the server split does), `upload` (4), account DELETE confirm gates (4),
+  `age-confirm` (3 — G12 pinned at the route until the S16 E2E exists).
+- ☑ A3 honesty: `talent/shifts` now exposes `payout_transfer_id` + `paymentsLive`;
+  the talent Earnings card shows **"Simulated — payments not live"** whenever RELEASED
+  money has no transfer behind it, and the venue Payouts Pending card carries the same
+  label unkeyed. A RELEASED ledger row with no transfer can no longer read as real money.
+- ☑ A5 dead-man: both cron GETs scream (log.error + Sentry captureMessage, no-op without
+  DSN) when `CRON_SECRET` is unset; every scheduled run writes a `cron.heartbeat` audit
+  row (including zero-work and legal-hold runs — a held run is a live cron); the admin
+  overview returns `cronHealth` and the admin dashboard shows per-job last-run with a
+  >26 h staleness flag.
+- *Security gate met:* the guardrail-§7 "webhook signature + fee-tamper tests green" box
   closes; simulated money never renders as real.
 
 **S15 — DAST & gate truthing (~2–3 d)** — closes Q9, Q7, the backfill half of Q6, part of

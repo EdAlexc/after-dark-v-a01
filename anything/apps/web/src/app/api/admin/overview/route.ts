@@ -14,14 +14,14 @@ export const GET = withRoute('admin.overview', async () => {
 
   // RLS (S2): the tenant-table aggregates need ADMIN context (platform_all
   // policies); "user" is not RLS-governed and stays outside the batch.
-  const [users, [reports, gigs, payouts, shiftsTonight]] = await Promise.all([
+  const [users, [reports, gigs, payouts, shiftsTonight, heartbeats]] = await Promise.all([
     sql`
       SELECT COALESCE(role, 'UNASSIGNED') AS role,
              COUNT(*)::int AS count,
              COUNT(*) FILTER (WHERE suspended_at IS NOT NULL)::int AS suspended
       FROM "user" GROUP BY role
     `,
-    withRlsContext<[unknown[], unknown[], unknown[], unknown[]]>(admin, [
+    withRlsContext<[unknown[], unknown[], unknown[], unknown[], unknown[]]>(admin, [
       sql`
         SELECT status, severity, COUNT(*)::int AS count
         FROM reports GROUP BY status, severity
@@ -35,8 +35,21 @@ export const GET = withRoute('admin.overview', async () => {
         SELECT COUNT(*)::int AS count FROM shifts
         WHERE status IN ('IN_TRANSIT', 'CHECKED_IN')
       `,
+      // S14 (A5): last scheduled run per job, from the cron.heartbeat trail —
+      // a schedule that stops firing (or never could, CRON_SECRET unset)
+      // shows up here as "never" / stale instead of staying invisible.
+      sql`
+        SELECT entity_id AS job, MAX(created_at) AS last_run
+        FROM audit_logs
+        WHERE action = 'cron.heartbeat'
+        GROUP BY entity_id
+      `,
     ]),
   ]);
+
+  const heartbeatRows = heartbeats as Array<{ job: string; last_run: string }>;
+  const lastRun = (job: string) =>
+    heartbeatRows.find((row) => row.job === job)?.last_run ?? null;
 
   return Response.json({
     users,
@@ -45,5 +58,9 @@ export const GET = withRoute('admin.overview', async () => {
     payouts,
     activeShifts: (shiftsTonight as Array<{ count: number }>)[0]?.count ?? 0,
     stripeConfigured: stripeEnabled(),
+    cronHealth: {
+      payoutsRelease: lastRun('payouts-release'),
+      retentionPurge: lastRun('retention-purge'),
+    },
   });
 });
