@@ -36,6 +36,10 @@ beforeEach(() => {
     const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
     return text.includes('SELECT role, suspended_at') ? [{ role: null }] : [];
   });
+  // S12: profile writes run inside withRlsContext → sql.transaction([...]).
+  (mocks.sql as unknown as { transaction: unknown }).transaction = async (
+    queries: Array<Promise<unknown>>
+  ) => Promise.all(queries);
 });
 
 describe('POST /api/user/role', () => {

@@ -19,18 +19,43 @@
  *   4. Run:
  *        OWNER_URL=<owner conn>  RLS_URL=<afterdark_app conn>  yarn db:verify-rls
  *
+ * CI (S12): the alpha-gates job runs this same script against its vanilla
+ * Postgres + local Neon proxy stack (NEON_LOCAL_PROXY=1, role provisioned by
+ * scripts/ci-rls-role.mjs), so every PR proves the policies still enforce.
+ *
  * Exits non-zero if any isolation guarantee fails.
  */
 
-import { neon } from '@neondatabase/serverless';
+import ws from 'ws';
+import { Pool, neon, neonConfig } from '@neondatabase/serverless';
+import { createPoolSql } from './pool-sql.mjs';
+
+neonConfig.webSocketConstructor = ws;
+// Mirrors src/app/api/utils/neon-local.ts (this file can't import TS).
+if (process.env.NEON_LOCAL_PROXY === '1') {
+  neonConfig.fetchEndpoint = (host) => `http://${host}:4444/sql`;
+  neonConfig.useSecureWebSocket = false;
+  neonConfig.wsProxy = (host) => `${host}:4444/v2`;
+}
 
 if (!process.env.RLS_URL || !process.env.OWNER_URL) {
   console.error('Set OWNER_URL (table owner) and RLS_URL (afterdark_app role). See header.');
   process.exit(2);
 }
 
-const sql = neon(process.env.RLS_URL);
-const owner = neon(process.env.OWNER_URL);
+// Local-proxy driver (CI): neon()'s HTTP path won't do here — the sidecar
+// proxy pins its own upstream credentials, so role identity (the entire
+// point of this script) only survives the WebSocket tunnel, where vanilla
+// Postgres performs real wire auth. createPoolSql exposes the same
+// tagged-template + .transaction() surface over a Pool (unit-tested in
+// test/pool-sql.test.ts). If a proxy ever DID rewrite credentials, check 0
+// (current_user/rolbypassrls) fails loudly — there is no silent false-green.
+const makeSql = (url) =>
+  process.env.NEON_LOCAL_PROXY === '1'
+    ? createPoolSql(new Pool({ connectionString: url }))
+    : neon(url);
+const sql = makeSql(process.env.RLS_URL);
+const owner = makeSql(process.env.OWNER_URL);
 
 const results = [];
 const check = (name, pass, detail) => {
@@ -310,6 +335,55 @@ try {
   stripeServiceDetail = error.message.split('\n')[0];
 }
 check('SERVICE context records webhook events', stripeServiceOk, stripeServiceDetail);
+
+// ─── S12 route-wiring canaries ───────────────────────────────────────────────
+// Mirrors of the two bare-`sql` route gaps the 2026-08-17 audit found
+// (DEV_TIMELINE §7.2 A1): they pin the failure mode AND the fix expectation,
+// so a wiring regression shows up here as well as in test/rls-wiring.test.ts.
+
+// 18/19. SSE fingerprint (api/stream): with the participant's context the
+// thread's latest message id is visible; the SAME read without context is
+// empty — the exact shape that would freeze realtime if the route ran bare.
+const fingerprintQuery = (asOf) => sql`
+  SELECT COALESCE(MAX(m.id::text), '') AS msg
+  FROM messages m
+  JOIN conversations c ON c.id = m.conversation_id
+  WHERE c.venue_user_id = ${asOf} OR c.counterpart_user_id = ${asOf}
+`;
+const fpWithContext = await sql.transaction([
+  sql`SELECT set_config('app.user_id', ${venueUser}, true)`,
+  fingerprintQuery(venueUser),
+]);
+check('SSE fingerprint sees the thread under the caller context', fpWithContext[1][0].msg !== '');
+const fpBare = await fingerprintQuery(venueUser);
+check('the same fingerprint read is EMPTY without context (the A1 trap)', fpBare[0].msg === '');
+
+// 20/21. Onboarding profile INSERT (api/user/role): the owner-write policy
+// WITH CHECKs `user_id = app.user_id`, so a context-less INSERT must be
+// rejected outright while the same statement under the owner context lands.
+await owner`DELETE FROM talent_profiles WHERE user_id = 'rls-onboard-probe'`;
+await owner`
+  INSERT INTO "user" (id, name, email, "emailVerified", role)
+  VALUES ('rls-onboard-probe', 'Onboard Probe', 'rls-onboard@afterdark.test', false, 'TALENT')
+  ON CONFLICT (id) DO NOTHING
+`;
+let onboardBareBlocked = false;
+let onboardBareDetail = 'INSERT unexpectedly succeeded';
+try {
+  await sql`INSERT INTO talent_profiles (user_id, stage_name) VALUES ('rls-onboard-probe', 'Bare')`;
+} catch (error) {
+  onboardBareBlocked = /row-level security|permission denied/i.test(error.message);
+  onboardBareDetail = error.message.split('\n')[0];
+}
+check('context-less onboarding profile INSERT is rejected', onboardBareBlocked, onboardBareDetail);
+const onboardWithContext = await sql.transaction([
+  sql`SELECT set_config('app.user_id', 'rls-onboard-probe', true)`,
+  sql`
+    INSERT INTO talent_profiles (user_id, stage_name)
+    VALUES ('rls-onboard-probe', 'Contexted') RETURNING id
+  `,
+]);
+check('the same INSERT succeeds under the owner context', onboardWithContext[1].length === 1);
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} isolation checks passed`);

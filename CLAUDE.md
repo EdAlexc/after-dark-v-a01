@@ -40,12 +40,12 @@ yarn dev                    # Next.js dev server on port 4000
 yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
 yarn lint                   # oxlint (workspace .oxlintrc.json), warnings fail
-yarn test                   # vitest run (791 tests as of S4–S10)
+yarn test                   # vitest run (812 tests as of S12)
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:grants              # (re)apply scripts/grants.sql to the afterdark_app role (owner conn; S2)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
 yarn db:preview-accounts    # shared preview accounts; passwords derived from PREVIEW_ACCOUNTS_SECRET (S1)
-yarn db:verify-rls          # proves RLS isolation against a non-owner role (never run on prod; 19 checks)
+yarn db:verify-rls          # proves RLS isolation against a non-owner role (never run on prod; 23 checks — CI runs it per-PR since S12)
 yarn db:backfill-media      # move inline data: images into Blob; --verify asserts zero remain (S3)
 yarn pwa:icons              # regenerate public/icons/* deterministically from vector art (P10.1)
 yarn gate:axe               # P10.4 axe smoke: 10 screens, fail on critical (needs running server)
