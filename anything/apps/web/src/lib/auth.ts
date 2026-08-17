@@ -23,6 +23,12 @@ import { verifyPassword } from 'better-auth/crypto';
 import { bearer, twoFactor } from 'better-auth/plugins';
 import ws from 'ws';
 import { vercelOrigins } from './deployment-origins';
+import {
+  auditPasswordReset,
+  emailConfigured,
+  sendResetPasswordEmail,
+  sendVerificationEmailTo,
+} from './auth-email';
 import { configureNeonLocalProxy } from '@/app/api/utils/neon-local';
 
 neonConfig.webSocketConstructor = ws;
@@ -120,10 +126,31 @@ export const auth = betterAuth({
   socialProviders,
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: false,
+    // S13 account-recovery spine (additive config per the header contract).
+    // Verification is ENFORCED only when the email spine can actually deliver
+    // (key-gated house pattern; RESEND_API_KEY + EMAIL_FROM). Accounts created
+    // while unkeyed self-heal: an unverified sign-in attempt re-sends the
+    // verification email. Pre-S13 accounts are grandfathered by migration
+    // 0021 (emailVerified backfilled true — they attested under the old
+    // regime; locking them out retroactively serves no one).
+    requireEmailVerification: emailConfigured(),
     password: {
       verify: verifyCompatiblePassword,
     },
+    // Password reset (S13): tokens are single-use (better-auth deletes the
+    // verification row on success) and short-lived; the request endpoint
+    // answers uniformly whether or not the account exists. A completed reset
+    // revokes every existing session — a recovered account starts clean.
+    sendResetPassword: sendResetPasswordEmail,
+    resetPasswordTokenExpiresIn: 60 * 60,
+    onPasswordReset: auditPasswordReset,
+    revokeSessionsOnPasswordReset: true,
+  },
+  emailVerification: {
+    sendVerificationEmail: sendVerificationEmailTo,
+    sendOnSignUp: true,
+    autoSignInAfterVerification: true,
+    expiresIn: 60 * 60,
   },
   hooks: {
     // better-auth's /sign-up/email schema requires `name`. Generated user apps
@@ -180,6 +207,10 @@ export const auth = betterAuth({
       '/two-factor/verify-backup-code': { window: 900, max: 5 },
       '/two-factor/enable': { window: 900, max: 5 },
       '/two-factor/disable': { window: 900, max: 5 },
+      // S13 recovery endpoints: tight — these mint or consume secrets.
+      '/request-password-reset': { window: 900, max: 5 },
+      '/reset-password': { window: 900, max: 10 },
+      '/send-verification-email': { window: 900, max: 5 },
     },
   },
   user: {

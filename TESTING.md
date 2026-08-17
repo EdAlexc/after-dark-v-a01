@@ -74,7 +74,7 @@ are not live (`src/lib/legal.ts` `ALPHA_NOTICE`), so the briefing and the produc
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 812 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 829 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
@@ -516,7 +516,7 @@ Manual, against a **production build or deployed preview** (the worker is produc
 
 ## 10. S4–S10 functionality wave (added 2026-07-31)
 
-Automated coverage: 812 vitest tests including the generated authZ matrix rows for every
+Automated coverage: 829 vitest tests including the generated authZ matrix rows for every
 new route (`search.list`, `venue.stats`, `gigs.match-preview`, `reviews.list/create`,
 `stream.events`, `push.status/subscribe/unsubscribe`), the SQLi/plainto invariants for
 the search and match builders, the A10 SSRF guard spec (`safe-fetch.test.ts`), the S6

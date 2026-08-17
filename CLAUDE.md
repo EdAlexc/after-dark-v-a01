@@ -40,7 +40,7 @@ yarn dev                    # Next.js dev server on port 4000
 yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
 yarn lint                   # oxlint (workspace .oxlintrc.json), warnings fail
-yarn test                   # vitest run (812 tests as of S12)
+yarn test                   # vitest run (829 tests as of S13)
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:grants              # (re)apply scripts/grants.sql to the afterdark_app role (owner conn; S2)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
@@ -59,7 +59,9 @@ yarn gate:lhci              # P10.4 Lighthouse §3.2 budgets, 3 passes (needs ru
   `BETTER_AUTH_URL`, `CREATE_BUILDER_EMBED` (S1 — builder iframe + SameSite=None are
   opt-in now, off by default), `RATE_LIMIT_STORE` (S1 — rate-limiter backend override),
   `PREVIEW_ACCOUNTS_SECRET` (S1 — preview passwords derive from it, never committed),
-  `GOOGLE_CLIENT_ID/SECRET`, `APPLE_CLIENT_ID/SECRET/APP_BUNDLE_IDENTIFIER`,
+  `RESEND_API_KEY`+`EMAIL_FROM` (S13 — password-reset + verification emails; with both
+  set, email verification is ENFORCED for new signups; unset = whole email surface
+  no-ops loudly), `GOOGLE_CLIENT_ID/SECRET`, `APPLE_CLIENT_ID/SECRET/APP_BUNDLE_IDENTIFIER`,
   `EXPO_PUBLIC_PROXY_BASE_URL`, `NEXT_PUBLIC_CREATE_*`, `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN`
   (error tracking — no-op unset), `WEB_PUSH_VAPID_PUBLIC_KEY/PRIVATE_KEY/SUBJECT`
   (S9 — hot-gig Web Push; whole surface inert without the pair),
@@ -181,7 +183,7 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Feature (PRD §) | Wireframe | Code location | Status |
 |---|---|---|---|
 | Landing page (3.1) | p5 | `src/app/page.tsx` | ✅ Hot Gigs Tonight real (P1.4); legal footer real (P2.1); rest static marketing copy |
-| Sign up / sign in / logout | — | `src/app/account/*` | ✅ better-auth, social self-activating |
+| Sign up / sign in / logout | — | `src/app/account/*` | ✅ better-auth, social self-activating; S13 adds forgot/reset-password pages + email verification (key-gated on `RESEND_API_KEY`) |
 | Onboarding (role select + basics) | — | `src/app/onboarding/page.tsx` → `/api/user/role` | ✅ (but accepts `ADMIN` — see §7) |
 | Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | ✅ real `GET /api/gigs` (P1.1): validated filters, pagination, HOT/NEW badges; multi-select refines client-side (Backlog #26) |
 | Browse talent (venue directory) | — | `dashboard/venue/browse/page.tsx` | ✅ real public `GET /api/talent` (P1.1); saved-talent list is client-local |

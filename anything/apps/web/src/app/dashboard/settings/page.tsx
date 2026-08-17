@@ -318,7 +318,12 @@ function TwoFASetupModal({ onEnabled, onClose }: { onEnabled: () => void; onClos
                 </div>
                 <p className="text-[11px] text-white/30 mt-1.5">
                   Each code works once if you lose your authenticator. Store them somewhere safe —
-                  they won't be shown again.
+                  they won't be shown again, and{' '}
+                  <span className="text-white/50 font-semibold">
+                    they are the only way back into a 2FA-protected account
+                  </span>{' '}
+                  if your authenticator is lost (a password reset still requires your second
+                  factor).
                 </p>
               </li>
               <li>
