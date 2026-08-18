@@ -40,7 +40,7 @@ yarn dev                    # Next.js dev server on port 4000
 yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
 yarn lint                   # oxlint (workspace .oxlintrc.json), warnings fail
-yarn test                   # vitest run (875 tests as of S15)
+yarn test                   # vitest run (879 tests as of S15)
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:grants              # (re)apply scripts/grants.sql to the afterdark_app role (owner conn; S2)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)

@@ -8,6 +8,20 @@
 
 ## 1. Current status — YOU ARE HERE
 
+- **Date:** 2026-08-18 (night) · **S15 gate calibration — both new gates fired on first
+  contact, and both finds were real** (879 tests green):
+  - **k6** crossed the pooled Apdex threshold while *every* functional assertion passed
+    (301/301 checks, 0 errors). Cause: S15's own apply-spike added a WRITE class to a
+    metric whose T was calibrated on a read-only mix — reads decomposed to ≈0.90 (exactly
+    the old calibration), writes to ≈0.5. **Fixed by scoring Apdex per transaction class**
+    (as Apdex is specified), not by raising the single T — which would have blunted the
+    read tripwire to hide a write cost.
+  - **ZAP** found 3 Mediums, all genuine, all fixed rather than accepted: an **unused
+    FontAwesome Pro stylesheet proxied first-party** (leaking every visitor's IP + a kit
+    token since the create.xyz export), the **`img-src https:` wildcard** that let dev/CI
+    diverge from production and was hiding a **hotlinked landing texture destined to break
+    the moment B5 lands**, and **HTML 404s served with no CSP** (extension-based matcher).
+    Details + the one accepted risk in §7.3 S15.
 - **Date:** 2026-08-18 (evening) · **Branch:** `claude/s15-gate-truthing` (off `main`,
   which now truly contains S12–S14 — verified by content after the #24/#25 merges) —
   **S15 landed: DAST & gate truthing** (875 tests green; typecheck/lint/build clean;
@@ -1381,6 +1395,41 @@ Q3/Q4, all of E — ✅ **landed 2026-08-18** (875 tests green; typecheck/lint/b
   calibration and send the T=300/p99 bars to the load lab; E2 was corrected in S12; E3/
   E4/E6 died with the TESTING.md §8 known-gaps rewrite — half that list predated S1–S14;
   E5 TENANT_GUARDRAIL §4.1 TOTP row updated to the 0005 plugin reality).
+- ☑ **What Gate 4 caught on its FIRST run** — the point of building it. Three unaccepted
+  Mediums, all real, all fixed rather than accepted:
+  1. **`10098` Cross-Domain Misconfiguration** on `/fontawesome/releases/…/pro.min.css`
+     (`access-control-allow-origin: *`). Pulling the thread: a **FontAwesome Pro
+     stylesheet in the root layout, proxied through a `/fontawesome/*` →
+     ka-p.fontawesome.com rewrite** — which is why it read as same-origin and no CSP ever
+     questioned it. It was **completely unused** (zero `fa-` classes anywhere in `src`;
+     the app uses lucide-react) and its webfonts were already blocked by
+     `font-src 'self' data:`, so it did nothing but send every visitor's IP — and a kit
+     token in the URL (ZAP flagged that separately) — to a third party on every page
+     load. **Removed**: the `<link>`, the rewrite, and with them the G11 residual and the
+     A08 "third-party code executing in-app" finding.
+  2. **`10055` CSP Wildcard Directive** → `img-src … https:`. This is §7.2 **A4**, found
+     independently by the scanner: the tokenless fallback ended in a bare `https:`, so
+     dev/CI could load images from **any** origin while production (Blob keyed) pins them
+     — the one environment that could catch an img-src problem was the one that couldn't.
+     It was actively hiding one: the landing page's carbon-fibre texture was **hotlinked
+     from transparenttextures.com** and would have gone dark the moment B5 set the token.
+     **Fixed both**: the texture is now drawn in CSS (no request at all), and the
+     tokenless fallback is as strict as the pinned form (`'self' data: blob:` + the map
+     tile origin) so the environments finally agree.
+  3. **`10038` CSP Header Not Set** on `/robots.txt`. The middleware matcher excluded by
+     **extension** (`.txt`, `.css`, `.js`, …), assuming any such URL is a static file —
+     but a *nonexistent* one falls through to Next's **HTML 404**, which was therefore
+     served with no CSP at all. **Fixed** by naming the assets that actually exist
+     (`_next/static`, `_next/image`, the six files in `public/`) instead, so every
+     document — 404s included — carries the nonce CSP.
+- ☑ Regression cover for the above: `test/third-party-egress.test.ts` (no off-origin
+  `src=`/`url(…)`/`<link href>` in app code, no external rewrite destination, FontAwesome
+  stays gone — anchors excluded, since an `<a href>` is navigation and the OSM tile
+  licence *requires* an attribution link) plus two new img-src cases in
+  `test/security-headers.test.ts` asserting no wildcard scheme in **any** branch.
+- ☑ The one **accepted** risk stays accepted, on the record in `zap-gate.mjs`:
+  `style-src 'unsafe-inline'` (Tailwind/Next posture; script-src remains nonce +
+  strict-dynamic, so style injection cannot become script execution).
 - *Security gate met:* ZAP job red on any unaccepted High/Medium; the drift list is empty.
 
 #### Quality wave

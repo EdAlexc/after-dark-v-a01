@@ -74,7 +74,7 @@ are not live (`src/lib/legal.ts` `ALPHA_NOTICE`), so the briefing and the produc
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 875 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 879 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
@@ -120,6 +120,12 @@ Coverage highlights by area:
   no `unsafe-inline` script-src), security headers, Sentry PII scrub, RLS migration structure,
   **deleted-account session invalidation**, rate-limit windows, redirect sanitizer, migration
   runner ordering.
+- **Third-party egress (S15)**: `test/third-party-egress.test.ts` — no `src=`, CSS `url(…)`
+  or `<link href>` in app code may point off-origin (anchors are navigation, not egress),
+  no `next.config` rewrite may target an external destination, and FontAwesome must stay
+  gone. Written after ZAP's first baseline found a FontAwesome Pro stylesheet proxied
+  through `/fontawesome/*` (unused — zero `fa-` classes — and leaking a kit token in the
+  URL) plus a landing texture hotlinked from transparenttextures.com.
 - **Coverage registries (S15)**: `test/audit-coverage.test.ts` — every mutating route
   declares `audited` (and must actually call `auditLogger`) or `exempt` with the reason
   on the record; `test/stored-xss.test.ts` — `dangerouslySetInnerHTML` banned outside a
@@ -537,7 +543,7 @@ Manual, against a **production build or deployed preview** (the worker is produc
 
 ## 10. S4–S10 functionality wave (added 2026-07-31)
 
-Automated coverage: 875 vitest tests including the generated authZ matrix rows for every
+Automated coverage: 879 vitest tests including the generated authZ matrix rows for every
 new route (`search.list`, `venue.stats`, `gigs.match-preview`, `reviews.list/create`,
 `stream.events`, `push.status/subscribe/unsubscribe`), the SQLi/plainto invariants for
 the search and match builders, the A10 SSRF guard spec (`safe-fetch.test.ts`), the S6
