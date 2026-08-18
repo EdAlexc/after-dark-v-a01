@@ -1430,6 +1430,16 @@ Q3/Q4, all of E — ✅ **landed 2026-08-18** (875 tests green; typecheck/lint/b
 - ☑ The one **accepted** risk stays accepted, on the record in `zap-gate.mjs`:
   `style-src 'unsafe-inline'` (Tailwind/Next posture; script-src remains nonce +
   strict-dynamic, so style injection cannot become script execution).
+- ☑ **Gates verified green on real numbers** (not just "CI passed"): `apdex_read_score`
+  0.860 @ T=1600 and `apdex_write_score` 0.891 @ T=4000 — nothing frustrated in either
+  class, confirming the decomposition the split was built on — p99 4.96 s, ZAP **0
+  unaccepted High/Medium** across 9 alerts, verify-rls 23/23, zero-inline-media clean.
+  One follow-through from those numbers: the read margin was only 0.010, because the
+  apply spike's concurrent writes had pushed the read median from 0.93 s (what T=1600 was
+  calibrated against) to 1.15 s. A gate that passes by a coin flip is one people learn to
+  ignore, so the spike now runs **after** the read window instead of inside it — each
+  class gets an uncontended signal, which is what a regression tripwire wants;
+  concurrency at scale stays the load lab's job.
 - *Security gate met:* ZAP job red on any unaccepted High/Medium; the drift list is empty.
 
 #### Quality wave
