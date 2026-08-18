@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 // Plain CJS module shared with next.config.js.
 import { buildCsp, buildSecurityHeaders, createPlatformOrigins } from '../security-headers.js';
 
+/**
+ * Synthetic Blob token — NOT a credential. Only the middle group is load
+ * bearing: security-headers.js derives the store host from it
+ * (`vercel_blob_rw_<store>_…` → `<store>.public.blob.vercel-storage.com`).
+ * Named + `gitleaks:allow` rather than allowlisting the file, so a real
+ * secret pasted into this suite would still be caught.
+ */
+const FAKE_BLOB_TOKEN = 'vercel_blob_rw_Abc123XYZ_notarealtoken'; // gitleaks:allow
+
 describe('buildCsp', () => {
   it('pins the core directives in production mode', () => {
     const csp: string = buildCsp({ isDev: false, env: {} });
@@ -64,15 +73,32 @@ describe('buildCsp', () => {
     expect(buildCsp({ isDev: false, env: {} })).toContain("frame-ancestors 'self'");
   });
 
-  it('keeps the permissive img-src only as the tokenless dev fallback (S3)', () => {
+  it('tokenless img-src adds data: for inline storage but NO wildcard (S15)', () => {
     const csp: string = buildCsp({ isDev: false, env: {} });
-    expect(csp).toContain("img-src 'self' data: blob: https:");
+    const img = csp.match(/img-src[^;]*/)?.[0] ?? '';
+    // data: is the point of the tokenless path (images are stored inline);
+    // the map still needs its tile origin. Nothing else — the old trailing
+    // `https:` let dev/CI load any origin, so it could never catch what the
+    // pinned production form blocks (ZAP flagged it as a wildcard directive).
+    expect(img).toBe("img-src 'self' data: blob: https://tile.openstreetmap.org");
+    expect(img).not.toMatch(/\shttps:(\s|$)/);
+  });
+
+  it('never ships a wildcard scheme source in ANY img-src branch (S15/ZAP 10055)', () => {
+    for (const env of [
+      {},
+      { BLOB_READ_WRITE_TOKEN: FAKE_BLOB_TOKEN },
+      { BLOB_READ_WRITE_TOKEN: 'not-a-normal-token' },
+    ]) {
+      const img = buildCsp({ isDev: false, env }).match(/img-src[^;]*/)?.[0] ?? '';
+      expect(img, JSON.stringify(env)).not.toMatch(/\shttps:(\s|$)/);
+    }
   });
 
   it('pins img-src to the Blob store host when the token is set (S3, G11)', () => {
     const csp: string = buildCsp({
       isDev: false,
-      env: { BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_Abc123XYZ_secretpart' },
+      env: { BLOB_READ_WRITE_TOKEN: FAKE_BLOB_TOKEN },
     });
     const img = csp.match(/img-src[^;]*/)?.[0] ?? '';
     // Exact pin: our Blob store + the S10 map tile origin, nothing else.

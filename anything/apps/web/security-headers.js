@@ -57,13 +57,22 @@ const MAP_TILE_ORIGIN = 'https://tile.openstreetmap.org';
  * exactly our store's host (derived from the token — CJS twin of
  * media.ts#blobHostname), no `data:` (the inline write path is dead with the
  * token set and the backfill moved old rows), no broad `https:` (third-party
- * image loads were the G11 egress finding). Without the token, the dev/preview
- * fallback keeps the historic permissive list so inline-stored images render.
+ * image loads were the G11 egress finding).
+ *
+ * Without the token the fallback adds `data:` — inline-stored images are the
+ * whole point of the tokenless path — but is otherwise AS TIGHT as the pinned
+ * form (S15). It used to end in a bare `https:`, which ZAP's first baseline
+ * run flagged as a wildcard directive: it let dev/CI load images from any
+ * origin, so the environment could never catch what production (pinned) would
+ * block — and it was hiding exactly that, a landing-page texture hotlinked
+ * from a third-party host that would have gone dark the moment B5 set the
+ * token. Keep these two branches equally strict; only the storage source
+ * differs.
  * @returns {string}
  */
 function imgSrc(env) {
   const token = env.BLOB_READ_WRITE_TOKEN;
-  if (!token) return `img-src 'self' data: blob: https:`;
+  if (!token) return `img-src 'self' data: blob: ${MAP_TILE_ORIGIN}`;
   const match = /^vercel_blob_rw_([a-z0-9]+)_/i.exec(token);
   const host = match
     ? `https://${match[1].toLowerCase()}.public.blob.vercel-storage.com`

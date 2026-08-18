@@ -65,11 +65,20 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except Next static assets and obvious files — pages and API
-  // routes all get the per-request CSP; protected paths get the auth gate.
+  // Everything except the static assets that ACTUALLY exist (Next's build
+  // output + the files in public/) — pages and API routes all get the
+  // per-request CSP; protected paths get the auth gate.
+  //
+  // S15: this list used to exclude by EXTENSION (`…\\.(css|js|txt|…)$`), which
+  // assumed any such URL is a static file. It isn't: a nonexistent one falls
+  // through to Next's HTML 404, so `/robots.txt` (and `/anything.css`, …)
+  // served a document with NO CSP header — found by ZAP's first baseline run.
+  // Naming the real assets instead keeps them cheap while every document,
+  // including 404s, carries the nonce CSP.
   matcher: [
     {
-      source: '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.png|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|woff2?)$).*)',
+      source:
+        '/((?!_next/static|_next/image|favicon\\.ico|favicon\\.png|hero-nyc\\.webp|manifest\\.webmanifest|sw\\.js|icons/).*)',
     },
   ],
 };

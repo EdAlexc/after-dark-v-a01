@@ -255,7 +255,19 @@ export default function LandingPage() {
       {/* CTA Section */}
       <section className="py-24 px-4">
         <div className="max-w-5xl mx-auto bg-gradient-to-br from-[#00FFCC] to-[#00CCAA] rounded-[40px] p-12 md:p-24 text-center text-black relative overflow-hidden">
-          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
+          {/* Carbon-fibre weave, drawn in CSS. Was hotlinked from
+              transparenttextures.com — a third-party image request on every
+              landing view (G11) that ALSO would have gone dark the moment B5
+              set the Blob token, since the pinned img-src excludes it. ZAP's
+              first baseline run surfaced the wildcard that was hiding it. */}
+          <div
+            className="absolute inset-0 opacity-10"
+            style={{
+              backgroundImage:
+                'repeating-linear-gradient(45deg, rgba(0,0,0,0.5) 0 1px, transparent 1px 4px), repeating-linear-gradient(-45deg, rgba(0,0,0,0.35) 0 1px, transparent 1px 4px)',
+              backgroundSize: '4px 4px',
+            }}
+          ></div>
           <div className="relative z-10">
             <h2 className="text-4xl md:text-6xl font-black mb-8 tracking-tighter">
               READY TO OWN <br />

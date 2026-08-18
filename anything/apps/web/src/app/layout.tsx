@@ -34,12 +34,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 		// semantic tokens (bg-background, border-input, …) resolve to the light
 		// palette and outline/ghost variants render white-on-white.
 		<html lang="en" className="dark">
-			<head>
-				<link
-					rel="stylesheet"
-					href="/fontawesome/releases/v6.3.0/css/pro.min.css?token=2c15cc0cc7"
-				/>
-			</head>
 			<body>
 				<Providers>
 					{children}

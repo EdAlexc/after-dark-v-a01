@@ -1,4 +1,5 @@
 import { authGuard } from '@/app/api/utils/auth-guard';
+import { auditLogger } from '@/app/api/utils/audit';
 import { parseBody } from '@/app/api/utils/validation';
 import { UploadSchema } from '@/app/api/utils/schemas';
 import { MediaError, processImage, storeImage } from '@/app/api/utils/media';
@@ -23,6 +24,14 @@ export const POST = withRoute('media.upload', async (request) => {
   try {
     const processed = await processImage(body.dataUrl);
     const stored = await storeImage(processed, body.purpose, user.id);
+    // S15 audit-coverage: media is PII creation (G11) — on the trail like
+    // every other PII write. Metadata stays content-free (no URLs, no bytes).
+    await auditLogger.record({
+      actorId: user.id,
+      action: 'media.upload',
+      entityType: 'media',
+      metadata: { purpose: body.purpose, storage: stored.storage },
+    });
     return Response.json(
       {
         url: stored.url,

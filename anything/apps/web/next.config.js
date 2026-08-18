@@ -24,10 +24,6 @@ const nextConfig = {
   },
   rewrites() {
     return [
-      {
-        source: '/fontawesome/:path*',
-        destination: 'https://ka-p.fontawesome.com/:path*',
-      },
     ];
   },
 };

@@ -74,7 +74,7 @@ are not live (`src/lib/legal.ts` `ALPHA_NOTICE`), so the briefing and the produc
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 867 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 879 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
@@ -120,6 +120,19 @@ Coverage highlights by area:
   no `unsafe-inline` script-src), security headers, Sentry PII scrub, RLS migration structure,
   **deleted-account session invalidation**, rate-limit windows, redirect sanitizer, migration
   runner ordering.
+- **Third-party egress (S15)**: `test/third-party-egress.test.ts` — no `src=`, CSS `url(…)`
+  or `<link href>` in app code may point off-origin (anchors are navigation, not egress),
+  no `next.config` rewrite may target an external destination, and FontAwesome must stay
+  gone. Written after ZAP's first baseline found a FontAwesome Pro stylesheet proxied
+  through `/fontawesome/*` (unused — zero `fa-` classes — and leaking a kit token in the
+  URL) plus a landing texture hotlinked from transparenttextures.com.
+- **Coverage registries (S15)**: `test/audit-coverage.test.ts` — every mutating route
+  declares `audited` (and must actually call `auditLogger`) or `exempt` with the reason
+  on the record; `test/stored-xss.test.ts` — `dangerouslySetInnerHTML` banned outside a
+  reviewed static-CSS allowlist, `innerHTML=`/`document.write` banned outright. CI also
+  runs the **ZAP baseline** (alpha-gates Gate 4, 0 unaccepted High/Medium via
+  `scripts/zap-gate.mjs`) and the **zero-inline-media gate** (`db:backfill-media
+  --verify`) on every PR.
 - **Money paths (S14)**: route suites where money changes state — `payouts/release`
   (privilege boundary incl. the CRON_SECRET dead-man, double-release impossibility,
   unkeyed ledger-advance = A3, keyed/not-onboarded/failed transfer modes, cron
@@ -463,9 +476,10 @@ What it asserts, and why each matters:
 
 ## 8. Known gaps (do not report as regressions)
 
-- **P10.4 remains** (Lighthouse/k6/axe CI gates) — P10.3's shared rate-limit store landed
-  2026-07-31 with slice S1; P10.1–P10.2 (manifest, service worker, offline fallback)
-  landed 2026-07-31, see §9.
+> Truthed 2026-08-18 (slice S15 — the old list predated S1–S14 and half its entries had
+> been fixed: P10.4 landed 2026-07-31, the shared rate-limit store landed with S1, the
+> map with S10, multi-select filters with S5, SSE with S9, the retention purge with S2.)
+
 - Admin CSV export is **bounded** (10k newest rows per download), not an async job — use
   filters to slice bigger windows; a queued export is post-alpha.
 - Suspension blocks the suspended user at the API layer with a 403 + reason; there is no
@@ -478,17 +492,22 @@ What it asserts, and why each matters:
 - **RLS is verified but not yet enforcing in production** — the app still connects as the
   table owner. App-level authZ (proven by the matrix suite) is the active control; RLS is the
   defence-in-depth layer awaiting the cutover in `docs/rls-cutover.md`.
-- Pre-P4 media (the preview accounts' original avatars) is still base64 in Postgres; new
-  writes are processed, but the backfill is pending (Backlog #10). AV scanning absent.
-- Messaging/notifications are **polling** (5–10s), not push/SSE — by design until post-alpha.
-- The in-memory rate limiter is per-instance (P10.3 makes it shared) — limits are best-effort
-  on serverless.
+- **Production media backfill run is pending on the B5 Blob token** (the code + CI gate
+  exist: `yarn db:backfill-media --verify` runs per-PR since S15 and proves a fresh
+  migrate+seed leaves zero inline `data:` rows). AV scanning absent (images inert via the
+  sharp re-encode; uploads stay image-only).
+- Realtime is **SSE** (`/api/stream`, S9) with the TanStack caches refetching on
+  invalidation; the 5 s polling fallback remains beneath it. Web Push is key-gated on the
+  VAPID pair.
+- The retention purge and escrow release **run daily only when `CRON_SECRET` is set in
+  Vercel** (operator step B4). Since S14 a dark cron screams (log + Sentry) and the admin
+  dashboard shows per-job cron health.
+- Password reset + email verification (S13) **deliver only when `RESEND_API_KEY` +
+  `EMAIL_FROM` are set**; unkeyed, the surface no-ops loudly and verification is not
+  enforced.
 - Legal copy is written to match what the code actually does, but has **not been reviewed by
   counsel**; that is required before general availability, not before alpha.
-- No automated retention-purge job yet — log retention relies on provider defaults
-  (`docs/retention.md` §4).
-- Map views deferred (Backlog #1). Multi-select browse filters refine client-side within the
-  fetched page until the API grows array params (Backlog #27).
+- Browse text-search filters within the fetched page (server-side `q` lands with S17).
 
 ## 9. PWA verification (P10.1–P10.2, added 2026-07-31)
 
@@ -524,7 +543,7 @@ Manual, against a **production build or deployed preview** (the worker is produc
 
 ## 10. S4–S10 functionality wave (added 2026-07-31)
 
-Automated coverage: 867 vitest tests including the generated authZ matrix rows for every
+Automated coverage: 879 vitest tests including the generated authZ matrix rows for every
 new route (`search.list`, `venue.stats`, `gigs.match-preview`, `reviews.list/create`,
 `stream.events`, `push.status/subscribe/unsubscribe`), the SQLi/plainto invariants for
 the search and match builders, the A10 SSRF guard spec (`safe-fetch.test.ts`), the S6
@@ -585,8 +604,20 @@ auth + preview-account secrets are generated per run.
   Warn until the RSC refactor: LCP/FCP/TBT/JS-weight (levels + rationale in
   `lighthouserc.cjs` — flip them to `error` in that refactor's PR).
 - **Gate 3 — k6** (`k6 run k6/alpha-gates.js`): §3.4's scenario shapes at smoke scale —
-  browse surge, message poll fan-out, and the fixed-key check-in double-tap (idempotency
-  replay asserted live). Thresholds: **Apdex ≥ 0.85 @ T=300 ms**, error rate < 1%.
+  browse surge, apply→withdraw spike (S15), message poll fan-out, and the fixed-key
+  check-in double-tap (idempotency replay asserted live; since S15 the run FAILS rather
+  than silently skips when setup can't find a seeded shift). Thresholds: **Apdex ≥ 0.85
+  per transaction class** — `apdex_read_score` @ the calibrated `APDEX_T=1600 ms` and
+  `apdex_write_score` @ `APDEX_WRITE_T=4000 ms` — plus p99 < 4×T and error rate < 1%.
+  Reads and writes are scored separately because Apdex is defined per transaction type
+  and these classes are not comparable here: a GET is one round trip, a write is auth
+  guard + rate-limit + an RLS transaction + audit + notify. Pooling them measured the
+  traffic MIX rather than the app (S15's first run: pooled 0.833 = reads ≈0.90 + writes
+  ≈0.5, with all 301 functional checks green). Both numbers are runner calibrations and
+  relative regression tripwires, **NOT the §3 bar** — Apdex @ T=300 ms and p99 ≤ 1.2 s
+  belong to the load lab below, where `APDEX_WRITE_T` defaults back to `APDEX_T` so one
+  bar covers every transaction. **The real §3 numbers — Apdex @ T=300 ms, p99 ≤ 1.2 s — are the pre-release load
+  lab's job (§11), on production-grade infra.**
 
 **Local run**: start a production server (`yarn build && yarn start -p 4000`) against a
 disposable Neon branch with preview accounts provisioned, export

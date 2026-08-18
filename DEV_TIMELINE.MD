@@ -8,6 +8,35 @@
 
 ## 1. Current status — YOU ARE HERE
 
+- **Date:** 2026-08-18 (night) · **S15 gate calibration — both new gates fired on first
+  contact, and both finds were real** (879 tests green):
+  - **k6** crossed the pooled Apdex threshold while *every* functional assertion passed
+    (301/301 checks, 0 errors). Cause: S15's own apply-spike added a WRITE class to a
+    metric whose T was calibrated on a read-only mix — reads decomposed to ≈0.90 (exactly
+    the old calibration), writes to ≈0.5. **Fixed by scoring Apdex per transaction class**
+    (as Apdex is specified), not by raising the single T — which would have blunted the
+    read tripwire to hide a write cost.
+  - **ZAP** found 3 Mediums, all genuine, all fixed rather than accepted: an **unused
+    FontAwesome Pro stylesheet proxied first-party** (leaking every visitor's IP + a kit
+    token since the create.xyz export), the **`img-src https:` wildcard** that let dev/CI
+    diverge from production and was hiding a **hotlinked landing texture destined to break
+    the moment B5 lands**, and **HTML 404s served with no CSP** (extension-based matcher).
+    Details + the one accepted risk in §7.3 S15.
+- **Date:** 2026-08-18 (evening) · **Branch:** `claude/s15-gate-truthing` (off `main`,
+  which now truly contains S12–S14 — verified by content after the #24/#25 merges) —
+  **S15 landed: DAST & gate truthing** (875 tests green; typecheck/lint/build clean;
+  details in §7.3 S15). The `alpha-gates` job gains **Gate 4: a ZAP baseline** enforcing
+  0 unaccepted High/Medium via `scripts/zap-gate.mjs` (accepted risks named in-script;
+  seeded with the deliberate `style-src 'unsafe-inline'`) and the **zero-inline-media
+  gate** (`db:backfill-media --verify` per PR). Two new machine-checked registries:
+  **audit coverage** (mutating routes declare audited-or-exempt-with-reason; forced the
+  stripe/webhook + upload audit retrofits) and the **stored-XSS structural gate**
+  (`dangerouslySetInnerHTML` allowlist proven style-only). k6 gains the p99<4×T
+  threshold, the §3.4 #2 apply-spike scenario, and a hard-fail (not silent-skip) setup.
+  **The §7.2 E doc-drift list is empty** — incl. the TESTING.md §8 known-gaps rewrite,
+  half of which predated S1–S14. First CI run of Gate 4 is the live ZAP calibration:
+  watch the S15 PR's checks; new unaccepted findings get fixed or explicitly accepted
+  in-script, in review.
 - **Date:** 2026-08-18 (later still) · **Branch:** `claude/s14-money-path` — **S14 landed:
   money-path integrity** (867 tests green — 38 new route tests; typecheck/lint/build
   clean; details in §7.3 S14). The money paths finally have route-level proof:
@@ -394,9 +423,11 @@
    tester-lockout blocker is closed in code; **operator**: set `RESEND_API_KEY` +
    `EMAIL_FROM` in Vercel (§6) so resets/verification actually deliver — unkeyed, the
    surface no-ops loudly and unverified signups are not enforced against.
-4. ~~**S14 — money-path integrity**~~ — ✅ **landed 2026-08-18** (§7.3; the guardrail-§7
-   webhook + fee-tamper box is closed). **S15 — ZAP + gate truthing** (~2–3 d) is next:
-   DAST baseline, stored-XSS suite, audit-coverage gate, backfill-media in CI, doc drift.
+4. ~~**S14 — money-path integrity**~~ / ~~**S15 — ZAP + gate truthing**~~ — ✅ both
+   **landed 2026-08-18** (§7.3). Guardrail-§7 boxes closed across them: webhook signature
+   + fee-tamper, ZAP baseline (CI Gate 4), audit-event coverage (machine-checked), the
+   zero-inline-media gate; the doc-drift list is empty. **Next dev slice: S16 — Playwright
+   E2E journeys** (alpha loop per role, DSR/G12 proofs, the PWA §6.6 real-browser check).
 5. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min — owed since 2026-07-31)
    + **S16 E2E journeys** to close the G4/G12/PWA-§6.6 proof gaps.
 
@@ -1191,10 +1222,10 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 | Q3 | **The k6 CI gate is 5.3× looser than the documented bar**: CI passes `APDEX_T=1600` while `ci.yml`'s own comments and TESTING.md still say T=300 (the calibration is legitimate — 2-core co-hosted runner — but the docs contradict the invocation). Scenario coverage is 3 of 6: #2 apply-spike, **#5 noisy-neighbor (a tenant-fairness security property)** and #6 soak are missing; no p99 ≤ 1.2 s threshold; the check-in burst silently no-ops if setup yields no shift. The 500-VU/15-min lab and 2 h soak have **never been run**. | `.github/workflows/ci.yml:127-134`; `k6/alpha-gates.js:38-74,172` |
 | Q4 | Gates below their stated bars: axe `serious` warn-only (guardrail says 0 critical/serious — the ratchet is Backlog #13); Lighthouse LCP/TBT/FCP/JS-weight warn-only pending the RSC refactor; `numberOfRuns: 1`. Documented in-file, but the guardrail-§7 boxes don't close at these levels. | `scripts/axe-smoke.ts:117-133`; `lighthouserc.cjs:35-43` |
 | Q5 | **No RUM**: zero `web-vitals`/`useReportWebVitals` usage. The scorecard rows (CWV p75, per-endpoint Apdex, front-end JS error rate) are unmeasurable in production; guardrail-§7's "RUM dashboards live" box has no implementation at all. | repo-wide grep |
-| Q6 | Ready-made security gates not wired into CI: `yarn db:verify-rls` (the single proof RLS enforces) and `yarn db:backfill-media --verify` (the S3 zero-`data:`-rows gate, written to exit non-zero) are manual-only. **→ verify-rls half CLOSED in S12** (now 23 checks, Gate 0 of the CI `alpha-gates` job); the backfill-media half stays with S15. | `scripts/verify-rls.mjs`; `scripts/backfill-media.ts:10,21` |
-| Q7 | **No audit-coverage gate**: nothing fails CI when a mutating route forgets `auditLogger` — unlike authZ, where the matrix machine-checks its concern. | contrast `api/utils/__tests__/authz-matrix.test.ts:5-8` |
+| Q6 | Ready-made security gates not wired into CI: `yarn db:verify-rls` (the single proof RLS enforces) and `yarn db:backfill-media --verify` (the S3 zero-`data:`-rows gate, written to exit non-zero) are manual-only. **→ verify-rls half CLOSED in S12** (now 23 checks, Gate 0 of the CI `alpha-gates` job); the backfill-media half CLOSED in S15 (CI zero-inline-media step). Q6 is fully closed. | `scripts/verify-rls.mjs`; `scripts/backfill-media.ts:10,21` |
+| Q7 | **No audit-coverage gate**: nothing fails CI when a mutating route forgets `auditLogger` — unlike authZ, where the matrix machine-checks its concern. **→ CLOSED in S15:** test/audit-coverage.test.ts — audited-or-exempt-with-reason registry; stripe/webhook + upload retrofitted. | contrast `api/utils/__tests__/authz-matrix.test.ts:5-8` |
 | Q8 | **25 of 49 routes have no dedicated test suite.** The consequential ones are the money paths: `payouts/release` (**zero tests** — double-release, cron auth, unkeyed behavior all unasserted), `stripe/webhook` (**zero tests** — guardrail-§7 explicitly requires signature + fee-tamper tests; fee-tamper is argued structurally, never tested), `shifts/[id]` idempotency (k6-only, and that check can no-op), `upload` (caps/MediaError mapping), the DSR routes' two-factor confirm gates, `age-confirm` (G12), `push/subscribe`, `match-preview`; `/api/stream` is tested only with `STREAM_MAX_MS=0` so real-timing window/reconnect behavior is never exercised. Untested utils include **`rls.ts` itself**, `route-kit`, `schemas`, and both lifecycle matrices (`shift-lifecycle`, `application-lifecycle`). **→ worst-of CLOSED across S12–S14:** `rls.ts` (S12); `payouts/release`, `stripe/webhook`, `shifts/[id]` + the explicit fee-tamper, `upload`, DSR confirm gates, `age-confirm` (S14). Still open: `push/subscribe`, `match-preview`, stream-under-real-timing, `route-kit`/`schemas`/lifecycle utils — tracked with S15/S17. | route tree sweep |
-| Q9 | **No DAST**: OWASP ZAP baseline (required by guardrail-§7 and CLAUDE.md §9's definition of done) does not exist in any form, so "no *new* ZAP high/medium" is unmeasurable; no stored-XSS regression suite (the probes in TESTING.md §10 #5 are manual). | repo-wide |
+| Q9 | **No DAST**: OWASP ZAP baseline (required by guardrail-§7 and CLAUDE.md §9's definition of done) does not exist in any form, so "no *new* ZAP high/medium" is unmeasurable; no stored-XSS regression suite (the probes in TESTING.md §10 #5 are manual). **→ CLOSED in S15:** ZAP baseline is CI Gate 4 (0 unaccepted High/Medium via zap-gate.mjs); stored-XSS structural gate landed (behavioral render tests follow with S17). | repo-wide |
 
 #### C. Missing functionality (testers will hit these)
 
@@ -1221,7 +1252,7 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 | D5 | "Viewing as: Talent / Venue" toggle (p4) | Never built. Descope — the shared preview accounts serve the need. |
 | D6 | Admin "uptime / traffic req/s" KPI (p1, PRD §3.4) | Needs RUM/metrics — arrives with S18 or stays descoped. |
 
-#### E. Doc drift (docs contradict code — fixed in S15)
+#### E. Doc drift (docs contradict code) — ✅ ALL FIXED (E2 in S12; E1/E3–E6 in S15, 2026-08-18)
 
 1. `ci.yml:50-51` + `TESTING.md:544` state the k6 gate asserts T=300 ms; CI passes
    `APDEX_T=1600` (`ci.yml:134`).
@@ -1324,18 +1355,82 @@ shippable, revertable) apply to every slice unchanged.
   closes; simulated money never renders as real.
 
 **S15 — DAST & gate truthing (~2–3 d)** — closes Q9, Q7, the backfill half of Q6, part of
-Q3/Q4, all of E
-- OWASP ZAP baseline in CI against the existing self-contained alpha-gates stack, **0
-  High/Medium enforced**; a stored-XSS regression suite (bios, gig descriptions, review
-  comments, messages rendered on another user's screen).
-- Audit-coverage gate: every mutating authz-matrix row declares its audit action; a test
-  fails CI when a route mutates without recording.
-- Wire `yarn db:backfill-media --verify` into CI; k6: add the p99 ≤ 1.2 s threshold and the
-  apply-spike scenario, and make the check-in burst **fail** (not skip) when setup yields
-  no shift.
-- Fix all six doc-drift items (E1–E6), recording T=1600 as the documented CI calibration
-  and the T=300 bar as the load-lab's job.
-- *Security gate:* ZAP job red on any High/Medium; the drift list is empty.
+Q3/Q4, all of E — ✅ **landed 2026-08-18** (875 tests green; typecheck/lint/build clean)
+- ☑ **ZAP baseline in CI** (Gate 4 of `alpha-gates`, after k6 so spider traffic never
+  pollutes the perf numbers): `zap-baseline.py` against the running server, enforced by
+  `scripts/zap-gate.mjs` over the JSON report — **0 unaccepted High/Medium**, with
+  per-finding accepted risks named IN the script (seeded with the one known Medium:
+  `style-src 'unsafe-inline'`, the deliberate Tailwind/Next posture — script-src stays
+  nonce + strict-dynamic). Rule-level ZAP ignores were rejected on purpose: they'd
+  silence whole plugins. Report kept as a CI artifact.
+- ☑ **Stored-XSS structural gate** (`test/stored-xss.test.ts`): `dangerouslySetInnerHTML`
+  banned outside a reviewed 2-entry allowlist, allowlisted sinks proven to be
+  static-CSS `<style>` elements, `innerHTML=`/`document.write` banned outright.
+  Behavioral render-XSS tests arrive with S17's component harness; live probes stay in
+  TESTING.md §10 #5 + the ZAP passive scan.
+- ☑ **Audit-coverage gate** (`test/audit-coverage.test.ts`) — the third machine-checked
+  registry after the authZ matrix and RLS wiring: every mutating route declares
+  `audited` (and must actually call `auditLogger`) or `exempt` with the reason on the
+  record. Building it forced two retrofits the DoD demanded: **stripe/webhook** (money/
+  account state via webhook now audited) and **upload** (media is PII creation, G11);
+  four exemptions documented (availability slots, messages, notification mark-read,
+  push opt-in).
+- ☑ `yarn db:backfill-media --verify` wired into CI (zero-inline-media on every PR).
+- ☑ k6: `p(99)<4×T` threshold (equals the §3 p99 ≤ 1.2 s bar exactly when T=300); the
+  §3.4 #2 **apply-spike scenario** (apply→withdraw cycles, sized inside the 30/h limit);
+  setup now **fails the run** when it can't produce the check-in-burst shift (the
+  silent-skip Q3 finding).
+- ☑ **Apdex split per transaction class** (`apdex_read_score` @ T=1600 /
+  `apdex_write_score` @ T=4000), forced by the first CI run of the above: adding write
+  traffic to a metric whose T was calibrated on a read-only mix crossed the pooled
+  threshold (0.833) **while every functional assertion passed** — 301/301 checks, 0
+  errors, p99 4.77 s under its own new threshold. The decomposition (reads ≈0.90 —
+  exactly the T=1600 calibration — writes ≈0.5) showed the gate was measuring the
+  traffic MIX, not app health. Apdex is defined per transaction type, so the classes now
+  score separately; raising the single T was rejected as it would blunt the read
+  tripwire to hide a write cost. The write T is documented PROVISIONAL (derived from a
+  pooled distribution) — tighten once `apdex_write_score` reports the class directly. In
+  the load lab `APDEX_WRITE_T` defaults back to `APDEX_T`, so §3's single bar is intact.
+- ☑ All six doc-drift items fixed (E1 ci.yml + TESTING.md now document the T=1600
+  calibration and send the T=300/p99 bars to the load lab; E2 was corrected in S12; E3/
+  E4/E6 died with the TESTING.md §8 known-gaps rewrite — half that list predated S1–S14;
+  E5 TENANT_GUARDRAIL §4.1 TOTP row updated to the 0005 plugin reality).
+- ☑ **What Gate 4 caught on its FIRST run** — the point of building it. Three unaccepted
+  Mediums, all real, all fixed rather than accepted:
+  1. **`10098` Cross-Domain Misconfiguration** on `/fontawesome/releases/…/pro.min.css`
+     (`access-control-allow-origin: *`). Pulling the thread: a **FontAwesome Pro
+     stylesheet in the root layout, proxied through a `/fontawesome/*` →
+     ka-p.fontawesome.com rewrite** — which is why it read as same-origin and no CSP ever
+     questioned it. It was **completely unused** (zero `fa-` classes anywhere in `src`;
+     the app uses lucide-react) and its webfonts were already blocked by
+     `font-src 'self' data:`, so it did nothing but send every visitor's IP — and a kit
+     token in the URL (ZAP flagged that separately) — to a third party on every page
+     load. **Removed**: the `<link>`, the rewrite, and with them the G11 residual and the
+     A08 "third-party code executing in-app" finding.
+  2. **`10055` CSP Wildcard Directive** → `img-src … https:`. This is §7.2 **A4**, found
+     independently by the scanner: the tokenless fallback ended in a bare `https:`, so
+     dev/CI could load images from **any** origin while production (Blob keyed) pins them
+     — the one environment that could catch an img-src problem was the one that couldn't.
+     It was actively hiding one: the landing page's carbon-fibre texture was **hotlinked
+     from transparenttextures.com** and would have gone dark the moment B5 set the token.
+     **Fixed both**: the texture is now drawn in CSS (no request at all), and the
+     tokenless fallback is as strict as the pinned form (`'self' data: blob:` + the map
+     tile origin) so the environments finally agree.
+  3. **`10038` CSP Header Not Set** on `/robots.txt`. The middleware matcher excluded by
+     **extension** (`.txt`, `.css`, `.js`, …), assuming any such URL is a static file —
+     but a *nonexistent* one falls through to Next's **HTML 404**, which was therefore
+     served with no CSP at all. **Fixed** by naming the assets that actually exist
+     (`_next/static`, `_next/image`, the six files in `public/`) instead, so every
+     document — 404s included — carries the nonce CSP.
+- ☑ Regression cover for the above: `test/third-party-egress.test.ts` (no off-origin
+  `src=`/`url(…)`/`<link href>` in app code, no external rewrite destination, FontAwesome
+  stays gone — anchors excluded, since an `<a href>` is navigation and the OSM tile
+  licence *requires* an attribution link) plus two new img-src cases in
+  `test/security-headers.test.ts` asserting no wildcard scheme in **any** branch.
+- ☑ The one **accepted** risk stays accepted, on the record in `zap-gate.mjs`:
+  `style-src 'unsafe-inline'` (Tailwind/Next posture; script-src remains nonce +
+  strict-dynamic, so style injection cannot become script execution).
+- *Security gate met:* ZAP job red on any unaccepted High/Medium; the drift list is empty.
 
 #### Quality wave
 
