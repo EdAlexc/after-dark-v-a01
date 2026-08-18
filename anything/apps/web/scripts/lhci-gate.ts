@@ -22,18 +22,30 @@ if (!SECRET) {
   process.exit(1);
 }
 
-/** Sign in and return a Cookie header value for the session. */
+/**
+ * Sign in and return a Cookie header value for the session. One 429 retry:
+ * the S1 limiter allows 10 sign-ins/min/IP and this gate runs right after
+ * the axe + S16 E2E gates on the same runner IP — waiting out one window
+ * beats a flaky budget gate (same policy as e2e/fixtures.ts).
+ */
 async function sessionCookie(email: string): Promise<string> {
-  const res = await fetch(`${BASE_URL}/api/auth/sign-in/email`, {
-    method: 'POST',
-    // Origin satisfies better-auth's trusted-origin CSRF check.
-    headers: { 'Content-Type': 'application/json', Origin: BASE_URL },
-    body: JSON.stringify({ email, password: derivePreviewPassword(SECRET, email) }),
-  });
-  if (!res.ok) throw new Error(`Sign-in failed for ${email}: HTTP ${res.status}`);
-  const cookies = res.headers.getSetCookie();
-  if (cookies.length === 0) throw new Error(`No session cookie returned for ${email}`);
-  return cookies.map((cookie) => cookie.split(';')[0]).join('; ');
+  for (let attempt = 0; ; attempt += 1) {
+    const res = await fetch(`${BASE_URL}/api/auth/sign-in/email`, {
+      method: 'POST',
+      // Origin satisfies better-auth's trusted-origin CSRF check.
+      headers: { 'Content-Type': 'application/json', Origin: BASE_URL },
+      body: JSON.stringify({ email, password: derivePreviewPassword(SECRET, email) }),
+    });
+    if (res.status === 429 && attempt === 0) {
+      console.log('sign-in rate-limited (sibling gates share this IP) — waiting out one window…');
+      await new Promise((resolve) => setTimeout(resolve, 61_000));
+      continue;
+    }
+    if (!res.ok) throw new Error(`Sign-in failed for ${email}: HTTP ${res.status}`);
+    const cookies = res.headers.getSetCookie();
+    if (cookies.length === 0) throw new Error(`No session cookie returned for ${email}`);
+    return cookies.map((cookie) => cookie.split(';')[0]).join('; ');
+  }
 }
 
 async function firstGigId(): Promise<string> {
