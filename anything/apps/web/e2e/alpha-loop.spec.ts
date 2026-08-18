@@ -73,9 +73,17 @@ test('alpha loop: publish → apply → negotiate → hire → shift → payout 
 		let gigPath = '';
 		await test.step('talent finds the gig in browse and deep-links to it', async () => {
 			await talent.goto('/dashboard/talent/browse');
+			// S17: text search is server-side and debounced, so the list narrows
+			// a beat after typing — scope the click to THIS gig's card instead
+			// of assuming the filtered list has settled.
 			await talent.getByPlaceholder('Search gigs, venues, roles…').fill(gigTitle);
 			await expect(talent.getByText(gigTitle)).toBeVisible();
-			await talent.getByRole('link', { name: 'View & Apply' }).first().click();
+			const gigCard = talent
+				.locator('div')
+				.filter({ hasText: gigTitle })
+				.filter({ has: talent.getByRole('link', { name: 'View & Apply' }) })
+				.last();
+			await gigCard.getByRole('link', { name: 'View & Apply' }).click();
 			await talent.waitForURL(/\/gigs\/[^/]+$/);
 			gigPath = new URL(talent.url()).pathname;
 

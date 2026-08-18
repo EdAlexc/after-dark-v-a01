@@ -5,7 +5,6 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Bell,
   Camera,
   CheckCircle2,
   Clock,
@@ -20,6 +19,7 @@ import {
 import { toast } from 'sonner';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Progress } from '@/components/ui/progress';
+import { NotificationsBell } from '@/components/NotificationsBell';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -318,9 +318,7 @@ export default function VenueProfilePage() {
             <p className="text-xs text-white/40">How talent discovers your space</p>
           </div>
           <div className="flex items-center gap-3">
-            <button aria-label="Notifications" className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
-              <Bell className="w-4 h-4 text-white/60" />
-            </button>
+            <NotificationsBell role="venue" />
             <Button
               size="sm"
               variant="outline"

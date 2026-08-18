@@ -12,7 +12,6 @@ import {
   ArrowRight,
   Clock,
   MapPin,
-  Bell,
   ChevronRight,
   Zap,
   LogIn,
@@ -28,6 +27,7 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import ReviewDialog from '@/components/ReviewDialog';
 import { cn } from '@/lib/utils';
 import { type ApiGig, formatDate, formatRate, formatTimeRange } from '@/lib/gigs';
+import { NotificationsBell } from '@/components/NotificationsBell';
 
 // ─── Types from the real APIs (P3/P7) ────────────────────────────────────────
 
@@ -254,13 +254,7 @@ export default function TalentDashboard() {
             <p className="text-xs text-white/40">{todayLabel}</p>
           </div>
           <div className="flex items-center gap-3">
-            <Link
-              href="/dashboard/talent/browse"
-              className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5"
-              aria-label="Browse gigs"
-            >
-              <Bell className="w-4 h-4 text-white/60" />
-            </Link>
+            <NotificationsBell role="talent" />
             <div className="w-9 h-9 rounded-xl bg-[#00FFCC]/20 border border-[#00FFCC]/30 flex items-center justify-center">
               <Zap className="w-4 h-4 text-[#00FFCC]" />
             </div>

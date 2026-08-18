@@ -11,8 +11,9 @@ import { describe, expect, it } from 'vitest';
  * injections, not HTML containers.
  *
  * Layered with: the manual stored-XSS probes (TESTING.md §10 #5), the ZAP
- * baseline (S15, passive scan on every PR), and behavioral render tests
- * arriving with the S17 component harness.
+ * baseline (S15, passive scan on every PR), and the behavioral render test
+ * that landed with the S17 component harness (MessagesView.test.tsx: hostile
+ * message content renders as inert text).
  */
 
 const SRC_ROOT = join(__dirname, '..', 'src');

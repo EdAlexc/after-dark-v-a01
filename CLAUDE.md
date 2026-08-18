@@ -40,7 +40,7 @@ yarn dev                    # Next.js dev server on port 4000
 yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
 yarn lint                   # oxlint (workspace .oxlintrc.json), warnings fail
-yarn test                   # vitest run (879 tests as of S15)
+yarn test                   # vitest run (912 tests as of S17)
 yarn test:e2e               # Playwright E2E journeys (S16, 17 tests) — needs a running
                             #   production build + seeded DB (TESTING.md §3); CI Gate 1b
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
@@ -187,7 +187,7 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Landing page (3.1) | p5 | `src/app/page.tsx` | ✅ Hot Gigs Tonight real (P1.4); legal footer real (P2.1); rest static marketing copy |
 | Sign up / sign in / logout | — | `src/app/account/*` | ✅ better-auth, social self-activating; S13 adds forgot/reset-password pages + email verification (key-gated on `RESEND_API_KEY`) |
 | Onboarding (role select + basics) | — | `src/app/onboarding/page.tsx` → `/api/user/role` | ✅ (but accepts `ADMIN` — see §7) |
-| Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | ✅ real `GET /api/gigs` (P1.1): validated filters, pagination, HOT/NEW badges; multi-select refines client-side (Backlog #26) |
+| Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | ✅ real `GET /api/gigs` (P1.1): validated filters, pagination, HOT/NEW badges; multi-select (S5) and text search (S17 `q`) server-side |
 | Browse talent (venue directory) | — | `dashboard/venue/browse/page.tsx` | ✅ real public `GET /api/talent` (P1.1); saved-talent list is client-local |
 | Browse gigs: map view (3.2) | p2 | `components/GigsMap.tsx` in browse | ✅ MapLibre + OSM tiles (S10); pins = server-geocoded PUBLISHED gigs; escaped popups → `/gigs/[id]` |
 | Gig details + application + 5% fee estimator (3.2) | p4 | `gigs/[id]/page.tsx` → `/api/gigs/[id]` + `/apply` | ✅ detail + estimator (P1.2) + live apply/withdraw w/ proposed rate, ✓-Applied states, Inquire→thread (P3/P5); visible to applicants after FILLED |

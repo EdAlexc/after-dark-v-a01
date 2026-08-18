@@ -10,7 +10,6 @@ import {
   BarChart3,
   Users,
   PlusCircle,
-  Bell,
   Zap,
   TrendingUp,
   LogOut,
@@ -31,6 +30,7 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import ReviewDialog from '@/components/ReviewDialog';
 import { cn } from '@/lib/utils';
 import { type ApiGig, formatDate, formatRate, formatTimeRange } from '@/lib/gigs';
+import { NotificationsBell } from '@/components/NotificationsBell';
 
 // ─── Real data: the venue's own gigs (P1.3) ──────────────────────────────────
 
@@ -280,9 +280,7 @@ export default function VenueDashboard() {
                 Post a Gig
               </Button>
             </Link>
-            <button aria-label="Notifications" className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
-              <Bell className="w-4 h-4 text-white/60" />
-            </button>
+            <NotificationsBell role="venue" />
             <div className="w-9 h-9 rounded-xl bg-[#00FFCC]/20 border border-[#00FFCC]/30 flex items-center justify-center">
               <Building2 className="w-4 h-4 text-[#00FFCC]" />
             </div>

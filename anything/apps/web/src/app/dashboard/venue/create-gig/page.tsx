@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
+import Link from 'next/link';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   ChevronRight,
   ChevronDown,
   Check,
-  Bell,
   Building2,
   Users,
   Zap,
@@ -26,6 +26,7 @@ import { Switch } from '@/components/ui/switch';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { NotificationsBell } from '@/components/NotificationsBell';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -191,6 +192,10 @@ export default function CreateGigPage() {
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  // S17 (F3): the first Save Draft records the created row's id so every
+  // subsequent save PATCHes the SAME draft instead of INSERTing a duplicate,
+  // and Publish promotes that draft rather than creating a twin.
+  const [draftId, setDraftId] = useState<string | null>(null);
   const [form, setForm] = useState<GigFormData>({
     title: '',
     role_needed: '',
@@ -240,35 +245,44 @@ export default function CreateGigPage() {
   });
   const matchCount = form.role_needed && preview ? preview.matches.total : 0;
 
+  /** The wizard's real values, nothing fabricated (S17 F3): empty dates ride
+   *  as '' (the API stores NULL) and the title is never invented — Save Draft
+   *  stays disabled until a real title exists. */
+  const draftPayload = () => ({
+    title: form.title.trim(),
+    role_needed: form.role_needed,
+    description: form.description,
+    address: form.address,
+    start_time:
+      form.start_date && form.start_time ? `${form.start_date}T${form.start_time}` : '',
+    end_time: form.end_date && form.end_time ? `${form.end_date}T${form.end_time}` : '',
+    base_rate: Number(form.base_rate) || 0,
+    tips_included: form.tips_included,
+    age_requirement: form.age_requirement ? 21 : 18,
+  });
+
+  const canSaveDraft = form.title.trim().length >= 3;
+
   const handleSaveDraft = async () => {
+    if (!canSaveDraft) return;
     setSaving(true);
     try {
-      const startTime =
-        form.start_date && form.start_time
-          ? `${form.start_date}T${form.start_time}`
-          : '2026-01-01T00:00:00';
-      const endTime =
-        form.end_date && form.end_time
-          ? `${form.end_date}T${form.end_time}`
-          : '2026-01-01T06:00:00';
-
-      const res = await fetch('/api/gigs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: form.title || 'Untitled Gig',
-          role_needed: form.role_needed,
-          description: form.description,
-          address: form.address,
-          start_time: startTime,
-          end_time: endTime,
-          base_rate: Number(form.base_rate) || 0,
-          tips_included: form.tips_included,
-          age_requirement: form.age_requirement ? 21 : 18,
-          status: 'DRAFT',
-        }),
-      });
+      const res = draftId
+        ? await fetch(`/api/gigs/${draftId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(draftPayload()),
+          })
+        : await fetch('/api/gigs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...draftPayload(), status: 'DRAFT' }),
+          });
       if (!res.ok) throw new Error('Failed to save');
+      if (!draftId) {
+        const data = (await res.json()) as { gig?: { id?: string } };
+        if (data.gig?.id) setDraftId(String(data.gig.id));
+      }
       setLastSavedAt(new Date());
       toast.success('Draft saved!');
     } catch {
@@ -281,28 +295,38 @@ export default function CreateGigPage() {
   const handlePublish = async () => {
     setPublishing(true);
     try {
-      const startTime = `${form.start_date}T${form.start_time}`;
-      const endTime = `${form.end_date}T${form.end_time}`;
-      const res = await fetch('/api/gigs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: form.title,
-          role_needed: form.role_needed,
-          description: form.description,
-          address: form.address,
-          start_time: startTime,
-          end_time: endTime,
-          base_rate: Number(form.base_rate),
-          tips_included: form.tips_included,
-          age_requirement: form.age_requirement ? 21 : 18,
-          status: 'PUBLISHED',
-        }),
-      });
-      if (!res.ok) throw new Error('Failed to publish');
+      let res: Response;
+      if (draftId) {
+        // Promote the saved draft: content first, then the lifecycle
+        // transition (which runs the publish gates, geocoding and pushes).
+        res = await fetch(`/api/gigs/${draftId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(draftPayload()),
+        });
+        if (res.ok) {
+          res = await fetch(`/api/gigs/${draftId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'PUBLISHED' }),
+          });
+        }
+      } else {
+        res = await fetch('/api/gigs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...draftPayload(), status: 'PUBLISHED' }),
+        });
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? 'Failed to publish');
+      }
       toast.success('Gig published! Talent are being notified.');
-    } catch {
-      toast.error('Could not publish gig');
+    } catch (error) {
+      toast.error(error instanceof Error && error.message !== 'Failed to publish'
+        ? error.message
+        : 'Could not publish gig');
     } finally {
       setPublishing(false);
     }
@@ -320,9 +344,7 @@ export default function CreateGigPage() {
             <p className="text-xs text-white/40">Fill in details to attract top talent</p>
           </div>
           <div className="flex items-center gap-3">
-            <button aria-label="Notifications" className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
-              <Bell className="w-4 h-4 text-white/60" />
-            </button>
+            <NotificationsBell role="venue" />
             <div className="w-9 h-9 rounded-xl bg-[#00FFCC]/20 border border-[#00FFCC]/30 flex items-center justify-center">
               <Building2 className="w-4 h-4 text-[#00FFCC]" />
             </div>
@@ -860,7 +882,8 @@ export default function CreateGigPage() {
               variant="ghost"
               size="sm"
               onClick={handleSaveDraft}
-              disabled={saving}
+              disabled={saving || !canSaveDraft}
+              title={canSaveDraft ? undefined : 'Add a title (3+ characters) to save a draft'}
               className="text-white/40 hover:text-white text-xs flex items-center gap-1.5"
             >
               <Save className="w-3.5 h-3.5" />
@@ -868,8 +891,9 @@ export default function CreateGigPage() {
             </Button>
             {lastSavedAt && (
               <span className="text-[11px] text-white/20 hidden sm:block">
-                ✓ Draft saved{' '}
-                {lastSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                Draft saved{' '}
+                {lastSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} — in
+                Open Gigs; re-saving updates it
               </span>
             )}
           </div>
@@ -877,14 +901,29 @@ export default function CreateGigPage() {
           <div className="flex items-center gap-2">
             {step === STEPS.length && (
               <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-white/10 text-white/60 hover:text-white text-xs flex items-center gap-1.5"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  Preview
-                </Button>
+                {draftId ? (
+                  <Link href={`/gigs/${draftId}`} target="_blank">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-white/10 text-white/60 hover:text-white text-xs flex items-center gap-1.5"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      Preview
+                    </Button>
+                  </Link>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled
+                    title="Save a draft first — Preview opens your listing as talent will see it"
+                    className="border-white/10 text-white/60 hover:text-white text-xs flex items-center gap-1.5"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Preview
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   onClick={handlePublish}
