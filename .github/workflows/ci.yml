@@ -163,11 +163,14 @@ jobs:
         # ~83% reads / ~17% writes with every functional check green, which
         # decomposes to reads ≈0.90 (matching this T=1600 calibration) and
         # writes ≈0.5 at the read T; the slow tail (p95 2.7s, p99 4.8s, max
-        # 6.9s) is that write class. CONFIRMED by the first segmented run:
-        # apdex_write_score=0.891 at this T, apdex_read_score=0.860 at
-        # T=1600, no sample frustrated in either class (min 0.5) — so the
-        # decomposition above was right and both numbers are real floors,
-        # not guesses. Tighten T only against a fresh measurement.
+        # 6.9s) is that write class. CONFIRMED by the first segmented run
+        # (apdex_write_score=0.891 at this T, apdex_read_score=0.860, nothing
+        # frustrated in either class) — the decomposition above was right.
+        # With the apply spike since moved out of the read window, the same
+        # gate measures read 0.9988 / write 1.000 on a 663 ms median, so both
+        # bars now carry wide margins ON PURPOSE: runner variance dominates
+        # at this scale, and a tripwire that flakes gets ignored. Retighten
+        # only against several runs' data, never one good one.
         #
         # Both stay RELATIVE regression tripwires (identical ≥0.85 formula);
         # the §3 T=300 ms bar belongs to the pre-release load lab

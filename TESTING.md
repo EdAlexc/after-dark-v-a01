@@ -609,8 +609,12 @@ auth + preview-account secrets are generated per run.
   than silently skips when setup can't find a seeded shift). Thresholds: **Apdex ≥ 0.85
   per transaction class** — `apdex_read_score` @ the calibrated `APDEX_T=1600 ms` and
   `apdex_write_score` @ `APDEX_WRITE_T=4000 ms` — plus p99 < 4×T and error rate < 1%.
-  Measured on the first segmented CI run: **read 0.860 · write 0.891**, nothing frustrated
-  in either class. Reads and writes are scored separately because Apdex is defined per
+  Measured: **read 0.9988 · write 1.000** (median 663 ms, p95 1.41 s, max 2.58 s) once the
+  apply spike was moved out of the read window. With it overlapping, the same gate scored
+  read 0.860 / write 0.891 on a 1.15 s median — the contention, not the app, was the
+  difference. Both classes therefore sit on wide margins by design: runner variance is the
+  dominant term at this scale, so the CI bars are stable tripwires and the strict §3
+  numbers belong to the lab. Retighten only against several runs, never one good one. Reads and writes are scored separately because Apdex is defined per
   transaction type
   and these classes are not comparable here: a GET is one round trip, a write is auth
   guard + rate-limit + an RLS transaction + audit + notify. Pooling them measured the

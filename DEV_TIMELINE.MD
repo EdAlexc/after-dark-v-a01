@@ -1431,9 +1431,12 @@ Q3/Q4, all of E — ✅ **landed 2026-08-18** (875 tests green; typecheck/lint/b
   `style-src 'unsafe-inline'` (Tailwind/Next posture; script-src remains nonce +
   strict-dynamic, so style injection cannot become script execution).
 - ☑ **Gates verified green on real numbers** (not just "CI passed"): `apdex_read_score`
-  0.860 @ T=1600 and `apdex_write_score` 0.891 @ T=4000 — nothing frustrated in either
-  class, confirming the decomposition the split was built on — p99 4.96 s, ZAP **0
-  unaccepted High/Medium** across 9 alerts, verify-rls 23/23, zero-inline-media clean.
+  0.9988 @ T=1600 and `apdex_write_score` 1.000 @ T=4000 (median 663 ms, max 2.58 s), ZAP
+  **0 unaccepted High/Medium** across 9 alerts, verify-rls 23/23, zero-inline-media clean.
+  Those Apdex figures are the *post-fix* ones: on the first segmented run — with the apply
+  spike still inside the read window — the same gate scored read 0.860 / write 0.891 on a
+  1.15 s median, nothing frustrated in either class, which both confirmed the read/write
+  decomposition the split was built on and exposed the contention described next.
   One follow-through from those numbers: the read margin was only 0.010, because the
   apply spike's concurrent writes had pushed the read median from 0.93 s (what T=1600 was
   calibrated against) to 1.15 s. A gate that passes by a coin flip is one people learn to
