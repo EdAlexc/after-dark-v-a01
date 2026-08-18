@@ -161,8 +161,14 @@ export function setup() {
   const ownPublished = ownGigs.find((gig) => gig.status === 'PUBLISHED');
   const gigId = ownPublished ? ownPublished.id : anonGigs[0].id;
 
+  const burstable = (rows) =>
+    rows.find((row) => row.status === 'SCHEDULED' || row.status === 'IN_TRANSIT');
   let shifts = http.get(`${BASE_URL}/api/talent/shifts`, auth(talentCookie)).json('shifts') || [];
-  if (shifts.length === 0) {
+  // Key on a BURSTABLE shift, not on list emptiness: the S16 E2E gate runs
+  // earlier in this job and legitimately leaves the talent with a
+  // CHECKED_OUT shift from its own loop — some shift existing does not mean
+  // the check-in burst has one to drive.
+  if (!burstable(shifts)) {
     http.post(`${BASE_URL}/api/gigs/${gigId}/apply`, JSON.stringify({}), auth(talentCookie));
     const applications =
       http.get(`${BASE_URL}/api/venue/applications`, auth(venueCookie)).json('applications') || [];
@@ -176,7 +182,7 @@ export function setup() {
     }
     shifts = http.get(`${BASE_URL}/api/talent/shifts`, auth(talentCookie)).json('shifts') || [];
   }
-  const shift = shifts.find((row) => row.status === 'SCHEDULED' || row.status === 'IN_TRANSIT');
+  const shift = burstable(shifts);
   // S15: fail, don't skip — a silently-absent shift would let the §3.4 #4
   // idempotency assertion pass vacuously (found by the 2026-08-17 audit, Q3).
   if (!shift) {

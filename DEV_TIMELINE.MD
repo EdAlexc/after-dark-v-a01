@@ -1531,6 +1531,14 @@ production build on a disposable Neon branch; typecheck/lint/build clean)
   render-XSS case S15 promised this harness**: hostile content renders as inert text),
   the browse page (cards, filter panel → validated server params, the debounced `q`
   regression), and the create-gig wizard (all five F3 contracts).
+- ☑ **CI-stack truthing the first runs forced** (both latent S16 Gate-1b interactions,
+  surfaced by this branch's CI): the Lighthouse gate's sign-in now rides out one
+  rate-limit window (the runner IP shares the 10 sign-ins/min budget with the axe + E2E
+  gates — same policy as e2e/fixtures.ts), and the k6 setup keys its apply→hire chain on
+  a **burstable** (SCHEDULED/IN_TRANSIT) shift instead of list emptiness — the E2E loop
+  legitimately leaves talent.preview with a CHECKED_OUT shift, which made the old check
+  skip the chain and then fail the S15 no-vacuous-idempotency guard. (The S16 PR's own
+  CI run had already tripped this at the k6 step; it was merged before that surfaced.)
 - *Security gate met:* draft PATCH is owner-scoped under the existing matrix row with a
   404 for rivals; publish gates close the incomplete-listing hole; the behavioral XSS
   test complements the S15 structural gate.
