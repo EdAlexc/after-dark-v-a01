@@ -41,6 +41,8 @@ yarn build                  # production build (strict — ignoreBuildErrors rem
 yarn typecheck              # tsc --noEmit
 yarn lint                   # oxlint (workspace .oxlintrc.json), warnings fail
 yarn test                   # vitest run (879 tests as of S15)
+yarn test:e2e               # Playwright E2E journeys (S16, 17 tests) — needs a running
+                            #   production build + seeded DB (TESTING.md §3); CI Gate 1b
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:grants              # (re)apply scripts/grants.sql to the afterdark_app role (owner conn; S2)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
@@ -409,7 +411,8 @@ Verified findings (2026-07-24), ordered by severity — full remediation & test 
    2026-07-30 replaced it wholesale with the **better-auth twoFactor plugin** (sign-in
    challenge, one-time backup codes, trusted devices, account lockout — migration 0005).
 4. **Open redirect**: signin/signup do `window.location.href = callbackUrl` from query param.
-   Allowlist relative paths only.
+   Allowlist relative paths only. *(Fixed in P0 via `sanitizeCallbackUrl`; the
+   `/account/logout` holdout was found and fixed in S16, with an E2E guard.)*
 5. **postMessage to `'*'`** with session JWT in `/api/auth/expo-web-success` (platform file —
    constrain target origin when feasible).
 6. **No security headers** (CSP, HSTS, X-Frame-Options, Referrer-Policy…), `typescript.

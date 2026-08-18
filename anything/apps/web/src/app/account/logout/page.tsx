@@ -3,11 +3,14 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
+import { sanitizeCallbackUrl } from '@/lib/safe-redirect';
 import { purgeSwCaches } from '@/lib/pwa';
 
 function LogoutHandler() {
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/';
+  // A01 open-redirect guard: logout must not forward to attacker URLs any
+  // more than signin/signup do (this page was the one unsanitized holdout).
+  const callbackUrl = sanitizeCallbackUrl(searchParams.get('callbackUrl'));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

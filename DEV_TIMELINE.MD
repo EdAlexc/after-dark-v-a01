@@ -426,10 +426,12 @@
 4. ~~**S14 — money-path integrity**~~ / ~~**S15 — ZAP + gate truthing**~~ — ✅ both
    **landed 2026-08-18** (§7.3). Guardrail-§7 boxes closed across them: webhook signature
    + fee-tamper, ZAP baseline (CI Gate 4), audit-event coverage (machine-checked), the
-   zero-inline-media gate; the doc-drift list is empty. **Next dev slice: S16 — Playwright
-   E2E journeys** (alpha loop per role, DSR/G12 proofs, the PWA §6.6 real-browser check).
-5. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min — owed since 2026-07-31)
-   + **S16 E2E journeys** to close the G4/G12/PWA-§6.6 proof gaps.
+   zero-inline-media gate; the doc-drift list is empty. ~~**S16 — Playwright E2E
+   journeys**~~ — ✅ **landed 2026-08-18** (§7.3): the alpha loop per role, DSR/G12
+   proofs and the PWA §6.6 real-browser check all run in CI (alpha-gates Gate 1b), and
+   the `/account/logout` open-redirect holdout it uncovered is fixed. **Next dev slice:
+   S17 — frontend truth & component tests.**
+5. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min — owed since 2026-07-31).
 
 ---
 
@@ -1218,7 +1220,7 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 | # | Finding | Evidence |
 |---|---|---|
 | Q1 | **The frontend is entirely untested**: zero `.test.tsx` files across 28 pages + 53 components; `@testing-library/react` is installed and unused (only the `jest-dom` matchers are wired, for the sw.js sandbox). | `package.json`; repo-wide grep |
-| Q2 | **No Playwright E2E exists.** Playwright is installed but its only consumer is the axe smoke. Missing per CLAUDE.md §9: the alpha-loop journey per role, deep-link refresh survival, the **DSR export/delete E2E that is G4's own specified proof**, the signup/age-gate E2E (G12), and the real-browser PWA §6.6 check TESTING.md calls *"a release blocker, full stop"* — currently eyeball-only. | `scripts/axe-smoke.ts:21`; no spec files/config repo-wide |
+| Q2 | **No Playwright E2E exists.** Playwright is installed but its only consumer is the axe smoke. Missing per CLAUDE.md §9: the alpha-loop journey per role, deep-link refresh survival, the **DSR export/delete E2E that is G4's own specified proof**, the signup/age-gate E2E (G12), and the real-browser PWA §6.6 check TESTING.md calls *"a release blocker, full stop"* — currently eyeball-only. **→ CLOSED in S16** (2026-08-18): the `e2e/` Playwright suite runs as CI alpha-gates Gate 1b. | `scripts/axe-smoke.ts:21`; no spec files/config repo-wide |
 | Q3 | **The k6 CI gate is 5.3× looser than the documented bar**: CI passes `APDEX_T=1600` while `ci.yml`'s own comments and TESTING.md still say T=300 (the calibration is legitimate — 2-core co-hosted runner — but the docs contradict the invocation). Scenario coverage is 3 of 6: #2 apply-spike, **#5 noisy-neighbor (a tenant-fairness security property)** and #6 soak are missing; no p99 ≤ 1.2 s threshold; the check-in burst silently no-ops if setup yields no shift. The 500-VU/15-min lab and 2 h soak have **never been run**. | `.github/workflows/ci.yml:127-134`; `k6/alpha-gates.js:38-74,172` |
 | Q4 | Gates below their stated bars: axe `serious` warn-only (guardrail says 0 critical/serious — the ratchet is Backlog #13); Lighthouse LCP/TBT/FCP/JS-weight warn-only pending the RSC refactor; `numberOfRuns: 1`. Documented in-file, but the guardrail-§7 boxes don't close at these levels. | `scripts/axe-smoke.ts:117-133`; `lighthouserc.cjs:35-43` |
 | Q5 | **No RUM**: zero `web-vitals`/`useReportWebVitals` usage. The scorecard rows (CWV p75, per-endpoint Apdex, front-end JS error rate) are unmeasurable in production; guardrail-§7's "RUM dashboards live" box has no implementation at all. | repo-wide grep |
@@ -1341,7 +1343,7 @@ shippable, revertable) apply to every slice unchanged.
   replay-by-key returns the recorded outcome, cross-tenant 404, matrix denial, and the
   **explicit §6.4 fee-tamper test**: smuggled fee/gross/net fields never survive into the
   payout INSERT — the server split does), `upload` (4), account DELETE confirm gates (4),
-  `age-confirm` (3 — G12 pinned at the route until the S16 E2E exists).
+  `age-confirm` (3 — G12; the S16 E2E now carries the end-to-end proof).
 - ☑ A3 honesty: `talent/shifts` now exposes `payout_transfer_id` + `paymentsLive`;
   the talent Earnings card shows **"Simulated — payments not live"** whenever RELEASED
   money has no transfer behind it, and the venue Payouts Pending card carries the same
@@ -1444,12 +1446,50 @@ Q3/Q4, all of E — ✅ **landed 2026-08-18** (875 tests green; typecheck/lint/b
 
 #### Quality wave
 
-**S16 — E2E journeys (~3–4 d)** — closes Q2 + the G4/G12 proof gaps — *parallel with S14/S15*
-- Playwright on the CI stack (reuse the axe-smoke session plumbing): the alpha loop as one
-  journey per role; deep-link refresh survival; the **DSR export/delete E2E** (G4's
-  specified proof); signup + 18/21 age-gate E2E (G12); PWA install/offline/logout-cache-
-  purge in a real browser — automating the §6.6 check TESTING.md declares a release
-  blocker.
+**S16 — E2E journeys (~3–4 d)** — closes Q2 + the G4/G12 proof gaps —
+✅ **landed 2026-08-18** (879 vitest green; 17 Playwright tests green against a
+production build on a disposable Neon branch; typecheck/lint/build clean)
+- ☑ **Playwright harness on the CI stack** (`playwright.config.ts` + `e2e/`; CI runs it
+  as alpha-gates **Gate 1b** against the same running production server the sibling
+  gates share, reusing the axe gate's chromium). A `setup` project signs each preview
+  role in ONCE and the specs reuse the storage states — deliberate, because CI's
+  requests all leave one IP and the S1 limiter allows 10 sign-ins/min (the helper also
+  waits out a single 429). Serial (`workers: 1`) over one shared DB; every spec is
+  retry-safe via per-attempt unique identities (fresh emails, nonce'd gig titles and
+  cover messages) — proven by re-running the suite against the same dirty branch.
+- ☑ **The alpha loop as one journey** (`e2e/alpha-loop.spec.ts`): venue publishes through
+  the real 4-step wizard → talent finds it in browse, deep-links, checks the estimator's
+  −5% math ($200 × 4 h → $760 net), applies with a proposed rate → inquiry thread,
+  RATE_PROPOSAL, venue **Accept rate** → shortlist → hire → actor-scoped shift
+  transitions split across the two real actors (talent On-My-Way, venue Check-In, talent
+  Check-Out, propagating over SSE) → the HELD payout visible on both dashboards. The
+  FILLED-gig deep-link regression (hired talent still gets 200 after refresh) and the
+  21+ badge (G12's per-gig arm) are asserted inside the journey.
+- ☑ **Per-role journeys** (`e2e/admin-party.spec.ts`): a report filed by a real talent is
+  triaged OPEN → REVIEWING → CLOSED on the admin dashboard and lands in the audited CSV
+  export; non-admins get the access-required card; PARTY browses public surfaces and is
+  403-denied on principal writes (gig POST, apply).
+- ☑ **G4 DSR proof** (`e2e/dsr-age-gate.spec.ts`): fresh UI signup → export downloads
+  with attachment/no-store headers, the documented `meta.excluded`, zero credential
+  material — and `age_confirmed_at` stamped, so the G12 attestation proof rides the same
+  export → erasure demands BOTH factors (wrong password → 400 and the session stays
+  alive) → the dead-cookie canary 401s immediately → deleted credentials cannot sign
+  back in. G12's signup arm: Join stays disabled until the 18+ attestation is ticked.
+- ☑ **PWA §6.6 in a real browser** (`e2e/pwa.spec.ts`), automating TESTING.md §9's
+  manual release blocker: after authed browsing, Cache Storage holds ONLY the static
+  shell (precache list + `/_next/static/`) — never an `/api` response or app HTML;
+  offline navigation renders the AfterDark offline page and recovers; logout purges
+  caches and revokes the session; the manifest is installable (192/512 maskable icons,
+  standalone, every icon URL resolves).
+- ☑ **Deep links** (`e2e/deep-links.spec.ts`): gig detail and `/search?q=` survive
+  refresh; anonymous `/dashboard/*` redirects carry a safe callbackUrl. **Found and
+  fixed while writing it: `/account/logout` forwarded a RAW `callbackUrl`** — the one
+  unsanitized holdout of §7 finding 4 (signin/signup/two-factor all sanitize).
+  `sanitizeCallbackUrl` now guards it and the E2E asserts an absolute URL falls back to
+  `/` with the session revoked.
+- *Security gate met:* the suite runs entirely on preview-derived credentials (nothing
+  logged), the §6.6 negative check fails CI on any authed cache entry, and G4/G12 now
+  have executable end-to-end proofs instead of pinned route tests.
 
 **S17 — Frontend truth & component tests (~3 d)** — closes F2, F3, F7 + starts Q1
 - Replace the 8 dead bell buttons with the real `NotificationsBell`; wire or remove
