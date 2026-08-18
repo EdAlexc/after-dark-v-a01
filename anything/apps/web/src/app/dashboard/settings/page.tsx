@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { Button } from '@/components/ui/button';
 import {
-  Bell,
   Camera,
   CheckCircle2,
   Download,
@@ -27,6 +26,7 @@ import {
 import { toast } from 'sonner';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authClient } from '@/lib/auth-client';
+import { NotificationsBell } from '@/components/NotificationsBell';
 
 // ─── Section wrapper ───────────────────────────────────────────────────────────
 
@@ -715,9 +715,7 @@ function SettingsInner() {
             <p className="text-xs text-white/40">Manage your profile, security, and preferences</p>
           </div>
           <div className="flex items-center gap-3">
-            <button aria-label="Notifications" className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
-              <Bell className="w-4 h-4 text-white/60" />
-            </button>
+            <NotificationsBell role={role} />
           </div>
         </header>
 

@@ -66,6 +66,15 @@ export function buildGigsListQuery(filters: GigListQuery): BuiltQuery {
     values.push(`%${filters.role}%`);
     index++;
   }
+  if (filters.q) {
+    // S17 (F7): free-text search server-side — the same haystack the client
+    // filter used to scan within one page (title/venue/role/neighborhood),
+    // now across the whole listing. One parameter, reused per column.
+    text += ` AND (LOWER(g.title) LIKE $${index} OR LOWER(vp.venue_name) LIKE $${index}
+      OR LOWER(g.role_needed) LIKE $${index} OR LOWER(vp.neighborhood) LIKE $${index})`;
+    values.push(`%${filters.q.toLowerCase()}%`);
+    index++;
+  }
   if (filters.minRate !== undefined) {
     text += ` AND g.base_rate >= $${index}`;
     values.push(filters.minRate);

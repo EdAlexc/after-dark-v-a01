@@ -429,8 +429,11 @@
    zero-inline-media gate; the doc-drift list is empty. ~~**S16 — Playwright E2E
    journeys**~~ — ✅ **landed 2026-08-18** (§7.3): the alpha loop per role, DSR/G12
    proofs and the PWA §6.6 real-browser check all run in CI (alpha-gates Gate 1b), and
-   the `/account/logout` open-redirect holdout it uncovered is fixed. **Next dev slice:
-   S17 — frontend truth & component tests.**
+   the `/account/logout` open-redirect holdout it uncovered is fixed. ~~**S17 —
+   frontend truth & component tests**~~ — ✅ **landed 2026-08-18** (§7.3): dead controls
+   killed, draft integrity fixed (id-retaining PATCH re-save + publish gates), browse
+   search server-side, 24-component-test beachhead. **Next dev slices: S18 — RUM &
+   ops observability, then the S19 PARTY persona.**
 5. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min — owed since 2026-07-31).
 
 ---
@@ -1219,7 +1222,7 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 
 | # | Finding | Evidence |
 |---|---|---|
-| Q1 | **The frontend is entirely untested**: zero `.test.tsx` files across 28 pages + 53 components; `@testing-library/react` is installed and unused (only the `jest-dom` matchers are wired, for the sw.js sandbox). | `package.json`; repo-wide grep |
+| Q1 | **The frontend is entirely untested**: zero `.test.tsx` files across 28 pages + 53 components; `@testing-library/react` is installed and unused (only the `jest-dom` matchers are wired, for the sw.js sandbox). **→ STARTED in S17** (2026-08-18): 24 component tests across the 5 beachhead targets; the wider sweep continues opportunistically. | `package.json`; repo-wide grep |
 | Q2 | **No Playwright E2E exists.** Playwright is installed but its only consumer is the axe smoke. Missing per CLAUDE.md §9: the alpha-loop journey per role, deep-link refresh survival, the **DSR export/delete E2E that is G4's own specified proof**, the signup/age-gate E2E (G12), and the real-browser PWA §6.6 check TESTING.md calls *"a release blocker, full stop"* — currently eyeball-only. **→ CLOSED in S16** (2026-08-18): the `e2e/` Playwright suite runs as CI alpha-gates Gate 1b. | `scripts/axe-smoke.ts:21`; no spec files/config repo-wide |
 | Q3 | **The k6 CI gate is 5.3× looser than the documented bar**: CI passes `APDEX_T=1600` while `ci.yml`'s own comments and TESTING.md still say T=300 (the calibration is legitimate — 2-core co-hosted runner — but the docs contradict the invocation). Scenario coverage is 3 of 6: #2 apply-spike, **#5 noisy-neighbor (a tenant-fairness security property)** and #6 soak are missing; no p99 ≤ 1.2 s threshold; the check-in burst silently no-ops if setup yields no shift. The 500-VU/15-min lab and 2 h soak have **never been run**. | `.github/workflows/ci.yml:127-134`; `k6/alpha-gates.js:38-74,172` |
 | Q4 | Gates below their stated bars: axe `serious` warn-only (guardrail says 0 critical/serious — the ratchet is Backlog #13); Lighthouse LCP/TBT/FCP/JS-weight warn-only pending the RSC refactor; `numberOfRuns: 1`. Documented in-file, but the guardrail-§7 boxes don't close at these levels. | `scripts/axe-smoke.ts:117-133`; `lighthouserc.cjs:35-43` |
@@ -1234,12 +1237,12 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 | # | Finding | Evidence |
 |---|---|---|
 | F1 | **The PARTY persona is unreachable end-to-end.** Server side is complete and tested (all 63 authZ rows carry PARTY incl. a standing "never a principal" invariant; RLS is user-id-keyed so PARTY is least-privilege by construction). But: "Personal Account" signup writes a **`'PERSONAL'` sentinel nothing reads** → `role = NULL` forever; onboarding offers no PARTY card; **`/dashboard` 404s for every role** (no root router page); `DashboardSidebar` silently falls through to the **venue** nav for unknown roles; the post-2FA redirect hardcodes `/dashboard/talent`; there is **no venue directory** (API or page) though §6.3 requires "browse venues to book for private parties"; **no client can open a PARTY_INQUIRY** (`counterpart_user_id` deliberately never rides the client and no server-side resolver exists — the gig-detail Inquire button 403s for PARTY); no PARTY messages surface (`MessagesView` accepts only `'talent' \| 'venue'`). The venue *side* of inquiries works and renders the badge. | `account/signup/page.tsx:176,208`; `onboarding/page.tsx:7-30,54,86`; `app/dashboard/` (no `page.tsx`); `components/DashboardSidebar.tsx:30,476`; `account/two-factor/page.tsx:48`; `api/conversations/route.ts:97-102`; `components/MessagesView.tsx:53` |
-| F2 | **Dead controls on first-click surfaces**: bare notification-bell buttons with no `onClick` and no unread badge on **8 pages including both dashboard homes** (the real `NotificationsBell` is mounted on only 5 surfaces); create-gig "Preview" has no handler; landing "Talk to Sales" has no handler. | `dashboard/talent/page.tsx:256`; `dashboard/venue/page.tsx:282-283`; `create-gig/page.tsx:880-887`; `app/page.tsx:277-284` |
-| F3 | **Create-gig draft integrity**: Save Draft never retains the created id, so each click INSERTs a **duplicate draft**; blank fields are silently replaced with fabricated `2026-01-01` dates and "Untitled Gig"; "✓ Draft saved" implies autosave that doesn't exist (the wizard is lost on navigation). | `create-gig/page.tsx:243-278,862-873` |
+| F2 | **Dead controls on first-click surfaces**: bare notification-bell buttons with no `onClick` and no unread badge on **8 pages including both dashboard homes** (the real `NotificationsBell` is mounted on only 5 surfaces); create-gig "Preview" has no handler; landing "Talk to Sales" has no handler. **→ CLOSED in S17** (2026-08-18); the two profile-page "Preview" buttons remain, tracked with S20. | `dashboard/talent/page.tsx:256`; `dashboard/venue/page.tsx:282-283`; `create-gig/page.tsx:880-887`; `app/page.tsx:277-284` |
+| F3 | **Create-gig draft integrity**: Save Draft never retains the created id, so each click INSERTs a **duplicate draft**; blank fields are silently replaced with fabricated `2026-01-01` dates and "Untitled Gig"; "✓ Draft saved" implies autosave that doesn't exist (the wizard is lost on navigation). **→ CLOSED in S17** (2026-08-18): id-retaining PATCH re-save, real values only, honest label; restoring a draft INTO the wizard on return remains future work. | `create-gig/page.tsx:243-278,862-873` |
 | F4 | **Saved Talent is ephemeral**: plain `useState` — not even localStorage — lost on refresh, and filtered against the current results page only; "Message Saved Talent" links to messages with no talent context. | `dashboard/venue/browse/page.tsx:249,294-301,594-597` |
 | F5 | Notifications have no history surface — bell dropdown only, no View-all page. | `components/NotificationsBell.tsx:64-130` |
 | F6 | The gig **detail** page has no map (*"Map view coming soon"* — S10's `GigsMap` is browse-only) and no address show/hide toggle (wireframe p4); create-gig step 2 shows a dead "Map preview" box; the Location card disappears entirely for address-less gigs (neighborhood fallback unused). | `gigs/[id]/page.tsx:333-344`; `create-gig/page.tsx:464-469` |
-| F7 | Browse text-search only filters the currently fetched page on **both** browse surfaces — matching rows beyond page 1 are unfindable by text. | `dashboard/talent/browse/page.tsx:79`; `dashboard/venue/browse/page.tsx:277-286` |
+| F7 | Browse text-search only filters the currently fetched page on **both** browse surfaces — matching rows beyond page 1 are unfindable by text. **→ CLOSED in S17** (2026-08-18): server-side `q` on both list endpoints, debounced clients. | `dashboard/talent/browse/page.tsx:79`; `dashboard/venue/browse/page.tsx:277-286` |
 | F8 | The search-page "Message" CTA hardcodes `/dashboard/venue/messages` — wrong for talent, broken for PARTY. | `app/search/page.tsx:237` |
 | F9 | No notification preferences exist in Settings (the only opt-in in the app is the push toggle on the availability page) and no email preferences (nothing sends email — A2). | `dashboard/settings/page.tsx` section list |
 
@@ -1491,16 +1494,54 @@ production build on a disposable Neon branch; typecheck/lint/build clean)
   logged), the §6.6 negative check fails CI on any authed cache entry, and G4/G12 now
   have executable end-to-end proofs instead of pinned route tests.
 
-**S17 — Frontend truth & component tests (~3 d)** — closes F2, F3, F7 + starts Q1
-- Replace the 8 dead bell buttons with the real `NotificationsBell`; wire or remove
-  create-gig "Preview" and landing "Talk to Sales"; create-gig drafts retain their id
-  (PATCH on re-save), drop the fabricated dates/title, and the saved-state label matches
-  reality (or implement real autosave).
-- First component-test beachhead with the installed-but-unused `@testing-library/react`:
-  `NotificationsBell`, `DashboardSidebar` (all role variants), `MessagesView`, the browse
-  filter panel, the create-gig wizard steps.
-- Browse text-search goes server-side (`q` param on the list endpoints) or is visibly
-  labeled page-scoped (F7).
+**S17 — Frontend truth & component tests (~3 d)** — closes F2, F3, F7 + starts Q1 —
+✅ **landed 2026-08-18** (912 vitest green — 879 → 912; 17 Playwright green against a
+production build on a disposable Neon branch; typecheck/lint/build clean)
+- ☑ **F2 — dead controls killed**: all 8 decorative bells (7 identical dead buttons + the
+  talent dashboard's bell-shaped Link) replaced with the real `NotificationsBell` — every
+  dashboard header now shows the live unread badge; the bell's role union gained `admin`
+  with deep links falling back to `/dashboard/admin` (S19 widens it again for PARTY).
+  Create-gig **Preview is wired**: disabled until a draft exists, then opens
+  `/gigs/<draftId>` (the owner's real listing view) in a new tab. Landing **Talk to
+  Sales** links to `/contact`. Still dead, recorded: the two profile-page "Preview"
+  buttons (talent + venue) — they need a public-profile view, tracked with S20's
+  discovery work.
+- ☑ **F3 — draft integrity**: `PATCH /api/gigs/[id]` gained a strict draft-content arm
+  (DRAFT-only, audited as `gig.draft_update`; a body mixing content with `status` is
+  rejected so content writes never ride a transition's side effects). The wizard retains
+  the created id — first save POSTs, every re-save PATCHes the SAME row, and Publish
+  promotes the saved draft (content PATCH + status PATCH) instead of inserting a twin.
+  No more fabricated `2026-01-01`/`Untitled Gig` fillers: Save Draft is gated on a real
+  title (3+ chars) and empty dates ride as NULL. The saved-state label is honest
+  ("Draft saved 10:24 PM — in Open Gigs; re-saving updates it"). Bonus integrity fix:
+  the DRAFT→PUBLISHED transition now enforces the same publish gates as the POST path
+  (role + start/end + end>start) — previously an incomplete draft could be PATCHed
+  straight into the public listing.
+- ☑ **F7 — search is server-side**: validated `q` on `GET /api/gigs` and `GET /api/talent`
+  (same LIKE-substring haystack the client filter scanned, now across the whole listing);
+  both browse pages send it debounced (350 ms) with a page reset, and the client-side
+  text filter is gone — matches beyond page 1 are findable. Builder suites prove `q`
+  stays parameterized (SQLi cases extended to cover it).
+- ☑ **Q1 beachhead — 24 component tests** with the previously-unused
+  `@testing-library/react` (jsdom stubs for ResizeObserver/matchMedia added to setup):
+  `NotificationsBell` (badge/9+ cap, role-aware links incl. the admin fallback,
+  mark-all-read, signed-out degradation), `DashboardSidebar` (all three role navs with
+  pathname-driven group auto-expand, real session name, unread-badge sum),
+  `MessagesView` (thread list, recipient-only Accept-rate — **and the behavioral
+  render-XSS case S15 promised this harness**: hostile content renders as inert text),
+  the browse page (cards, filter panel → validated server params, the debounced `q`
+  regression), and the create-gig wizard (all five F3 contracts).
+- ☑ **CI-stack truthing the first runs forced** (both latent S16 Gate-1b interactions,
+  surfaced by this branch's CI): the Lighthouse gate's sign-in now rides out one
+  rate-limit window (the runner IP shares the 10 sign-ins/min budget with the axe + E2E
+  gates — same policy as e2e/fixtures.ts), and the k6 setup keys its apply→hire chain on
+  a **burstable** (SCHEDULED/IN_TRANSIT) shift instead of list emptiness — the E2E loop
+  legitimately leaves talent.preview with a CHECKED_OUT shift, which made the old check
+  skip the chain and then fail the S15 no-vacuous-idempotency guard. (The S16 PR's own
+  CI run had already tripped this at the k6 step; it was merged before that surfaced.)
+- *Security gate met:* draft PATCH is owner-scoped under the existing matrix row with a
+  404 for rivals; publish gates close the incomplete-listing hole; the behavioral XSS
+  test complements the S15 structural gate.
 
 **S18 — RUM & ops observability (~2 d)** — closes Q5, D6 — *parallel with S17*
 - `useReportWebVitals` → a first-party beacon (G11-clean, no third party) into a small

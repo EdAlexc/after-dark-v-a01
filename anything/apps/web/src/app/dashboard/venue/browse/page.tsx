@@ -1,13 +1,12 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   Search,
   MapPin,
   DollarSign,
-  Bell,
   Building2,
   Music,
   X,
@@ -24,6 +23,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { cn } from '@/lib/utils';
+import { NotificationsBell } from '@/components/NotificationsBell';
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 
@@ -242,6 +242,16 @@ function TalentCard({
 
 export default function VenueBrowsePage() {
   const [search, setSearch] = useState('');
+  // S17 (F7): text search is a server-side query param now — matches beyond
+  // the current page are findable. Debounced so typing doesn't spam the API.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [search]);
   const [rateRange, setRateRange] = useState<number[]>(RATE_RANGE_DEFAULT);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [selectedNeighborhoods, setSelectedNeighborhoods] = useState<string[]>([]);
@@ -257,6 +267,7 @@ export default function VenueBrowsePage() {
   if (selectedRoles.length > 0) params.set('roles', selectedRoles.join(','));
   if (selectedNeighborhoods.length > 0)
     params.set('neighborhoods', selectedNeighborhoods.join(','));
+  if (debouncedSearch) params.set('q', debouncedSearch);
   if (page > 1) params.set('page', String(page));
   const queryString = params.toString();
 
@@ -272,14 +283,9 @@ export default function VenueBrowsePage() {
 
   const allTalent = useMemo(() => data?.talent ?? [], [data]);
 
-  // Multi-selects are server-side since S5 — only the free-text quick filter
-  // still refines within the fetched page.
-  const filtered = allTalent.filter((t) => {
-    if (!search) return true;
-    const haystack =
-      `${t.stage_name} ${t.primary_role ?? ''} ${(t.genres_vibes ?? []).join(' ')}`.toLowerCase();
-    return haystack.includes(search.toLowerCase());
-  });
+  // Since S17 every filter — including text search — is server-side; the
+  // fetched page IS the result set.
+  const filtered = allTalent;
 
   const toggleRole = (r: string) => {
     setSelectedRoles((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
@@ -314,9 +320,7 @@ export default function VenueBrowsePage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button aria-label="Notifications" className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
-              <Bell className="w-4 h-4 text-white/60" />
-            </button>
+            <NotificationsBell role="venue" />
             <div className="w-9 h-9 rounded-xl bg-[#00FFCC]/20 border border-[#00FFCC]/30 flex items-center justify-center">
               <Building2 className="w-4 h-4 text-[#00FFCC]" />
             </div>

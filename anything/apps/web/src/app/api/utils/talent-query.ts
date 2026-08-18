@@ -55,6 +55,14 @@ export function buildTalentListQuery(filters: TalentListQuery): BuiltQuery {
     values.push(`%${filters.role}%`);
     index++;
   }
+  if (filters.q) {
+    // S17 (F7): free-text search server-side — the same haystack the client
+    // filter scanned within one page (stage name/role/genres), plus bio.
+    text += ` AND (LOWER(stage_name) LIKE $${index} OR LOWER(primary_role) LIKE $${index}
+      OR LOWER(COALESCE(bio, '')) LIKE $${index} OR LOWER(genres_vibes::text) LIKE $${index})`;
+    values.push(`%${filters.q.toLowerCase()}%`);
+    index++;
+  }
   if (filters.minRate !== undefined) {
     // Rate-range overlap: the talent's band must reach the requested floor.
     text += ` AND hourly_rate_max IS NOT NULL AND hourly_rate_max >= $${index}`;

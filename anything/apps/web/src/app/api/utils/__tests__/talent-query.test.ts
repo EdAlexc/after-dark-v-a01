@@ -5,6 +5,18 @@ import { TalentListQuerySchema } from '../schemas';
 const EMPTY = TalentListQuerySchema.parse({});
 
 describe('buildTalentListQuery', () => {
+  it('q lands as one lowercased LIKE param across name/role/bio/genres (S17 F7)', () => {
+    const { text, values } = buildTalentListQuery(TalentListQuerySchema.parse({ q: 'TECHNO' }));
+    expect(values[0]).toBe('%techno%');
+    expect(text).toContain('LOWER(stage_name) LIKE $1');
+    expect(text).toContain('LOWER(primary_role) LIKE $1');
+    expect(text).toContain("LOWER(COALESCE(bio, '')) LIKE $1");
+    expect(text).toContain('LOWER(genres_vibes::text) LIKE $1');
+    // q must never reach the SQL text itself.
+    expect(text).not.toContain('techno');
+  });
+
+
   it('only lists profiles with a stage name (unpublished-profile guard)', () => {
     const { text } = buildTalentListQuery(EMPTY);
     expect(text).toContain("stage_name IS NOT NULL AND stage_name <> ''");

@@ -20,11 +20,21 @@ interface Notification {
   created_at: string;
 }
 
+/** Roles the bell can be mounted under (S17 — settings may pass `admin`;
+ *  S19 widens this again for PARTY). */
+export type BellRole = 'talent' | 'venue' | 'admin';
+
 /** Human line + destination per notification kind. */
-function describe(notification: Notification, role: 'talent' | 'venue'): {
+function describe(notification: Notification, role: BellRole): {
   text: string;
   href: string;
 } {
+  // Admin has no messages/applicants surfaces — every deep link falls back
+  // to the moderation dashboard rather than a 404.
+  if (role === 'admin') {
+    const text = describe(notification, 'talent').text;
+    return { text, href: '/dashboard/admin' };
+  }
   const payload = notification.payload ?? {};
   const gigTitle = typeof payload.gigTitle === 'string' ? payload.gigTitle : 'a gig';
   switch (notification.kind) {
@@ -61,7 +71,7 @@ function describe(notification: Notification, role: 'talent' | 'venue'): {
   }
 }
 
-export function NotificationsBell({ role }: { role: 'talent' | 'venue' }) {
+export function NotificationsBell({ role }: { role: BellRole }) {
   const [open, setOpen] = useState(false);
   const qc = useQueryClient();
 

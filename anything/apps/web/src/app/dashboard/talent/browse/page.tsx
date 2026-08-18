@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
@@ -14,7 +14,6 @@ import {
   Map,
   ChevronLeft,
   ChevronRight,
-  Bell,
   X,
   Loader2,
   AlertTriangle,
@@ -26,6 +25,7 @@ import { Slider } from '@/components/ui/slider';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
+import { NotificationsBell } from '@/components/NotificationsBell';
 
 // MapLibre touches `window` at module scope — client-only load (S10).
 const GigsMap = dynamic(() => import('@/components/GigsMap'), { ssr: false });
@@ -55,6 +55,8 @@ interface BrowseFilters {
   payRange: number[];
   neighborhoods: string[];
   roles: string[];
+  /** Debounced free-text search — server-side since S17 (F7). */
+  q: string;
   page: number;
 }
 
@@ -71,16 +73,9 @@ function gigsQueryString(filters: BrowseFilters): string {
   if (filters.payRange[1] < PAY_RANGE_DEFAULT[1]) params.set('maxRate', String(filters.payRange[1]));
   if (filters.neighborhoods.length > 0) params.set('neighborhoods', filters.neighborhoods.join(','));
   if (filters.roles.length > 0) params.set('roles', filters.roles.join(','));
+  if (filters.q) params.set('q', filters.q);
   if (filters.page > 1) params.set('page', String(filters.page));
   return params.toString();
-}
-
-/** Free-text quick filter within the fetched page (the box above the list). */
-function matchesClientFilters(gig: ApiGig, _filters: BrowseFilters, search: string): boolean {
-  if (!search) return true;
-  const haystack =
-    `${gig.title} ${gig.venue_name ?? ''} ${gig.role_needed ?? ''} ${gig.venue_neighborhood ?? ''}`.toLowerCase();
-  return haystack.includes(search.toLowerCase());
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -191,6 +186,16 @@ function GigCard({ gig }: { gig: ApiGig }) {
 
 export default function BrowseGigsPage() {
   const [search, setSearch] = useState('');
+  // S17 (F7): text search is a server-side query param now — matches beyond
+  // the current page are findable. Debounced so typing doesn't spam the API.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [search]);
   const [tonightOnly, setTonightOnly] = useState(false);
   const [payRange, setPayRange] = useState<number[]>(PAY_RANGE_DEFAULT);
   const [selectedNeighborhoods, setSelectedNeighborhoods] = useState<string[]>([]);
@@ -204,6 +209,7 @@ export default function BrowseGigsPage() {
     payRange,
     neighborhoods: selectedNeighborhoods,
     roles: selectedRoles,
+    q: debouncedSearch,
     page,
   };
   const queryString = gigsQueryString(filters);
@@ -220,11 +226,9 @@ export default function BrowseGigsPage() {
   });
 
   const gigs = useMemo(() => data?.gigs ?? [], [data]);
-  const filtered = useMemo(
-    () => gigs.filter((gig) => matchesClientFilters(gig, filters, search)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [gigs, search, selectedNeighborhoods, selectedRoles]
-  );
+  // Since S17 every filter — including text search — is server-side; the
+  // fetched page IS the result set.
+  const filtered = gigs;
   const hotGigs = filtered.filter((gig) => gigUrgency(gig) === 'HOT').slice(0, 4);
 
   const resetToFirstPage = () => setPage(1);
@@ -261,9 +265,7 @@ export default function BrowseGigsPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button aria-label="Notifications" className="relative w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors border border-white/5">
-              <Bell className="w-4 h-4 text-white/60" />
-            </button>
+            <NotificationsBell role="talent" />
           </div>
         </header>
 

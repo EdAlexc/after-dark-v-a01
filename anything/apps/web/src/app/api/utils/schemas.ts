@@ -86,6 +86,37 @@ export const GigStatusSchema = z.enum([
 /** Owner-only status transition body for PATCH /api/gigs/[id]. */
 export const GigStatusUpdateSchema = z.object({ status: GigStatusSchema });
 
+/**
+ * Draft-content re-save (S17 F3): the wizard's Save Draft PATCHes the SAME
+ * row instead of INSERTing a duplicate. Mirrors GigCreateSchema minus
+ * `status` and minus the publish gates — drafts may be incomplete; the
+ * gates run when the draft is published (see the [id] PATCH handler).
+ * Strict on purpose: a body mixing content with `status` is rejected, so a
+ * content write can never ride along with a lifecycle transition's side
+ * effects (geocode, KPI capture, hot-gig push).
+ */
+export const GigDraftUpdateSchema = z.strictObject({
+  title: shortText(120).min(3),
+  role_needed: shortText(80),
+  description: shortText(5000).optional().default(''),
+  address: shortText(200).optional(),
+  start_time: timestamp,
+  end_time: timestamp,
+  base_rate: rate,
+  tips_included: z.boolean().optional().default(false),
+  age_requirement: z
+    .union([z.literal(18), z.literal(21)])
+    .optional()
+    .default(18),
+});
+
+/** PATCH /api/gigs/[id] body: EITHER a lifecycle transition OR a draft
+ *  re-save — both strict, so the arms cannot be mixed or silently stripped. */
+export const GigPatchSchema = z.union([
+  z.strictObject({ status: GigStatusSchema }),
+  GigDraftUpdateSchema,
+]);
+
 /** Path id for /api/gigs/[id] — reject non-UUIDs before they reach Postgres. */
 export const GigIdSchema = z.string().uuid();
 
@@ -141,6 +172,10 @@ export const GigListQuerySchema = z
     roles: csvList(10, 80).optional(),
     minRate: rate.optional(),
     maxRate: rate.optional(),
+    /** Free-text search (S17 F7) — server-side so matches beyond the current
+     *  page are findable; LIKE-substring over title/venue/role/neighborhood,
+     *  same semantics the client filter used to apply to one page. */
+    q: shortText(120).optional(),
     tonightOnly: z
       .enum(['true', 'false'])
       .optional()
@@ -165,6 +200,8 @@ export const TalentListQuerySchema = z
     roles: csvList(10, 80).optional(),
     minRate: rate.optional(),
     maxRate: rate.optional(),
+    /** Free-text search (S17 F7) — stage name/role/bio/genres, server-side. */
+    q: shortText(120).optional(),
     page,
   })
   .refine(
@@ -448,6 +485,7 @@ export const AccountDeleteSchema = z.object({
 
 export type RoleSelection = z.infer<typeof RoleSelectionSchema>;
 export type GigCreate = z.infer<typeof GigCreateSchema>;
+export type GigDraftUpdate = z.infer<typeof GigDraftUpdateSchema>;
 export type GigListQuery = z.infer<typeof GigListQuerySchema>;
 export type GigStatus = z.infer<typeof GigStatusSchema>;
 export type TalentListQuery = z.infer<typeof TalentListQuerySchema>;

@@ -27,6 +27,8 @@ interface DbState {
   updateReturns?: Record<string, unknown>[] | null;
   /** Row returned for the caller's own-application lookup (TALENT sessions). */
   application?: Record<string, unknown> | null;
+  /** Rows returned by the S17 draft-content UPDATE. */
+  draftUpdateReturns?: Record<string, unknown>[] | null;
 }
 
 function gigRow(overrides: Record<string, unknown> = {}) {
@@ -55,6 +57,10 @@ function wireSql(state: DbState) {
     if (text.includes('FROM applications a')) return state.application ? [state.application] : [];
     if (text.includes('UPDATE gigs SET status')) {
       return state.updateReturns ?? [{ ...state.gig, status: 'CHANGED' }];
+    }
+    if (text.includes('UPDATE gigs SET')) {
+      // S17 draft-content re-save (SET title = …, pinned to status DRAFT).
+      return state.draftUpdateReturns ?? [{ ...state.gig }];
     }
     if (text.includes('INSERT INTO audit_logs')) return [];
     return [];
@@ -219,5 +225,87 @@ describe('PATCH /api/gigs/[id] (status transitions)', () => {
     wireSql({ gig: gigRow(), role: 'VENUE', updateReturns: [] });
     const res = await PATCH(...patch(GIG_ID, { status: 'FILLED' }));
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── S17 (F3): draft-content re-save through PATCH ───────────────────────────
+
+const DRAFT_CONTENT = {
+  title: 'Rooftop Sunset Set',
+  role_needed: 'DJ / Producer',
+  description: 'Golden hour vibes',
+  start_time: '',
+  end_time: '',
+  base_rate: 0,
+  tips_included: false,
+  age_requirement: 18,
+};
+
+describe('PATCH /api/gigs/[id] — draft re-save (S17)', () => {
+  it('updates a DRAFT in place and audits gig.draft_update', async () => {
+    mocks.getSession.mockResolvedValue(OWNER);
+    wireSql({
+      role: 'VENUE',
+      gig: gigRow({ status: 'DRAFT' }),
+      draftUpdateReturns: [gigRow({ status: 'DRAFT', title: 'Rooftop Sunset Set' })],
+    });
+    const res = await PATCH(...patch(GIG_ID, DRAFT_CONTENT));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.gig.title).toBe('Rooftop Sunset Set');
+    const calls = mocks.sql.mock.calls.map((call) =>
+      Array.isArray(call[0]) ? (call[0] as string[]).join('') : String(call[0])
+    );
+    expect(calls.some((text) => text.includes("status = 'DRAFT'"))).toBe(true);
+    expect(calls.some((text) => text.includes('INSERT INTO audit_logs'))).toBe(true);
+  });
+
+  it('rejects content edits on a non-DRAFT gig (400)', async () => {
+    mocks.getSession.mockResolvedValue(OWNER);
+    wireSql({ role: 'VENUE', gig: gigRow({ status: 'PUBLISHED' }) });
+    const res = await PATCH(...patch(GIG_ID, DRAFT_CONTENT));
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a body mixing content with a status transition (strict union)', async () => {
+    mocks.getSession.mockResolvedValue(OWNER);
+    wireSql({ role: 'VENUE', gig: gigRow({ status: 'DRAFT' }) });
+    const res = await PATCH(...patch(GIG_ID, { ...DRAFT_CONTENT, status: 'PUBLISHED' }));
+    expect(res.status).toBe(400);
+  });
+
+  it("404s a rival venue trying to re-save someone else's draft", async () => {
+    mocks.getSession.mockResolvedValue(STRANGER);
+    wireSql({ role: 'VENUE', gig: gigRow({ status: 'DRAFT' }) });
+    const res = await PATCH(...patch(GIG_ID, DRAFT_CONTENT));
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses to publish an incomplete draft (publish gates on the transition)', async () => {
+    mocks.getSession.mockResolvedValue(OWNER);
+    wireSql({
+      role: 'VENUE',
+      gig: gigRow({ status: 'DRAFT', role_needed: 'DJ', start_time: null, end_time: null }),
+    });
+    const res = await PATCH(...patch(GIG_ID, { status: 'PUBLISHED' }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(String(body.error)).toContain('required to publish');
+  });
+
+  it('publishes a complete draft through the same transition', async () => {
+    mocks.getSession.mockResolvedValue(OWNER);
+    wireSql({
+      role: 'VENUE',
+      gig: gigRow({
+        status: 'DRAFT',
+        role_needed: 'DJ / Producer',
+        start_time: '2026-09-01T22:00:00Z',
+        end_time: '2026-09-02T02:00:00Z',
+      }),
+      updateReturns: [gigRow({ status: 'PUBLISHED' })],
+    });
+    const res = await PATCH(...patch(GIG_ID, { status: 'PUBLISHED' }));
+    expect(res.status).toBe(200);
   });
 });

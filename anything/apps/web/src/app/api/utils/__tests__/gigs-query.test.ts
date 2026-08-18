@@ -40,6 +40,25 @@ describe('buildGigsListQuery', () => {
     expect(values).toEqual(['PUBLISHED', 100, GIG_PAGE_SIZE + 1, 0]);
   });
 
+  it('q lands as one lowercased LIKE param across the search columns (S17 F7)', () => {
+    const { text, values } = buildGigsListQuery(GigListQuerySchema.parse({ q: 'Deep House' }));
+    expect(values).toEqual(['PUBLISHED', '%deep house%', GIG_PAGE_SIZE + 1, 0]);
+    expect(text).toContain('LOWER(g.title) LIKE $2');
+    expect(text).toContain('LOWER(vp.venue_name) LIKE $2');
+    expect(text).toContain('LOWER(g.role_needed) LIKE $2');
+    expect(text).toContain('LOWER(vp.neighborhood) LIKE $2');
+  });
+
+  it('q composes with other filters without breaking placeholder numbering', () => {
+    const { text, values } = buildGigsListQuery(
+      GigListQuerySchema.parse({ role: 'DJ', q: 'nebula', minRate: '50' })
+    );
+    expect(values).toEqual(['PUBLISHED', '%DJ%', '%nebula%', 50, GIG_PAGE_SIZE + 1, 0]);
+    expect(text).toContain('LOWER(g.title) LIKE $3');
+    expect(text).toContain('base_rate >= $4');
+    expect(text).toContain('LIMIT $5 OFFSET $6');
+  });
+
   it('never interpolates user input into SQL text (SQLi regression)', () => {
     const payloads = [
       "'; DROP TABLE gigs; --",
@@ -49,7 +68,11 @@ describe('buildGigsListQuery', () => {
     ];
     for (const payload of payloads) {
       const { text, values } = buildGigsListQuery(
-        GigListQuerySchema.parse({ neighborhood: payload.slice(0, 80), role: payload.slice(0, 80) })
+        GigListQuerySchema.parse({
+          neighborhood: payload.slice(0, 80),
+          role: payload.slice(0, 80),
+          q: payload.slice(0, 80),
+        })
       );
       expect(text).not.toContain(payload);
       expect(values).toContain(`%${payload.slice(0, 80)}%`);

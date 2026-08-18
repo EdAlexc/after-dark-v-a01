@@ -74,7 +74,7 @@ are not live (`src/lib/legal.ts` `ALPHA_NOTICE`), so the briefing and the produc
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 879 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 912 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
@@ -144,6 +144,12 @@ Coverage highlights by area:
   (idempotency replay returns the recorded outcome; the **explicit fee-tamper test**:
   smuggled fee/gross/net fields never reach the payout INSERT), `upload`, the account
   DELETE two-factor confirm gates, and `age-confirm` (G12 pinned until the S16 E2E).
+- **Component suites (S17, Q1 beachhead)**: `src/components/__tests__/` +
+  `src/app/dashboard/**/__tests__/*.test.tsx` — `NotificationsBell`, `DashboardSidebar`
+  (all role variants), `MessagesView` (incl. the behavioral render-XSS case: hostile
+  message content renders as inert text), the browse page (filter panel → server params,
+  debounced `q`), and the create-gig wizard (the F3 draft-integrity contracts). Shared
+  harness in `test/component-utils.tsx` (fresh QueryClient + per-URL fetch mock).
 - **E2E journeys (S16)**: `e2e/*.spec.ts` (Playwright, serial, storage-state sessions) —
   the alpha loop as one two-actor journey (wizard publish → browse/deep-link → estimator
   math → apply → rate proposal/accept → shortlist/hire → On-My-Way/Check-In/Check-Out →
@@ -220,9 +226,9 @@ script and still owns what E2E can't judge (visual polish, copy, real-device fee
 
 **Talent loop** (sign in as `talent.preview@…`)
 - Browse Gigs hits the real API: only PUBLISHED gigs, HOT/NEW badges derived from times,
-  filters map to validated query params (tonight toggle, pay range, single role/neighborhood
-  server-side; multi-select + search refine client-side), pagination Prev/Next appears when
-  a page overflows (12/page).
+  filters map to validated query params (tonight toggle, pay range, multi-select
+  neighborhoods/roles as CSV since S5, free-text search as debounced `q` since S17 — all
+  server-side), pagination Prev/Next appears when a page overflows (12/page).
 - Card → detail → estimator as above. **Submit Application is live**: apply with a proposed
   rate + cover message → "✓ Applied" state; withdraw and re-apply revives the same row.
 - Dashboard is fully real: stats (earnings from released payouts, active applications,
@@ -522,7 +528,6 @@ What it asserts, and why each matters:
   enforced.
 - Legal copy is written to match what the code actually does, but has **not been reviewed by
   counsel**; that is required before general availability, not before alpha.
-- Browse text-search filters within the fetched page (server-side `q` lands with S17).
 
 ## 9. PWA verification (P10.1–P10.2, added 2026-07-31)
 

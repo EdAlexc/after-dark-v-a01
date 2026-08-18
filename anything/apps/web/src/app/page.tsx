@@ -286,13 +286,15 @@ export default function LandingPage() {
                   Get Started
                 </Button>
               </Link>
-              <Button
-                size="lg"
-                variant="outline"
-                className="w-full sm:w-auto border-black/20 hover:bg-black/5 h-16 px-12 text-xl font-bold rounded-full"
-              >
-                Talk to Sales
-              </Button>
+              <Link href="/contact">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full sm:w-auto border-black/20 hover:bg-black/5 h-16 px-12 text-xl font-bold rounded-full"
+                >
+                  Talk to Sales
+                </Button>
+              </Link>
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@ import sql from '@/app/api/utils/sql';
 import { authGuard } from '@/app/api/utils/auth-guard';
 import { auditLogger } from '@/app/api/utils/audit';
 import { parseBody } from '@/app/api/utils/validation';
-import { GigIdSchema, GigStatusUpdateSchema, type GigStatus } from '@/app/api/utils/schemas';
+import { GigIdSchema, GigPatchSchema, type GigStatus } from '@/app/api/utils/schemas';
 import { GIG_TRANSITIONS, canTransition } from '@/app/api/utils/gig-lifecycle';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
@@ -100,8 +100,10 @@ export const GET = withRoute('gigs.detail', async (_request, context) => {
 });
 
 /**
- * Owner-only status transition (P1.3 lifecycle). Idempotent: re-sending the
- * current status is a no-op 200. Every real transition is audited.
+ * Owner-only gig PATCH (P1.3 lifecycle + S17 F3 draft re-save). The body is
+ * EITHER a status transition (idempotent: re-sending the current status is a
+ * no-op 200) OR a draft-content update — the wizard's Save Draft updates the
+ * SAME row instead of INSERTing a duplicate. Both arms are audited.
  */
 export const PATCH = withRoute('gigs.status', async (request, context) => {
   const user = await authGuard.requireRole('VENUE');
@@ -110,13 +112,52 @@ export const PATCH = withRoute('gigs.status', async (request, context) => {
   const params = await context.params;
   const parsed = GigIdSchema.safeParse(params?.id);
   if (!parsed.success) throw ApiError.notFound();
-  const { status: nextStatus } = await parseBody(request, GigStatusUpdateSchema);
+  const body = await parseBody(request, GigPatchSchema);
 
   const row = await loadGig(parsed.data, user);
   if (!row) throw ApiError.notFound();
   // Tenant isolation: a non-owner venue gets the same 404 as a missing gig.
   if (user.role !== 'ADMIN' && row.venue_user_id !== user.id) throw ApiError.notFound();
 
+  if (!('status' in body)) {
+    // ── Draft-content re-save (S17 F3) ────────────────────────────────────
+    // Content edits are DRAFT-only: published listings change through the
+    // lifecycle, never under applicants' feet. The status pin in the WHERE
+    // doubles as the concurrency guard.
+    if (row.status !== 'DRAFT') {
+      throw ApiError.badRequest('Only drafts can be re-saved — use a status transition instead');
+    }
+    const updated = await withRlsContext<Record<string, unknown>[]>(
+      user,
+      sql`
+        UPDATE gigs SET
+          title = ${body.title},
+          role_needed = ${body.role_needed},
+          description = ${body.description},
+          address = ${body.address?.trim() || null},
+          start_time = ${body.start_time},
+          end_time = ${body.end_time},
+          base_rate = ${body.base_rate},
+          tips_included = ${body.tips_included},
+          age_requirement = ${body.age_requirement}
+        WHERE id = ${parsed.data} AND status = 'DRAFT'
+        RETURNING *
+      `
+    );
+    if (updated.length === 0) {
+      throw ApiError.badRequest('Gig was modified concurrently — reload and retry');
+    }
+    await auditLogger.record({
+      actorId: user.id,
+      action: 'gig.draft_update',
+      entityType: 'gig',
+      entityId: parsed.data,
+      metadata: { status: 'DRAFT' },
+    });
+    return Response.json(toPublicGig({ ...row, ...updated[0] } as GigDetailRow, true));
+  }
+
+  const nextStatus = body.status;
   const currentStatus = row.status;
   if (currentStatus === nextStatus) return Response.json(toPublicGig(row, true));
 
@@ -126,6 +167,21 @@ export const PATCH = withRoute('gigs.status', async (request, context) => {
       `Cannot move a ${currentStatus} gig to ${nextStatus}` +
         (allowed.length > 0 ? ` (allowed: ${allowed.join(', ')})` : ' (terminal status)')
     );
+  }
+
+  // Publishing gates (S17): PATCH-publishing must meet the same bar the POST
+  // path enforces via GigCreateSchema — drafts may be incomplete, public
+  // listings may not.
+  if (nextStatus === 'PUBLISHED') {
+    const roleNeeded = typeof row.role_needed === 'string' ? row.role_needed : '';
+    const start = row.start_time ? Date.parse(String(row.start_time)) : NaN;
+    const end = row.end_time ? Date.parse(String(row.end_time)) : NaN;
+    if (roleNeeded.length < 2 || Number.isNaN(start) || Number.isNaN(end)) {
+      throw ApiError.badRequest('A role, start time and end time are required to publish');
+    }
+    if (end <= start) {
+      throw ApiError.badRequest('End time must be after the start time to publish');
+    }
   }
 
   // Optimistic concurrency: the status must still be what we validated against.
