@@ -78,12 +78,23 @@ export const options = {
     // §3.4 #2 — hot-gig application spike (S15): apply→withdraw cycles from
     // an authed talent; sized to stay inside the 30/h apply limit so the
     // gate measures latency + correctness, not 429 behavior.
+    //
+    // Runs AFTER the 70 s read window rather than inside it. Overlapping it
+    // cost the reads real headroom on this 2-core box — median drifted
+    // 0.93 s (the run APDEX_T=1600 was calibrated against) to 1.15 s, and
+    // apdex_read_score landed at 0.860 against a 0.85 floor. A gate that
+    // passes by 0.010 is a coin flip on a noisy runner, and a flaky
+    // security gate is one people learn to ignore. Separating the windows
+    // restores the conditions the read T was measured under and gives each
+    // class an uncontended signal — which is what a REGRESSION tripwire
+    // wants. Concurrency at scale is the load lab's job (TESTING.md §11),
+    // where 500 VUs make a real spike out of this shape.
     apply_spike: {
       executor: 'per-vu-iterations',
       exec: 'applySpike',
       vus: 1,
       iterations: 8,
-      startTime: '15s',
+      startTime: '75s',
     },
     // §3.4 #4 — check-in double-tap burst (idempotency under repetition).
     checkin_burst: {
