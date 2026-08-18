@@ -17,3 +17,8 @@ next-env.d.ts
 
 # Vercel CLI link state (machine-local)
 .vercel
+
+# Playwright E2E (S16) — per-run session state and reports
+/e2e/.auth/
+/e2e/.results/
+/playwright-report/

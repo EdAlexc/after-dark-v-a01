@@ -48,8 +48,10 @@ jobs:
     # database secrets exist in CI. The app is migrated, seeded, built, and
     # served, then gated: verify-rls as a non-owner role (Gate 0, S12), the
     # backfill-media zero-inline-rows check (S15), a ZAP baseline (S15,
-    # 0 High/Medium), axe smoke (10 screens, fail on critical), Lighthouse
-    # budgets (§3.2 levels in lighthouserc.cjs), and k6 Apdex ≥ 0.85 per
+    # 0 High/Medium), axe smoke (10 screens, fail on critical), the S16
+    # Playwright E2E journeys (alpha loop per role, DSR/G12 proofs, PWA
+    # §6.6), Lighthouse budgets (§3.2 levels in lighthouserc.cjs), and k6
+    # Apdex ≥ 0.85 per
     # transaction class (reads @ T=1600, writes @ T=4000 — both calibrated
     # to this co-hosted 2-core runner, NOT the §3 T=300 ms bar, which stays
     # the pre-release load lab's job, TESTING.md §11).
@@ -141,6 +143,24 @@ jobs:
         run: |
           yarn workspace web exec playwright install --with-deps chromium
           yarn workspace web run gate:axe
+
+      - name: Gate 1b — Playwright E2E journeys (S16)
+        # The alpha loop per role, deep-link refresh survival, the G4 DSR
+        # export/delete proof, the G12 signup age-gate proof, and the PWA
+        # §6.6 real-browser checks — against the same running production
+        # server, reusing the chromium installed for the axe gate. Serial by
+        # design (playwright.config.ts): one shared DB, one runner IP.
+        run: yarn workspace web run test:e2e
+
+      - name: Keep Playwright report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e
+          path: |
+            anything/apps/web/playwright-report
+            anything/apps/web/e2e/.results
+          if-no-files-found: ignore
 
       - name: Gate 2 — Lighthouse budgets (§3.2)
         run: yarn workspace web run gate:lhci

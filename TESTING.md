@@ -78,6 +78,9 @@ yarn test        # vitest — 879 tests, no DB needed (route handlers run agains
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
+yarn test:e2e    # Playwright S16 journeys (17 tests) — needs a RUNNING production build
+                 # (BASE_URL, default :4000) on a migrated+seeded DB with the §2 preview
+                 # accounts + PREVIEW_ACCOUNTS_SECRET; CI runs it as alpha-gates Gate 1b
 ```
 
 (520 → 583 with P9: the authZ matrix grew with 8 ADMIN_ONLY rows, plus suspension tests
@@ -141,6 +144,14 @@ Coverage highlights by area:
   (idempotency replay returns the recorded outcome; the **explicit fee-tamper test**:
   smuggled fee/gross/net fields never reach the payout INSERT), `upload`, the account
   DELETE two-factor confirm gates, and `age-confirm` (G12 pinned until the S16 E2E).
+- **E2E journeys (S16)**: `e2e/*.spec.ts` (Playwright, serial, storage-state sessions) —
+  the alpha loop as one two-actor journey (wizard publish → browse/deep-link → estimator
+  math → apply → rate proposal/accept → shortlist/hire → On-My-Way/Check-In/Check-Out →
+  HELD payout on both dashboards), admin triage + audited CSV export, PARTY read-only
+  denial, deep-link refresh survival, the logout open-redirect guard, the G4 DSR
+  export/delete proof (with the dead-cookie canary), the G12 signup attestation, and the
+  PWA §6.6 cache checks. Retry-safe by construction: per-attempt unique emails, gig
+  titles and cover messages.
 - **RLS wiring (S12)**: `test/rls-wiring.test.ts` — the structural counterpart of the authZ
   matrix for tenant isolation: derives the governed-table list from the migrations, then
   fails CI when any file under `src/app/api` executes (or builds) SQL against a governed
@@ -175,6 +186,10 @@ Coverage highlights by area:
 ## 5. Manual flow checklist (the alpha loop as it exists today)
 
 Each line is a check; all passed 2026-07-30 in Chrome (desktop + mobile viewport).
+Since S16 (2026-08-18) the spine of this checklist runs automatically per PR — the
+`e2e/` Playwright suite (CI alpha-gates Gate 1b) covers the marketplace loop, DSR,
+age gate, admin triage and PARTY denial below; this section remains the human tester
+script and still owns what E2E can't judge (visual polish, copy, real-device feel).
 
 **Public / anonymous**
 - Landing renders; **Hot Gigs Tonight** shows real published gigs starting within 24h with a
@@ -517,6 +532,11 @@ committed, layout wiring, offline page script-free) and `test/service-worker.tes
 network-only, offline fallback served on network failure, `/_next/static` cache-first,
 `PURGE_CACHES` empties everything, old versions cleaned on activate). The registration and
 logout purge helpers are covered in `src/lib/__tests__/pwa.test.ts`.
+
+Since S16, checks **2–5 below plus the manifest half of 1** run in CI on every PR in a
+real Chromium (`e2e/pwa.spec.ts` — worker active, the §6.6 negative check, offline
+fallback, logout purge, manifest validity). The walkthrough remains for real devices
+(the install affordances in 1, and 6's update flow across deploys).
 
 Manual, against a **production build or deployed preview** (the worker is production-only;
 `yarn dev` deliberately never registers it):
