@@ -1366,6 +1366,17 @@ Q3/Q4, all of E — ✅ **landed 2026-08-18** (875 tests green; typecheck/lint/b
   §3.4 #2 **apply-spike scenario** (apply→withdraw cycles, sized inside the 30/h limit);
   setup now **fails the run** when it can't produce the check-in-burst shift (the
   silent-skip Q3 finding).
+- ☑ **Apdex split per transaction class** (`apdex_read_score` @ T=1600 /
+  `apdex_write_score` @ T=4000), forced by the first CI run of the above: adding write
+  traffic to a metric whose T was calibrated on a read-only mix crossed the pooled
+  threshold (0.833) **while every functional assertion passed** — 301/301 checks, 0
+  errors, p99 4.77 s under its own new threshold. The decomposition (reads ≈0.90 —
+  exactly the T=1600 calibration — writes ≈0.5) showed the gate was measuring the
+  traffic MIX, not app health. Apdex is defined per transaction type, so the classes now
+  score separately; raising the single T was rejected as it would blunt the read
+  tripwire to hide a write cost. The write T is documented PROVISIONAL (derived from a
+  pooled distribution) — tighten once `apdex_write_score` reports the class directly. In
+  the load lab `APDEX_WRITE_T` defaults back to `APDEX_T`, so §3's single bar is intact.
 - ☑ All six doc-drift items fixed (E1 ci.yml + TESTING.md now document the T=1600
   calibration and send the T=300/p99 bars to the load lab; E2 was corrected in S12; E3/
   E4/E6 died with the TESTING.md §8 known-gaps rewrite — half that list predated S1–S14;
