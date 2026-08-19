@@ -6,6 +6,7 @@ import { Toaster } from 'sonner';
 import { useEffect, useState } from 'react';
 import { registerServiceWorker } from '@/lib/pwa';
 import RealtimeInvalidator from '@/components/RealtimeInvalidator';
+import WebVitalsReporter from '@/components/WebVitalsReporter';
 
 // Create a client that persists across re-renders
 function makeQueryClient() {
@@ -46,6 +47,8 @@ export function Providers({ children }: { children: ReactNode }) {
     <QueryClientProvider client={queryClient}>
       {/* S9: SSE → query invalidation for signed-in tabs (no-op signed out). */}
       <RealtimeInvalidator />
+      {/* S18: first-party Core Web Vitals beacon (production-only). */}
+      <WebVitalsReporter />
       {children}
       <Toaster position="bottom-right" />
     </QueryClientProvider>

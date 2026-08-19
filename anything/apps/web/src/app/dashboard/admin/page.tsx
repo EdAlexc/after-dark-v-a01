@@ -17,6 +17,8 @@ import {
   Activity,
   XCircle,
   CheckCircle2,
+  Gauge,
+  BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -33,6 +35,24 @@ interface Overview {
   activeShifts: number;
   stripeConfigured: boolean;
   cronHealth?: { payoutsRelease: string | null; retentionPurge: string | null };
+  /** S18 (Q5/D6): first-party RUM + route-timing rollups. */
+  telemetry?: {
+    apdexT: number;
+    traffic: { day_count: number; hour_count: number; errors: number };
+    endpointApdex: Array<{ route: string; count: number; apdex: number }>;
+    webVitals: Array<{ metric: string; p75: number; samples: number }>;
+  };
+}
+
+/** Format a p75 web-vital for its card: seconds for paint metrics, raw for CLS. */
+function vitalP75(
+  vitals: Array<{ metric: string; p75: number; samples: number }> | undefined,
+  metric: string
+): string {
+  const row = vitals?.find((vital) => vital.metric === metric);
+  if (!row) return '—';
+  if (metric === 'CLS') return row.p75.toFixed(3);
+  return `${(row.p75 / 1000).toFixed(2)}s`;
 }
 
 /** S14 (A5): a cron that hasn't run in >26 h (daily schedule + slack) is stale. */
@@ -256,6 +276,19 @@ export default function AdminDashboard() {
     .filter((row) => row.status !== 'CLOSED' && row.severity === 'HIGH')
     .reduce((sum, row) => sum + row.count, 0);
   const heldPayouts = (overview?.payouts ?? []).find((row) => row.status === 'HELD');
+  // S18: request-weighted overall Apdex + the worst-scoring busy endpoint.
+  const endpointRows = overview?.telemetry?.endpointApdex ?? [];
+  const totalTimed = endpointRows.reduce((sum, row) => sum + row.count, 0);
+  const overallApdex =
+    totalTimed > 0
+      ? (
+          endpointRows.reduce((sum, row) => sum + row.apdex * row.count, 0) / totalTimed
+        ).toFixed(2)
+      : null;
+  const worstEndpoint =
+    endpointRows.length > 0
+      ? endpointRows.reduce((worst, row) => (row.apdex < worst.apdex ? row : worst))
+      : null;
 
   if (overviewError) {
     return (
@@ -383,6 +416,93 @@ export default function AdminDashboard() {
                 </div>
                 <p className="text-2xl font-black">{overview?.activeShifts ?? 0}</p>
                 <p className="text-xs text-white/40">Shifts Live Now</p>
+              </CardContent>
+            </Card>
+
+            {/* S18 (Q5/D6, wireframe-p1 traffic/uptime): first-party RUM +
+                route timings. Empty states say "no data yet" honestly —
+                telemetry starts accruing on this deploy. */}
+            <Card className="bg-[#1E1E1E] border-white/5">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <BarChart3 className="w-5 h-5 text-[#00FFCC]" />
+                  <span className="text-xs text-white/40">
+                    {overview?.telemetry
+                      ? `${(overview.telemetry.traffic.hour_count / 60).toFixed(1)} req/min (1h)`
+                      : '…'}
+                  </span>
+                </div>
+                <p className="text-2xl font-black">
+                  {overview?.telemetry?.traffic.day_count ?? '—'}
+                </p>
+                <p className="text-xs text-white/40">API Requests (24h)</p>
+              </CardContent>
+            </Card>
+            <Card
+              className={cn(
+                'bg-[#1E1E1E]',
+                (overview?.telemetry?.traffic.errors ?? 0) > 0
+                  ? 'border-red-500/30'
+                  : 'border-white/5'
+              )}
+            >
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <Gauge className="w-5 h-5 text-[#00FFCC]" />
+                  <span
+                    className={cn(
+                      'text-xs font-bold',
+                      (overview?.telemetry?.traffic.errors ?? 0) > 0
+                        ? 'text-red-400'
+                        : 'text-white/40'
+                    )}
+                  >
+                    {overview?.telemetry ? `${overview.telemetry.traffic.errors} × 5xx` : '…'}
+                  </span>
+                </div>
+                <p className="text-2xl font-black">{overallApdex ?? '—'}</p>
+                <p className="text-xs text-white/40">
+                  API Apdex (24h · T={overview?.telemetry?.apdexT ?? 300}ms)
+                </p>
+                {worstEndpoint && (
+                  <p className="text-[11px] mt-1.5 text-white/40">
+                    slowest: {worstEndpoint.route} ({worstEndpoint.apdex.toFixed(2)})
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+            <Card className="bg-[#1E1E1E] border-white/5">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <Gauge className="w-5 h-5 text-[#00FFCC]" />
+                  <span className="text-xs text-white/40">
+                    {overview?.telemetry?.webVitals.find((vital) => vital.metric === 'LCP')
+                      ?.samples ?? 0}{' '}
+                    samples
+                  </span>
+                </div>
+                <p className="text-2xl font-black">
+                  {vitalP75(overview?.telemetry?.webVitals, 'LCP')}
+                </p>
+                <p className="text-xs text-white/40">LCP p75 (7d · RUM)</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-[#1E1E1E] border-white/5">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <Gauge className="w-5 h-5 text-[#00FFCC]" />
+                  <span className="text-xs text-white/40">
+                    CLS {vitalP75(overview?.telemetry?.webVitals, 'CLS')}
+                  </span>
+                </div>
+                <p className="text-2xl font-black">
+                  {overview?.telemetry?.webVitals.find((vital) => vital.metric === 'INP')
+                    ? `${Math.round(
+                        overview.telemetry.webVitals.find((vital) => vital.metric === 'INP')!.p75
+                      )}ms`
+                    : '—'}
+                </p>
+                <p className="text-xs text-white/40">INP p75 (7d · RUM)</p>
               </CardContent>
             </Card>
           </div>

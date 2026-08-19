@@ -307,6 +307,7 @@ const REQUEST_BODY: Record<string, unknown | ((actor: Actor) => unknown)> = {
   'messages.send': { content: 'matrix hello' },
   'conversations.accept-rate': { message_id: 'b1a2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d' },
   'reports.create': { entity_type: 'conversation', entity_id: 'x-1', reason: 'matrix report' },
+  'rum.ingest': { metric: 'LCP', value: 1234.5, rating: 'good', path: '/dashboard/talent' },
   'availability.put': { date: '2026-08-15', slots: { PRIME_TIME: 'AVAILABLE' } },
   'shifts.transition': { to: 'CHECKED_IN', idempotency_key: 'matrix-idem-0001' },
   'stripe.connect.start': {},
@@ -501,8 +502,16 @@ describe('authZ matrix — enforced behavior', () => {
 
 describe('authZ matrix — invariants', () => {
   it('never grants an anonymous caller a marketplace write', () => {
+    // The ONE deliberate exception (S18): rum.ingest is anonymous by design —
+    // strict-validated, rate-limited web-vitals telemetry that touches no
+    // marketplace state (SERVICE-context insert into an append-only table).
+    // Anything else joining this set needs the same scrutiny on the record.
+    const ANON_WRITE_ALLOWED = new Set(['rum.ingest']);
     const writes = AUTHZ_MATRIX.filter(
-      (row) => !row.platform && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(row.method)
+      (row) =>
+        !row.platform &&
+        !ANON_WRITE_ALLOWED.has(row.id) &&
+        ['POST', 'PUT', 'PATCH', 'DELETE'].includes(row.method)
     );
     expect(writes.length).toBeGreaterThan(4);
     for (const row of writes) {

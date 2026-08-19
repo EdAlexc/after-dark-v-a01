@@ -57,6 +57,12 @@ const AUDIT_COVERAGE: Record<string, AuditMode> = {
   },
   'reports/route.ts': 'audited',
   'retention/purge/route.ts': 'audited',
+  'rum/route.ts': {
+    exempt:
+      'Anonymous, strict-validated, rate-limited web-vitals telemetry (S18): the beacon ' +
+      'carries no identity and touches no state a data subject owns — auditing every ' +
+      'page-load metric would only amplify traffic into the audit trail.',
+  },
   'reviews/route.ts': 'audited',
   'settings/change-password/route.ts': 'audited',
   'settings/route.ts': 'audited',

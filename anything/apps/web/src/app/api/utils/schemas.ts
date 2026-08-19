@@ -357,6 +357,20 @@ export const ReportCreateSchema = z.object({
   severity: z.enum(['LOW', 'MEDIUM', 'HIGH']).optional().default('MEDIUM'),
 });
 
+// ─── RUM beacon (S18) ────────────────────────────────────────────────────────
+
+/**
+ * First-party web-vitals beacon (Q5). Strict: a beacon may carry a metric
+ * shape and a route path — never an id, a session, or free text. The route
+ * re-normalizes `path` server-side; this cap just bounds the input.
+ */
+export const RumBeaconSchema = z.strictObject({
+  metric: z.enum(['LCP', 'CLS', 'INP', 'FCP', 'TTFB']),
+  value: z.number().finite().min(0).max(10_000_000),
+  rating: z.enum(['good', 'needs-improvement', 'poor']),
+  path: z.string().trim().min(1).max(200),
+});
+
 // ─── Web Push (S9) ───────────────────────────────────────────────────────────
 
 /** Browser PushSubscription.toJSON() shape — bounds mirror 0019's CHECKs. */

@@ -432,8 +432,10 @@
    the `/account/logout` open-redirect holdout it uncovered is fixed. ~~**S17 —
    frontend truth & component tests**~~ — ✅ **landed 2026-08-18** (§7.3): dead controls
    killed, draft integrity fixed (id-retaining PATCH re-save + publish gates), browse
-   search server-side, 24-component-test beachhead. **Next dev slices: S18 — RUM &
-   ops observability, then the S19 PARTY persona.**
+   search server-side, 24-component-test beachhead. ~~**S18 — RUM & ops
+   observability**~~ — ✅ **landed 2026-08-19** (§7.3): first-party RUM beacon,
+   per-endpoint Apdex at the real T=300 bar, admin traffic/health cards, Sentry
+   source-map wiring. **Next dev slice: S19 — PARTY persona completion.**
 5. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min — owed since 2026-07-31).
 
 ---
@@ -1226,7 +1228,7 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 | Q2 | **No Playwright E2E exists.** Playwright is installed but its only consumer is the axe smoke. Missing per CLAUDE.md §9: the alpha-loop journey per role, deep-link refresh survival, the **DSR export/delete E2E that is G4's own specified proof**, the signup/age-gate E2E (G12), and the real-browser PWA §6.6 check TESTING.md calls *"a release blocker, full stop"* — currently eyeball-only. **→ CLOSED in S16** (2026-08-18): the `e2e/` Playwright suite runs as CI alpha-gates Gate 1b. | `scripts/axe-smoke.ts:21`; no spec files/config repo-wide |
 | Q3 | **The k6 CI gate is 5.3× looser than the documented bar**: CI passes `APDEX_T=1600` while `ci.yml`'s own comments and TESTING.md still say T=300 (the calibration is legitimate — 2-core co-hosted runner — but the docs contradict the invocation). Scenario coverage is 3 of 6: #2 apply-spike, **#5 noisy-neighbor (a tenant-fairness security property)** and #6 soak are missing; no p99 ≤ 1.2 s threshold; the check-in burst silently no-ops if setup yields no shift. The 500-VU/15-min lab and 2 h soak have **never been run**. | `.github/workflows/ci.yml:127-134`; `k6/alpha-gates.js:38-74,172` |
 | Q4 | Gates below their stated bars: axe `serious` warn-only (guardrail says 0 critical/serious — the ratchet is Backlog #13); Lighthouse LCP/TBT/FCP/JS-weight warn-only pending the RSC refactor; `numberOfRuns: 1`. Documented in-file, but the guardrail-§7 boxes don't close at these levels. | `scripts/axe-smoke.ts:117-133`; `lighthouserc.cjs:35-43` |
-| Q5 | **No RUM**: zero `web-vitals`/`useReportWebVitals` usage. The scorecard rows (CWV p75, per-endpoint Apdex, front-end JS error rate) are unmeasurable in production; guardrail-§7's "RUM dashboards live" box has no implementation at all. | repo-wide grep |
+| Q5 | **No RUM**: zero `web-vitals`/`useReportWebVitals` usage. The scorecard rows (CWV p75, per-endpoint Apdex, front-end JS error rate) are unmeasurable in production; guardrail-§7's "RUM dashboards live" box has no implementation at all. **→ CLOSED in S18** (2026-08-19): first-party beacon → `rum_events`, route timings → per-endpoint Apdex at T=300, admin cards. JS error rate stays with Sentry (DSN = operator step B2). | repo-wide grep |
 | Q6 | Ready-made security gates not wired into CI: `yarn db:verify-rls` (the single proof RLS enforces) and `yarn db:backfill-media --verify` (the S3 zero-`data:`-rows gate, written to exit non-zero) are manual-only. **→ verify-rls half CLOSED in S12** (now 23 checks, Gate 0 of the CI `alpha-gates` job); the backfill-media half CLOSED in S15 (CI zero-inline-media step). Q6 is fully closed. | `scripts/verify-rls.mjs`; `scripts/backfill-media.ts:10,21` |
 | Q7 | **No audit-coverage gate**: nothing fails CI when a mutating route forgets `auditLogger` — unlike authZ, where the matrix machine-checks its concern. **→ CLOSED in S15:** test/audit-coverage.test.ts — audited-or-exempt-with-reason registry; stripe/webhook + upload retrofitted. | contrast `api/utils/__tests__/authz-matrix.test.ts:5-8` |
 | Q8 | **25 of 49 routes have no dedicated test suite.** The consequential ones are the money paths: `payouts/release` (**zero tests** — double-release, cron auth, unkeyed behavior all unasserted), `stripe/webhook` (**zero tests** — guardrail-§7 explicitly requires signature + fee-tamper tests; fee-tamper is argued structurally, never tested), `shifts/[id]` idempotency (k6-only, and that check can no-op), `upload` (caps/MediaError mapping), the DSR routes' two-factor confirm gates, `age-confirm` (G12), `push/subscribe`, `match-preview`; `/api/stream` is tested only with `STREAM_MAX_MS=0` so real-timing window/reconnect behavior is never exercised. Untested utils include **`rls.ts` itself**, `route-kit`, `schemas`, and both lifecycle matrices (`shift-lifecycle`, `application-lifecycle`). **→ worst-of CLOSED across S12–S14:** `rls.ts` (S12); `payouts/release`, `stripe/webhook`, `shifts/[id]` + the explicit fee-tamper, `upload`, DSR confirm gates, `age-confirm` (S14). Still open: `push/subscribe`, `match-preview`, stream-under-real-timing, `route-kit`/`schemas`/lifecycle utils — tracked with S15/S17. | route tree sweep |
@@ -1255,7 +1257,7 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 | D3 | Venue "response rate" (p4) | No data model behind it. Define (reply latency over conversations) in S20 — or drop it from the venue card. |
 | D4 | Profile-view count + 24/7 concierge card (p8) | Absent; no view tracking exists. Descope for alpha (the S6 `events` table can carry views post-alpha). |
 | D5 | "Viewing as: Talent / Venue" toggle (p4) | Never built. Descope — the shared preview accounts serve the need. |
-| D6 | Admin "uptime / traffic req/s" KPI (p1, PRD §3.4) | Needs RUM/metrics — arrives with S18 or stays descoped. |
+| D6 | Admin "uptime / traffic req/s" KPI (p1, PRD §3.4) | **→ CLOSED in S18** (2026-08-19): traffic + API-health cards from `api_timings`; "uptime" is expressed honestly as 5xx rate + cron health (no external prober exists). |
 
 #### E. Doc drift (docs contradict code) — ✅ ALL FIXED (E2 in S12; E1/E3–E6 in S15, 2026-08-18)
 
@@ -1543,12 +1545,42 @@ production build on a disposable Neon branch; typecheck/lint/build clean)
   404 for rivals; publish gates close the incomplete-listing hole; the behavioral XSS
   test complements the S15 structural gate.
 
-**S18 — RUM & ops observability (~2 d)** — closes Q5, D6 — *parallel with S17*
-- `useReportWebVitals` → a first-party beacon (G11-clean, no third party) into a small
-  rollup table (or Sentry metrics once the DSN is live); per-endpoint Apdex derived from
-  `route-kit` timings in the structured logs; the admin overview gains traffic/uptime
-  cards (PRD p1); `withSentryConfig` source-map wiring.
-- *Security gate:* beacon payloads carry no PII and no ids beyond role; rate-limited.
+**S18 — RUM & ops observability (~2 d)** — closes Q5, D6 — ✅ **landed 2026-08-19**
+(934 vitest green — 912 → 934; 18 Playwright green incl. a new observability journey;
+typecheck/lint/build clean)
+- ☑ **First-party RUM** (Q5, G11-clean): `WebVitalsReporter` (`useReportWebVitals`,
+  production-only, mounted in providers) beacons LCP/CLS/INP/FCP/TTFB to `POST /api/rum`
+  via sendBeacon — same origin, no third-party collector. The ingest boundary is layered:
+  strict zod schema (unknown keys rejected — an identity field cannot ride along),
+  server-side path re-normalization (UUIDs/digit-runs → `[id]`, on BOTH sides), a final
+  character allowlist, 2 KB body cap, and a per-IP limiter (240/min — one NAT'd IP fronts
+  many visitors). Anonymous by design; the matrix invariant "no anonymous marketplace
+  writes" gained an explicit, justified single-entry exception list.
+- ☑ **Per-endpoint Apdex from route-kit** (Q5): `withRoute` now captures every request's
+  `(route-name, method, status, duration)` — the route NAME, never a URL — into
+  `api_timings` (fire-and-forget, never on the critical path; `TELEMETRY_SAMPLE` knob;
+  skipped under vitest). The admin overview derives per-endpoint and request-weighted
+  Apdex at **T=300 ms — the real §3 scorecard bar**, not CI's calibrated tripwire.
+- ☑ **Telemetry storage done properly** (migration `0022_telemetry.sql`): `rum_events` +
+  `api_timings` are RLS-governed append-only tables — INSERT/DELETE for the SERVICE
+  context only, SELECT for ADMIN/SERVICE, UPDATE revoked outright; grants in the living
+  set. The daily retention purge prunes both at 30 days (docs/retention.md row added) —
+  telemetry can never become an unbounded PII-adjacent log.
+- ☑ **Admin traffic/uptime cards** (D6, wireframe p1): API Requests (24h) with req/min,
+  API Apdex (24h, T=300) with 5xx count + slowest endpoint, LCP p75 and INP/CLS p75
+  (7d RUM) — all real aggregates on `/api/admin/overview`, honest "no data yet" empty
+  states. Cron health (S14) stays on the escrow card.
+- ☑ **`withSentryConfig` source-map wiring**: next.config wraps only when
+  `SENTRY_AUTH_TOKEN` is set (org/project/token in `.env.example`) — unkeyed builds stay
+  byte-identical; the runtime SDK remains separately DSN-keyed.
+- ☑ **Proof at every layer**: 22 new vitest cases (rum lib normalization/rating, capture
+  writers incl. never-throw + SERVICE context + clamping, ingest-route strict-validation
+  matrix incl. smuggled-identity rejection and 429s) + an E2E observability journey on
+  the real stack: anonymous beacon → 204, smuggled field → 400, the suite's own traffic
+  visible in the admin overview, and the four new cards rendering.
+- *Security gate met:* beacon payloads carry no PII and no ids at all (stricter than the
+  gate asked — role was dropped too); ingest rate-limited; telemetry tables are
+  SERVICE-write-only, admin-read, 30-day bounded.
 
 #### Functionality wave
 
