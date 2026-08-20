@@ -13,7 +13,7 @@ vi.mock('./../sql', () => ({
 	}),
 }));
 
-import { captureApiTiming, captureRumEvent, APDEX_T_MS } from '../telemetry';
+import { captureApiTiming, captureRumEvent, flushApiTimings, APDEX_T_MS } from '../telemetry';
 
 function sqlTexts(): string[] {
 	return mocks.sql.mock.calls.map((call) =>
@@ -34,17 +34,21 @@ afterEach(() => {
 	vi.unstubAllEnvs();
 });
 
-describe('captureApiTiming', () => {
+describe('captureApiTiming (buffered)', () => {
 	it('is a no-op under vitest (route suites assert exact sql patterns)', async () => {
 		captureApiTiming({ route: 'gigs.list', method: 'GET', status: 200, durationMs: 42 });
-		await flush();
+		await flushApiTimings();
 		expect(mocks.sql).not.toHaveBeenCalled();
 	});
 
-	it('inserts under the SERVICE context with clamped values in production', async () => {
+	it('buffers, then flushes ONE batched UNNEST insert with clamped values', async () => {
 		vi.stubEnv('NODE_ENV', 'production');
 		captureApiTiming({ route: 'x'.repeat(80), method: 'get', status: 1200, durationMs: -5 });
-		await flush();
+		captureApiTiming({ route: 'gigs.list', method: 'GET', status: 200, durationMs: 42 });
+		// Nothing hits the DB until a flush point.
+		expect(mocks.sql).not.toHaveBeenCalled();
+
+		await flushApiTimings();
 		const texts = sqlTexts();
 		expect(texts.some((text) => text.includes('set_config'))).toBe(true);
 		const insert = mocks.sql.mock.calls.find((call) =>
@@ -53,32 +57,57 @@ describe('captureApiTiming', () => {
 			)
 		);
 		expect(insert).toBeDefined();
-		// values: route (≤60), method uppercased, status clamped, duration floored
-		expect((insert![1] as string).length).toBe(60);
-		expect(insert![2]).toBe('GET');
-		expect(insert![3]).toBe(599);
-		expect(insert![4]).toBe(0);
+		// Array params: routes (≤60 chars), methods uppercased, statuses
+		// clamped, durations floored, explicit created_at per buffered row.
+		const [, routes, methods, statuses, durations, times] = insert! as [
+			unknown,
+			string[],
+			string[],
+			number[],
+			number[],
+			string[],
+		];
+		expect(routes[0].length).toBe(60);
+		expect(routes[1]).toBe('gigs.list');
+		expect(methods).toEqual(['GET', 'GET']);
+		expect(statuses).toEqual([599, 200]);
+		expect(durations).toEqual([0, 42]);
+		expect(times).toHaveLength(2);
+
+		// The buffer drained: a second flush writes nothing.
+		mocks.sql.mockClear();
+		await flushApiTimings();
+		expect(mocks.sql).not.toHaveBeenCalled();
 	});
 
 	it('drops unknown methods and honors TELEMETRY_SAMPLE=0', async () => {
 		vi.stubEnv('NODE_ENV', 'production');
 		captureApiTiming({ route: 'r', method: 'OPTIONS', status: 200, durationMs: 1 });
-		await flush();
+		await flushApiTimings();
 		expect(mocks.sql).not.toHaveBeenCalled();
 
 		vi.stubEnv('TELEMETRY_SAMPLE', '0');
 		captureApiTiming({ route: 'r', method: 'GET', status: 200, durationMs: 1 });
-		await flush();
+		await flushApiTimings();
 		expect(mocks.sql).not.toHaveBeenCalled();
 	});
 
-	it('never throws when the insert fails', async () => {
+	it('self-flushes once the batch threshold is reached', async () => {
+		vi.stubEnv('NODE_ENV', 'production');
+		for (let i = 0; i < 25; i += 1) {
+			captureApiTiming({ route: 'r', method: 'GET', status: 200, durationMs: 1 });
+		}
+		await flush();
+		expect(
+			sqlTexts().some((text) => text.includes('INSERT INTO api_timings'))
+		).toBe(true);
+	});
+
+	it('never throws when the flush fails — rows are dropped, not fatal', async () => {
 		vi.stubEnv('NODE_ENV', 'production');
 		mocks.sql.mockRejectedValue(new Error('db down'));
-		expect(() =>
-			captureApiTiming({ route: 'r', method: 'GET', status: 200, durationMs: 1 })
-		).not.toThrow();
-		await flush();
+		captureApiTiming({ route: 'r', method: 'GET', status: 200, durationMs: 1 });
+		await expect(flushApiTimings()).resolves.toBeUndefined();
 	});
 });
 

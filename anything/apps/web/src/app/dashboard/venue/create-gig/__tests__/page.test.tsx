@@ -101,6 +101,9 @@ describe('Create-gig wizard (F3 draft integrity)', () => {
 		fireEvent.click(saveDraftButton());
 		await waitFor(() => expect(gigWrites(calls)).toHaveLength(1));
 
+		// The first save's pending state disables the button a beat past the
+		// fetch call itself — wait for re-enable or the second click no-ops.
+		await waitFor(() => expect(saveDraftButton()).toBeEnabled());
 		fireEvent.click(saveDraftButton());
 		await waitFor(() => expect(gigWrites(calls)).toHaveLength(2));
 		const [, resave] = gigWrites(calls);
@@ -132,6 +135,7 @@ describe('Create-gig wizard (F3 draft integrity)', () => {
 		});
 		fireEvent.click(saveDraftButton());
 		await waitFor(() => expect(gigWrites(calls)).toHaveLength(1));
+		await waitFor(() => expect(saveDraftButton()).toBeEnabled());
 
 		await goToReviewStep();
 		fireEvent.click(screen.getByRole('button', { name: /Publish Gig/ }));

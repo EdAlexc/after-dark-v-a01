@@ -1558,9 +1558,15 @@ typecheck/lint/build clean)
   writes" gained an explicit, justified single-entry exception list.
 - ☑ **Per-endpoint Apdex from route-kit** (Q5): `withRoute` now captures every request's
   `(route-name, method, status, duration)` — the route NAME, never a URL — into
-  `api_timings` (fire-and-forget, never on the critical path; `TELEMETRY_SAMPLE` knob;
-  skipped under vitest). The admin overview derives per-endpoint and request-weighted
-  Apdex at **T=300 ms — the real §3 scorecard bar**, not CI's calibrated tripwire.
+  `api_timings`, **buffered and flushed as one UNNEST batch per ~25 rows / 5 s** so the
+  capture's cost is amortized to ~zero (`TELEMETRY_SAMPLE` knob remains; skipped under
+  vitest; an instance that dies loses its ≤25-row unflushed tail — acceptable for
+  telemetry, on the record). The buffering is not premature: **the first CI run measured
+  a naive per-request insert dragging the k6 read-Apdex from 0.86 to 0.79** on the
+  co-hosted runner — telemetry that degrades the thing it measures is self-defeating,
+  and loosening the calibrated gate to absorb it would have been gate-erosion. The
+  admin overview derives per-endpoint and request-weighted Apdex at **T=300 ms — the
+  real §3 scorecard bar**, not CI's calibrated tripwire.
 - ☑ **Telemetry storage done properly** (migration `0022_telemetry.sql`): `rum_events` +
   `api_timings` are RLS-governed append-only tables — INSERT/DELETE for the SERVICE
   context only, SELECT for ADMIN/SERVICE, UPDATE revoked outright; grants in the living
