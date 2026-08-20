@@ -40,8 +40,8 @@ yarn dev                    # Next.js dev server on port 4000
 yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
 yarn lint                   # oxlint (workspace .oxlintrc.json), warnings fail
-yarn test                   # vitest run (912 tests as of S17)
-yarn test:e2e               # Playwright E2E journeys (S16, 17 tests) — needs a running
+yarn test                   # vitest run (934 tests as of S18)
+yarn test:e2e               # Playwright E2E journeys (S16/S18, 18 tests) — needs a running
                             #   production build + seeded DB (TESTING.md §3); CI Gate 1b
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:grants              # (re)apply scripts/grants.sql to the afterdark_app role (owner conn; S2)
@@ -67,7 +67,10 @@ yarn gate:lhci              # P10.4 Lighthouse §3.2 budgets, 3 passes (needs ru
   `EXPO_PUBLIC_PROXY_BASE_URL`, `NEXT_PUBLIC_CREATE_*`, `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN`
   (error tracking — no-op unset), `WEB_PUSH_VAPID_PUBLIC_KEY/PRIVATE_KEY/SUBJECT`
   (S9 — hot-gig Web Push; whole surface inert without the pair),
-  `STREAM_MAX_MS`/`STREAM_TICK_MS` (S9 — SSE window/tick tuning). See `apps/web/.env.example`; no real `.env` is committed.
+  `STREAM_MAX_MS`/`STREAM_TICK_MS` (S9 — SSE window/tick tuning), `TELEMETRY_SAMPLE`
+  (S18 — api_timings sampling 0..1, default 1), `SENTRY_AUTH_TOKEN`+`SENTRY_ORG`+
+  `SENTRY_PROJECT` (S18 — build-time source-map upload; unkeyed builds skip the wrapper).
+  See `apps/web/.env.example`; no real `.env` is committed.
 - **Migrations live in `apps/web/migrations/`** (P0). `0001_baseline.sql` reproduces §6.1;
   `0002_audit_logs.sql` adds the audit trail; `0003_gig_lifecycle.sql` widens gig status to
   the full lifecycle (P1); `0004_rls.sql` ships RLS policies (verified enforcing — see
@@ -77,6 +80,7 @@ yarn gate:lhci              # P10.4 Lighthouse §3.2 budgets, 3 passes (needs ru
   tables with their RLS policies in-file; `0013_shared_rate_limits.sql` adds the S1 shared
   rate-limit stores; `0014_rls_completion.sql` adds the S2 cutover policy set (SERVICE/ADMIN
   platform context, gig read carve-outs, messages per-command policies, `legal_holds`). The
+  `0022_telemetry.sql` adds the S18 RUM/timing stores (SERVICE-only writes, 30-day purge). The
   runner records applied files in `_migrations`; because it is forward-only, role GRANTs are
   re-asserted via `yarn db:grants` (`scripts/grants.sql` is the living set).
 - Web tests: Vitest (`vitest.config.mts`). Shared logic + every route has an edge-case suite
@@ -175,6 +179,11 @@ shares the workspace root — see Technical Backlog #23 to scope installs to `we
   `yarn pwa:icons`); dependency-free `public/sw.js` (never intercepts `/api`, navigations
   network-only with `public/offline.html` fallback, `/_next/static` cache-first, purge on
   logout via `src/lib/pwa.ts`); CSP `worker-src 'self'`. Verification: TESTING.md §9.
+- **Observability (S18)**: first-party RUM (`WebVitalsReporter` → `POST /api/rum` →
+  `rum_events`), per-request route timings captured in `withRoute` → `api_timings`,
+  per-endpoint Apdex at the §3 T=300 ms bar + traffic/vitals cards on the admin
+  dashboard; both telemetry tables RLS-governed, SERVICE-write-only, purged at 30 days.
+  `withSentryConfig` source maps key-gated on `SENTRY_AUTH_TOKEN`.
 - **Absent**: Stripe keys (code shipped key-gated), WebSockets (SSE landed in S9;
   Web Push is key-gated on the `WEB_PUSH_VAPID_*` pair).
 
@@ -237,7 +246,8 @@ PATCH takedown), **`/api/admin/audit-logs`** (JSON + audited CSV export), `/api/
 **`/api/search`** (GET public FTS, S5), **`/api/venue/stats`** (GET venue KPI
 aggregates, S6), **`/api/gigs/match-preview`** (GET venue Live Analysis, S7),
 **`/api/reviews`** (GET public list/aggregate, POST shift-scoped review, S8),
-**`/api/stream`** (GET SSE invalidation stream, S9), **`/api/push/subscribe`**
+**`/api/stream`** (GET SSE invalidation stream, S9), **`/api/rum`** (POST anonymous
+first-party web-vitals beacon, S18 — strict-validated, rate-limited), **`/api/push/subscribe`**
 (GET/POST/DELETE Web Push opt-in, S9 — 503 without VAPID keys),
 `/api/__create/check-social-secrets` (dev only). Every route is declared in
 `api/utils/authz-matrix.ts`; CI fails if one is missing.

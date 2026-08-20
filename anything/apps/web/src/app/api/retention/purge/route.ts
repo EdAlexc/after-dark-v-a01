@@ -45,6 +45,8 @@ interface PurgeCounts {
   verifications: number;
   rateLimitWindows: number;
   authRateLimits: number;
+  rumEvents: number;
+  apiTimings: number;
 }
 
 async function runPurge(viaCron: boolean): Promise<Response> {
@@ -111,11 +113,23 @@ async function runPurge(viaCron: boolean): Promise<Response> {
     RETURNING id
   `) as Array<{ id: string }>;
 
+  // S18 telemetry: platform-telemetry rows age out at 30 days
+  // (docs/retention.md §1). Governed tables — the deletes run under the
+  // SERVICE context, the only delete path the 0022 policies allow.
+  const [rumEvents, apiTimings] = await withRlsContext<
+    [Array<{ id: number }>, Array<{ id: number }>]
+  >(serviceContext('system:retention'), [
+    sql`DELETE FROM rum_events WHERE created_at < NOW() - INTERVAL '30 days' RETURNING id`,
+    sql`DELETE FROM api_timings WHERE created_at < NOW() - INTERVAL '30 days' RETURNING id`,
+  ]);
+
   const counts: PurgeCounts = {
     sessions: sessions.length,
     verifications: verifications.length,
     rateLimitWindows: rateLimitWindows.length,
     authRateLimits: authRateLimits.length,
+    rumEvents: rumEvents.length,
+    apiTimings: apiTimings.length,
   };
 
   await auditLogger.record({

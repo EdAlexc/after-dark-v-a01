@@ -137,6 +137,16 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     note: 'Term feeds plainto_tsquery only; same projection as the public listings; rate-limited.',
   },
   {
+    id: 'rum.ingest',
+    route: 'rum/route.ts',
+    method: 'POST',
+    summary: 'First-party web-vitals beacon (S18) — anonymous, strict-validated, rate-limited',
+    expect: PUBLIC,
+    note:
+      'Vitals come from every visitor, so anon POST is the point. No identity fields exist ' +
+      'in the schema (strict); paths are re-normalized server-side; SERVICE-context insert only.',
+  },
+  {
     id: 'gigs.detail',
     route: 'gigs/[id]/route.ts',
     method: 'GET',

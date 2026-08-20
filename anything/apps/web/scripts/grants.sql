@@ -70,3 +70,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO afterdark_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO afterdark_app;
+
+-- S18 telemetry (0022): append-only + purge; history is never rewritten.
+GRANT SELECT, INSERT, DELETE ON rum_events, api_timings TO afterdark_app;
+REVOKE UPDATE ON rum_events, api_timings FROM afterdark_app;

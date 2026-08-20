@@ -10,6 +10,7 @@
  */
 
 import { logger } from './logger';
+import { captureApiTiming } from './telemetry';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -56,10 +57,18 @@ export type RouteHandler = (request: Request, context: RouteContext) => Promise<
  */
 export function withRoute(name: string, handler: RouteHandler): RouteHandler {
   return async (request, context) => {
+    // S18: per-endpoint Apdex is derived from these timings (route NAME, not
+    // URL — bounded cardinality, no ids). Fire-and-forget after the response
+    // is decided; never on the request's critical path.
+    const startedAt = Date.now();
+    let status = 500;
     try {
-      return await handler(request, context);
+      const response = await handler(request, context);
+      status = response.status;
+      return response;
     } catch (err) {
       if (err instanceof ApiError) {
+        status = err.status;
         const headers =
           err.retryAfterSeconds !== undefined
             ? { 'Retry-After': String(err.retryAfterSeconds) }
@@ -68,6 +77,13 @@ export function withRoute(name: string, handler: RouteHandler): RouteHandler {
       }
       logger.error(`${name} failed`, { error: err });
       return jsonError(500, 'Internal server error');
+    } finally {
+      captureApiTiming({
+        route: name,
+        method: request.method,
+        status,
+        durationMs: Date.now() - startedAt,
+      });
     }
   };
 }

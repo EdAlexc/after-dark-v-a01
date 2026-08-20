@@ -74,11 +74,11 @@ are not live (`src/lib/legal.ts` `ALPHA_NOTICE`), so the briefing and the produc
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 912 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 934 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
-yarn test:e2e    # Playwright S16 journeys (17 tests) — needs a RUNNING production build
+yarn test:e2e    # Playwright journeys (18 tests, S16+S18) — needs a RUNNING production build
                  # (BASE_URL, default :4000) on a migrated+seeded DB with the §2 preview
                  # accounts + PREVIEW_ACCOUNTS_SECRET; CI runs it as alpha-gates Gate 1b
 ```
@@ -144,6 +144,13 @@ Coverage highlights by area:
   (idempotency replay returns the recorded outcome; the **explicit fee-tamper test**:
   smuggled fee/gross/net fields never reach the payout INSERT), `upload`, the account
   DELETE two-factor confirm gates, and `age-confirm` (G12 pinned until the S16 E2E).
+- **Observability (S18)**: `src/lib/__tests__/rum.test.ts` (path normalization can never
+  leak an id; web.dev rating thresholds), `api/utils/__tests__/telemetry.test.ts` (capture
+  writers: SERVICE context, clamping, TELEMETRY_SAMPLE, never-throw, vitest no-op),
+  `api/rum/__tests__/route.test.ts` (strict schema — smuggled identity fields 400, hostile
+  paths 400 or normalized to `[id]`, per-IP 429 with Retry-After), plus the E2E
+  `e2e/observability.spec.ts` pipeline proof and new authz-matrix/audit-coverage/
+  rls-wiring registry rows.
 - **Component suites (S17, Q1 beachhead)**: `src/components/__tests__/` +
   `src/app/dashboard/**/__tests__/*.test.tsx` — `NotificationsBell`, `DashboardSidebar`
   (all role variants), `MessagesView` (incl. the behavioral render-XSS case: hostile

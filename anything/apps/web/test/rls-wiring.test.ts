@@ -112,6 +112,7 @@ const RLS_WIRING: Record<string, WiringMode> = {
   'utils/account-data.ts': 'wrapped', // export = subject context; erasure = SERVICE
   'utils/audit.ts': 'policy-insert', // append-only trail, WITH CHECK (true)
   'utils/events.ts': 'policy-insert', // S6 analytics, events_insert_any_context
+  'utils/telemetry.ts': 'wrapped', // S18 RUM/timings — SERVICE-context writes only (0022)
   'utils/notify.ts': 'policy-insert', // cross-user by design, WITH CHECK (true)
   'utils/push.ts': 'wrapped', // fan-out reads/prunes under SERVICE context
 
