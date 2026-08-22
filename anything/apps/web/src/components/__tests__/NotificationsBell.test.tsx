@@ -66,6 +66,29 @@ describe('NotificationsBell', () => {
 		expect(item).toHaveAttribute('href', '/dashboard/admin');
 	});
 
+	it('party message notifications deep-link to the party inbox (S19)', async () => {
+		mockFetch({
+			'/api/notifications': { notifications: [notification()], unreadCount: 1 },
+		});
+		renderWithQueryClient(<NotificationsBell role="party" />);
+		fireEvent.click(screen.getByRole('button', { name: 'Notifications' }));
+		const item = await screen.findByRole('link', { name: /New message/ });
+		expect(item).toHaveAttribute('href', '/dashboard/party/messages');
+	});
+
+	it('party non-message notifications fall back to venue discovery, never a principal surface', async () => {
+		mockFetch({
+			'/api/notifications': {
+				notifications: [notification({ kind: 'payout.released' })],
+				unreadCount: 1,
+			},
+		});
+		renderWithQueryClient(<NotificationsBell role="party" />);
+		fireEvent.click(screen.getByRole('button', { name: 'Notifications' }));
+		const item = await screen.findByRole('link', { name: /Payout released/ });
+		expect(item).toHaveAttribute('href', '/venues');
+	});
+
 	it('mark-all-read POSTs to the notifications endpoint', async () => {
 		const calls = mockFetch({
 			'/api/notifications': (call: import('../../../test/component-utils').RecordedFetch) =>

@@ -107,6 +107,8 @@ const RLS_WIRING: Record<string, WiringMode> = {
   'venue/profile/route.ts': 'wrapped',
   'venue/shifts/route.ts': 'wrapped',
   'venue/stats/route.ts': 'wrapped',
+  'venues/[id]/route.ts': 'public-read', // S19 anon venue detail — public columns only
+  'venues/route.ts': 'public-read', // S19 anon venue directory — public columns only
 
   // Shared utils that execute governed SQL themselves
   'utils/account-data.ts': 'wrapped', // export = subject context; erasure = SERVICE
@@ -122,6 +124,7 @@ const RLS_WIRING: Record<string, WiringMode> = {
   'utils/match-query.ts': 'builder',
   'utils/search-query.ts': 'builder',
   'utils/talent-query.ts': 'builder',
+  'utils/venue-query.ts': 'builder',
 };
 
 // ── File discovery ───────────────────────────────────────────────────────────

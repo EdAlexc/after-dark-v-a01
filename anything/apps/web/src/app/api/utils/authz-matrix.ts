@@ -129,10 +129,30 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     note: 'Selects no auth-table columns; PARTY discovery depends on this staying public.',
   },
   {
+    id: 'venues.list',
+    route: 'venues/route.ts',
+    method: 'GET',
+    summary: 'Public venue directory — public-profile columns only (S19)',
+    expect: PUBLIC,
+    note:
+      'Selects no auth-table columns and no street address; §6.3 PARTY discovery ' +
+      '("browse venues to book for private parties") depends on this staying public.',
+  },
+  {
+    id: 'venues.detail',
+    route: 'venues/[id]/route.ts',
+    method: 'GET',
+    summary: 'Public venue detail — public columns + gig-count aggregates (S19)',
+    expect: PUBLIC,
+    note:
+      'Keyed by the public venue_profiles.id; the owner user id never leaves the ' +
+      'server — inquiries resolve it server-side (conversations.create venue_id).',
+  },
+  {
     id: 'search.list',
     route: 'search/route.ts',
     method: 'GET',
-    summary: 'Global FTS search — PUBLISHED gigs + public talent columns only (S5)',
+    summary: 'Global FTS search — PUBLISHED gigs + public talent/venue columns only (S5/S19)',
     expect: PUBLIC,
     note: 'Term feeds plainto_tsquery only; same projection as the public listings; rate-limited.',
   },

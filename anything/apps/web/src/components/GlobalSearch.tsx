@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { Search, Briefcase, Zap, ArrowRight } from 'lucide-react';
+import { Search, Briefcase, Zap, ArrowRight, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /** Result shapes from GET /api/search (public columns only). */
@@ -28,10 +28,23 @@ interface TalentHit {
   available_tonight: boolean | null;
 }
 
+/** S19 venues arm. */
+export interface VenueHit {
+  id: string;
+  venue_name: string;
+  venue_type: string | null;
+  neighborhood: string | null;
+  capacity: number | null;
+  rating: string | number | null;
+  avatar_url: string | null;
+}
+
 export interface SearchResponse {
   q: string;
   gigs: GigHit[];
   talent: TalentHit[];
+  /** Optional so cached pre-S19 payloads keep parsing. */
+  venues?: VenueHit[];
 }
 
 /** Debounce a changing value (per-keystroke fetch guard). */
@@ -103,7 +116,10 @@ export default function GlobalSearch({
     router.push(`/search?q=${encodeURIComponent(term.trim())}`);
   };
 
-  const hasHits = Boolean(data && (data.gigs.length > 0 || data.talent.length > 0));
+  const venueHits = data?.venues ?? [];
+  const hasHits = Boolean(
+    data && (data.gigs.length > 0 || data.talent.length > 0 || venueHits.length > 0)
+  );
 
   return (
     <div ref={rootRef} className={cn('relative', className)}>
@@ -121,8 +137,8 @@ export default function GlobalSearch({
             if (event.key === 'Enter') goToResults();
             if (event.key === 'Escape') setOpen(false);
           }}
-          placeholder="Search gigs or talent…"
-          aria-label="Search gigs or talent"
+          placeholder="Search gigs, talent, venues…"
+          aria-label="Search gigs, talent, or venues"
           className={cn(
             'w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-9 pr-3 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-[#00FFCC]/40 transition-colors',
             compact ? 'py-2' : 'py-2.5'
@@ -197,6 +213,36 @@ export default function GlobalSearch({
                       {formatRateBand(talent.hourly_rate_min, talent.hourly_rate_max) && (
                         <span className="text-[11px] font-bold text-white/50 flex-shrink-0">
                           {formatRateBand(talent.hourly_rate_min, talent.hourly_rate_max)}
+                        </span>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              )}
+              {venueHits.length > 0 && (
+                <div className="py-1.5 border-t border-white/5">
+                  <p className="px-4 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-white/30">
+                    Venues
+                  </p>
+                  {venueHits.map((venue) => (
+                    <Link
+                      key={venue.id}
+                      href={`/venues/${venue.id}`}
+                      onClick={() => setOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 hover:bg-white/5 transition-colors"
+                    >
+                      <Building2 className="w-3.5 h-3.5 text-[#00FFCC]/60 flex-shrink-0" />
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-xs font-bold text-white truncate">
+                          {venue.venue_name}
+                        </span>
+                        <span className="block text-[11px] text-white/40 truncate">
+                          {[venue.venue_type, venue.neighborhood].filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                      {Number(venue.rating) > 0 && (
+                        <span className="text-[11px] font-bold text-white/50 flex-shrink-0">
+                          ★ {Number(venue.rating).toFixed(1)}
                         </span>
                       )}
                     </Link>

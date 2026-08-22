@@ -170,11 +170,9 @@ function SignUpForm({
     setError(null);
 
     if (typeof window !== 'undefined') {
-      if (isProfessional) {
-        localStorage.setItem('pendingRole', role);
-      } else {
-        localStorage.setItem('pendingRole', 'PERSONAL');
-      }
+      // S19: personal accounts are the PARTY persona (§6.3) — the sentinel
+      // must be a value onboarding actually reads ('PERSONAL' was dead).
+      localStorage.setItem('pendingRole', isProfessional ? role : 'PARTY');
     }
 
     try {
@@ -205,7 +203,9 @@ function SignUpForm({
       }
 
       if (typeof window !== 'undefined') {
-        window.location.href = isProfessional ? '/onboarding' : '/';
+        // Everyone completes onboarding — personal accounts too, so the
+        // PARTY role is actually recorded (pre-S19 they never got a role).
+        window.location.href = '/onboarding';
       }
     } catch (err) {
       console.error('Sign up error:', err);

@@ -74,11 +74,11 @@ are not live (`src/lib/legal.ts` `ALPHA_NOTICE`), so the briefing and the produc
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 934 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 975 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
-yarn test:e2e    # Playwright journeys (18 tests, S16+S18) — needs a RUNNING production build
+yarn test:e2e    # Playwright journeys (19 tests, S16/S18/S19) — needs a RUNNING production build
                  # (BASE_URL, default :4000) on a migrated+seeded DB with the §2 preview
                  # accounts + PREVIEW_ACCOUNTS_SECRET; CI runs it as alpha-gates Gate 1b
 ```

@@ -52,7 +52,7 @@ interface Message {
   created_at: string;
 }
 
-export function MessagesView({ role }: { role: 'talent' | 'venue' }) {
+export function MessagesView({ role }: { role: 'talent' | 'venue' | 'party' }) {
   const qc = useQueryClient();
   const { data: session } = authClient.useSession();
   const myId = session?.user?.id;
@@ -210,8 +210,18 @@ export function MessagesView({ role }: { role: 'talent' | 'venue' }) {
                   No conversations yet.{' '}
                   {role === 'talent'
                     ? 'Open a gig and hit "Inquire" to start one.'
-                    : 'Threads open when talent inquire about your gigs.'}
+                    : role === 'party'
+                      ? 'Find a venue you love and inquire about hosting your private party.'
+                      : 'Threads open when talent inquire about your gigs.'}
                 </p>
+                {role === 'party' && (
+                  <Link
+                    href="/venues"
+                    className="inline-block mt-3 text-xs font-bold text-[#00FFCC] hover:underline"
+                  >
+                    Discover venues →
+                  </Link>
+                )}
               </div>
             ) : (
               conversations.map((conversation) => (

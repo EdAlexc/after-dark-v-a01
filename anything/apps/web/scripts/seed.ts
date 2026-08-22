@@ -7,6 +7,7 @@
  * Creates (idempotently, keyed by email):
  *  - a VENUE user + venue profile ("Nebula NYC")
  *  - a TALENT user + talent profile ("DJ Midnight Echo")
+ *  - a PARTY user + a private-party inquiry thread with the venue (S19)
  *  - three gigs (two PUBLISHED — one tonight — and one DRAFT)
  *
  * Users are created through better-auth's server API so password sign-in
@@ -18,6 +19,7 @@ import sql from '../src/app/api/utils/sql';
 
 const VENUE_EMAIL = 'venue.demo@afterdark.test';
 const TALENT_EMAIL = 'talent.demo@afterdark.test';
+const PARTY_EMAIL = 'party.demo@afterdark.test';
 const DEMO_PASSWORD = 'afterdark-demo-1';
 
 if (!process.env.DATABASE_URL) {
@@ -29,7 +31,11 @@ if (process.env.NODE_ENV === 'production' && process.env.FORCE_SEED !== '1') {
   process.exit(1);
 }
 
-async function ensureUser(email: string, name: string, role: 'TALENT' | 'VENUE'): Promise<string> {
+async function ensureUser(
+  email: string,
+  name: string,
+  role: 'TALENT' | 'VENUE' | 'PARTY'
+): Promise<string> {
   const existing = (await sql`SELECT id FROM "user" WHERE email = ${email} LIMIT 1`) as Array<{
     id: string;
   }>;
@@ -50,6 +56,7 @@ async function ensureUser(email: string, name: string, role: 'TALENT' | 'VENUE')
 async function main() {
   const venueUserId = await ensureUser(VENUE_EMAIL, 'Nebula NYC', 'VENUE');
   const talentUserId = await ensureUser(TALENT_EMAIL, 'DJ Midnight Echo', 'TALENT');
+  const partyUserId = await ensureUser(PARTY_EMAIL, 'Sam Rivera', 'PARTY');
 
   // Venue profile
   const venueRows = (await sql`
@@ -95,9 +102,35 @@ async function main() {
     console.log(`• gigs already present (${gigCount[0].count})`);
   }
 
+  // S19: a private-party inquiry so both sides of the PARTY persona have
+  // local data — the venue inbox shows the badge, the party inbox the thread.
+  const inquiry = (await sql`
+    SELECT id FROM conversations
+    WHERE venue_user_id = ${venueUserId} AND counterpart_user_id = ${partyUserId}
+      AND kind = 'PARTY_INQUIRY'
+    LIMIT 1
+  `) as Array<{ id: string }>;
+  if (inquiry.length === 0) {
+    const created = (await sql`
+      INSERT INTO conversations (gig_id, venue_user_id, counterpart_user_id, kind)
+      VALUES (NULL, ${venueUserId}, ${partyUserId}, 'PARTY_INQUIRY')
+      RETURNING id
+    `) as Array<{ id: string }>;
+    await sql`
+      INSERT INTO messages (conversation_id, sender_id, content, kind)
+      VALUES
+        (${created[0].id}, ${partyUserId}, 'Hi! I''m planning a 30th-birthday party for ~60 people next month — is the mezzanine available for private hire?', 'TEXT'),
+        (${created[0].id}, ${venueUserId}, 'Hey Sam — congrats! The mezzanine holds 80 and is open most Fridays. What date are you thinking?', 'TEXT')
+    `;
+    console.log('✓ seeded a PARTY_INQUIRY conversation (party ↔ venue)');
+  } else {
+    console.log('• PARTY inquiry conversation already present');
+  }
+
   console.log('\nDemo credentials:');
   console.log(`  venue:  ${VENUE_EMAIL} / ${DEMO_PASSWORD}`);
   console.log(`  talent: ${TALENT_EMAIL} / ${DEMO_PASSWORD}`);
+  console.log(`  party:  ${PARTY_EMAIL} / ${DEMO_PASSWORD}`);
 }
 
 main()

@@ -45,7 +45,9 @@ function TwoFactorForm() {
       return;
     }
 
-    window.location.href = callbackUrl === '/' ? '/dashboard/talent' : callbackUrl;
+    // S19: the /dashboard root router forwards by role — no more hardcoded
+    // talent home for venue/party/admin sign-ins.
+    window.location.href = callbackUrl === '/' ? '/dashboard' : callbackUrl;
   };
 
   return (

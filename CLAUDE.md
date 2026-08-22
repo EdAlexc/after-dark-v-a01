@@ -40,8 +40,8 @@ yarn dev                    # Next.js dev server on port 4000
 yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
 yarn lint                   # oxlint (workspace .oxlintrc.json), warnings fail
-yarn test                   # vitest run (934 tests as of S18)
-yarn test:e2e               # Playwright E2E journeys (S16/S18, 18 tests) — needs a running
+yarn test                   # vitest run (975 tests as of S19)
+yarn test:e2e               # Playwright E2E journeys (S16/S18/S19, 19 tests) — needs a running
                             #   production build + seeded DB (TESTING.md §3); CI Gate 1b
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:grants              # (re)apply scripts/grants.sql to the afterdark_app role (owner conn; S2)
@@ -80,9 +80,13 @@ yarn gate:lhci              # P10.4 Lighthouse §3.2 budgets, 3 passes (needs ru
   tables with their RLS policies in-file; `0013_shared_rate_limits.sql` adds the S1 shared
   rate-limit stores; `0014_rls_completion.sql` adds the S2 cutover policy set (SERVICE/ADMIN
   platform context, gig read carve-outs, messages per-command policies, `legal_holds`). The
-  `0022_telemetry.sql` adds the S18 RUM/timing stores (SERVICE-only writes, 30-day purge). The
+  `0022_telemetry.sql` adds the S18 RUM/timing stores (SERVICE-only writes, 30-day purge);
+  `0023_venue_directory.sql` adds the S19 venue FTS + directory indexes. The
   runner records applied files in `_migrations`; because it is forward-only, role GRANTs are
-  re-asserted via `yarn db:grants` (`scripts/grants.sql` is the living set).
+  re-asserted via `yarn db:grants` (`scripts/grants.sql` is the living set). ⚠ Applying
+  migrations to the production DB is a **manual operator step** — drift took auth down on
+  2026-08-22 (DEV_TIMELINE §1); after any merge that adds a migration, run
+  `yarn db:migrate` against prod (or check `--dry-run` says "No pending").
 - Web tests: Vitest (`vitest.config.mts`). Shared logic + every route has an edge-case suite
   under `__tests__/`. `yarn test` is wired and gated in CI (`.github/workflows/ci.yml`).
 - Platform files marked `DO NOT REWRITE` (`src/lib/auth.ts`, `src/app/api/auth/[...all]/route.ts`)
@@ -198,6 +202,7 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Onboarding (role select + basics) | — | `src/app/onboarding/page.tsx` → `/api/user/role` | ✅ (but accepts `ADMIN` — see §7) |
 | Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | ✅ real `GET /api/gigs` (P1.1): validated filters, pagination, HOT/NEW badges; multi-select (S5) and text search (S17 `q`) server-side |
 | Browse talent (venue directory) | — | `dashboard/venue/browse/page.tsx` | ✅ real public `GET /api/talent` (P1.1); saved-talent list is client-local |
+| PARTY persona: signup→onboarding, venue discovery, private-party inquiries (§6.3) | p5 "Party People" | `/dashboard` root router, `/venues{,/[id]}` → `/api/venues{,/[id]}`, `dashboard/party/messages` | ✅ S19: role reachable end-to-end; public venue directory; `venue_id` inquiry resolved server-side; PARTY still never a principal (matrix invariant) |
 | Browse gigs: map view (3.2) | p2 | `components/GigsMap.tsx` in browse | ✅ MapLibre + OSM tiles (S10); pins = server-geocoded PUBLISHED gigs; escaped popups → `/gigs/[id]` |
 | Gig details + application + 5% fee estimator (3.2) | p4 | `gigs/[id]/page.tsx` → `/api/gigs/[id]` + `/apply` | ✅ detail + estimator (P1.2) + live apply/withdraw w/ proposed rate, ✓-Applied states, Inquire→thread (P3/P5); visible to applicants after FILLED |
 | Availability calendar, 3 slots (3.2) | p7 | `dashboard/talent/schedule/page.tsx` → `/api/availability` | ✅ real month grid + 3-slot editor + notes + Available Tonight + shift-conflict dots (P6) |
@@ -243,8 +248,9 @@ PATCH takedown), **`/api/admin/audit-logs`** (JSON + audited CSV export), `/api/
 `/api/venue/profile`, `/api/settings`, `/api/settings/change-password`,
 `/api/account/export`, `/api/account` (DELETE), `/api/account/age-confirm`,
 `/api/auth/two-factor/*` (better-auth twoFactor plugin),
-**`/api/search`** (GET public FTS, S5), **`/api/venue/stats`** (GET venue KPI
-aggregates, S6), **`/api/gigs/match-preview`** (GET venue Live Analysis, S7),
+**`/api/search`** (GET public FTS, S5 — gigs+talent, +venues arm S19), **`/api/venue/stats`**
+(GET venue KPI aggregates, S6), **`/api/gigs/match-preview`** (GET venue Live Analysis, S7),
+**`/api/venues`** (GET public directory, S19), **`/api/venues/[id]`** (GET public detail, S19),
 **`/api/reviews`** (GET public list/aggregate, POST shift-scoped review, S8),
 **`/api/stream`** (GET SSE invalidation stream, S9), **`/api/rum`** (POST anonymous
 first-party web-vitals beacon, S18 — strict-validated, rate-limited), **`/api/push/subscribe`**

@@ -119,6 +119,7 @@ export const GigPatchSchema = z.union([
 
 /** Path id for /api/gigs/[id] — reject non-UUIDs before they reach Postgres. */
 export const GigIdSchema = z.string().uuid();
+export const VenueIdSchema = z.string().uuid();
 
 /** 1-based page for public listings; bounded so OFFSET stays sane. */
 const page = z.coerce.number().int().min(1).max(500).optional().default(1);
@@ -210,16 +211,31 @@ export const TalentListQuerySchema = z
     { message: 'minRate must be ≤ maxRate', path: ['minRate'] }
   );
 
+/**
+ * Public venue directory filters (S19 — §6.3 PARTY discovery). Same
+ * conventions as the talent directory: public-profile fields only, bounded
+ * page.
+ */
+export const VenueListQuerySchema = z.object({
+  neighborhood: shortText(80).optional(),
+  neighborhoods: csvList(10, 80).optional(),
+  venueType: shortText(80).optional(),
+  /** Free-text — venue name/type/description/neighborhood, server-side. */
+  q: shortText(120).optional(),
+  page,
+});
+
 // ─── Global search (S5 / Backlog #7) ─────────────────────────────────────────
 
 /**
- * Public search over gigs + talent. The term feeds `plainto_tsquery` ONLY —
- * never raw tsquery syntax — so no query-language injection is possible.
+ * Public search over gigs + talent + venues (S19). The term feeds
+ * `plainto_tsquery` ONLY — never raw tsquery syntax — so no query-language
+ * injection is possible.
  */
 export const SearchQuerySchema = z.object({
   q: z.string().trim().min(2, 'query too short').max(120),
-  /** Restrict to one entity type; omitted = both. */
-  type: z.enum(['gigs', 'talent']).optional(),
+  /** Restrict to one entity type; omitted = all. */
+  type: z.enum(['gigs', 'talent', 'venues']).optional(),
   limit: z.coerce.number().int().min(1).max(20).optional().default(8),
 });
 
@@ -321,13 +337,16 @@ export const NotificationsReadSchema = z.object({
 
 export const ConversationCreateSchema = z
   .object({
-    /** The user to talk to. Optional when gig_id is given — the server
-     *  resolves the gig's venue, so venue user ids never ride the client. */
+    /** The user to talk to. Optional when gig_id or venue_id is given — the
+     *  server resolves the counterpart, so user ids never ride the client. */
     counterpart_user_id: z.string().min(1).max(64).optional(),
     gig_id: z.string().uuid().nullish(),
+    /** S19 inquiry path: a public venue_profiles.id — the server resolves the
+     *  venue's user server-side (PARTY private-party inquiries, §6.3). */
+    venue_id: z.string().uuid().nullish(),
   })
-  .refine((body) => body.counterpart_user_id || body.gig_id, {
-    message: 'counterpart_user_id or gig_id is required',
+  .refine((body) => body.counterpart_user_id || body.gig_id || body.venue_id, {
+    message: 'counterpart_user_id, gig_id, or venue_id is required',
   });
 
 export const MessageCreateSchema = z
@@ -503,4 +522,5 @@ export type GigDraftUpdate = z.infer<typeof GigDraftUpdateSchema>;
 export type GigListQuery = z.infer<typeof GigListQuerySchema>;
 export type GigStatus = z.infer<typeof GigStatusSchema>;
 export type TalentListQuery = z.infer<typeof TalentListQuerySchema>;
+export type VenueListQuery = z.infer<typeof VenueListQuerySchema>;
 export type SearchQuery = z.infer<typeof SearchQuerySchema>;
