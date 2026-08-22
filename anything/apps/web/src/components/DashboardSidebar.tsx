@@ -23,11 +23,13 @@ import {
   Briefcase,
   Menu,
   X,
+  PartyPopper,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import GlobalSearch from '@/components/GlobalSearch';
 
-export type DashboardRole = 'talent' | 'venue' | 'admin';
+export type DashboardRole = 'talent' | 'venue' | 'admin' | 'party';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -180,6 +182,52 @@ const VENUE_NAV: SidebarItem[] = [
   },
 ];
 
+// S19 (§6.3): the PARTY persona is read-only discovery — venues to book for
+// private parties, plus the inquiry threads those open. No principal surfaces.
+const PARTY_NAV: SidebarItem[] = [
+  {
+    kind: 'link',
+    label: 'Discover Venues',
+    href: '/venues',
+    icon: <Building2 className="w-5 h-5" />,
+  },
+  {
+    kind: 'link',
+    label: 'Messages',
+    href: '/dashboard/party/messages',
+    icon: <MessageSquare className="w-5 h-5" />,
+  },
+  {
+    kind: 'link',
+    label: 'Search',
+    href: '/search',
+    icon: <Search className="w-5 h-5" />,
+  },
+];
+
+/** Exhaustive per-role lookups — an unknown role can no longer silently fall
+ *  through to the venue nav (the F1 bug this replaces). */
+const NAV_BY_ROLE: Record<DashboardRole, SidebarItem[]> = {
+  talent: TALENT_NAV,
+  venue: VENUE_NAV,
+  admin: ADMIN_NAV,
+  party: PARTY_NAV,
+};
+
+const FALLBACK_NAME: Record<DashboardRole, string> = {
+  talent: 'Talent',
+  venue: 'Venue',
+  admin: 'Admin',
+  party: 'Party People',
+};
+
+function RoleBadgeIcon({ role }: { role: DashboardRole }) {
+  if (role === 'talent') return <Zap className="w-4 h-4 text-[#00FFCC]" />;
+  if (role === 'venue') return <Building2 className="w-4 h-4 text-[#00FFCC]" />;
+  if (role === 'admin') return <ShieldCheck className="w-4 h-4 text-[#00FFCC]" />;
+  return <PartyPopper className="w-4 h-4 text-[#00FFCC]" />;
+}
+
 // ─── Shared nav renderers ─────────────────────────────────────────────────────
 
 function NavLinkItem({
@@ -303,11 +351,7 @@ function MobileDrawer({
         <div className="px-3 pt-4 pb-2 flex-shrink-0">
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 border border-white/5">
             <div className="w-8 h-8 rounded-full bg-[#00FFCC]/20 flex items-center justify-center flex-shrink-0">
-              {role === 'talent' ? (
-                <Zap className="w-4 h-4 text-[#00FFCC]" />
-              ) : (
-                <Building2 className="w-4 h-4 text-[#00FFCC]" />
-              )}
+              <RoleBadgeIcon role={role} />
             </div>
             <div className="overflow-hidden">
               <p className="text-xs font-bold text-white leading-none truncate">{displayName}</p>
@@ -450,10 +494,7 @@ export default function DashboardSidebar({ role, userName }: DashboardSidebarPro
       cancelled = true;
     };
   }, [pathname]);
-  const displayName =
-    userName ??
-    session?.user?.name ??
-    (role === 'talent' ? 'Talent' : role === 'admin' ? 'Admin' : 'Venue');
+  const displayName = userName ?? session?.user?.name ?? FALLBACK_NAME[role];
 
   // Real unread-message badge (P3.4/P5 — finishes Backlog #12): total unread
   // across the caller's conversations, polled gently.
@@ -472,9 +513,7 @@ export default function DashboardSidebar({ role, userName }: DashboardSidebarPro
     0
   );
 
-  const navItems = (
-    role === 'talent' ? TALENT_NAV : role === 'admin' ? ADMIN_NAV : VENUE_NAV
-  ).map((item) =>
+  const navItems = NAV_BY_ROLE[role].map((item) =>
     item.kind === 'link' && item.label === 'Messages'
       ? { ...item, badge: unreadMessages > 0 ? unreadMessages : undefined }
       : item
@@ -577,11 +616,7 @@ export default function DashboardSidebar({ role, userName }: DashboardSidebarPro
           <div className="px-3 pt-4 pb-2">
             <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 border border-white/5">
               <div className="w-8 h-8 rounded-full bg-[#00FFCC]/20 flex items-center justify-center flex-shrink-0">
-                {role === 'talent' ? (
-                  <Zap className="w-4 h-4 text-[#00FFCC]" />
-                ) : (
-                  <Building2 className="w-4 h-4 text-[#00FFCC]" />
-                )}
+                <RoleBadgeIcon role={role} />
               </div>
               <div className="overflow-hidden">
                 <p className="text-xs font-bold text-white leading-none truncate">{displayName}</p>

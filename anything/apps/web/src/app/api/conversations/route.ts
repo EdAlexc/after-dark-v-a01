@@ -62,8 +62,10 @@ export const POST = withRoute('conversations.create', async (request) => {
   await enforceRateLimit(createLimiter, clientKey(request, user.id));
   const body = await parseBody(request, ConversationCreateSchema);
 
-  // Gig-anchored inquiries resolve the counterpart server-side from the gig,
-  // so clients never need (or see) a venue's auth user id.
+  // Gig- and venue-anchored inquiries resolve the counterpart server-side,
+  // so clients never need (or see) a venue's auth user id. The venue anchor
+  // (S19) is what lets PARTY open a private-party inquiry from the public
+  // directory: the client only ever holds the public venue_profiles.id.
   let counterpartId = body.counterpart_user_id ?? null;
   if (!counterpartId && body.gig_id) {
     const gigOwner = (await sql`
@@ -73,6 +75,15 @@ export const POST = withRoute('conversations.create', async (request) => {
     `) as Array<{ user_id: string }>;
     if (gigOwner.length === 0) throw ApiError.notFound('Gig not found');
     counterpartId = gigOwner[0].user_id;
+  }
+  if (!counterpartId && body.venue_id) {
+    const venueOwner = (await sql`
+      SELECT user_id FROM venue_profiles
+      WHERE id = ${body.venue_id} AND venue_name IS NOT NULL AND venue_name <> ''
+      LIMIT 1
+    `) as Array<{ user_id: string }>;
+    if (venueOwner.length === 0) throw ApiError.notFound('Venue not found');
+    counterpartId = venueOwner[0].user_id;
   }
   if (!counterpartId) throw ApiError.badRequest('No counterpart resolved');
   if (counterpartId === user.id) {

@@ -20,9 +20,8 @@ interface Notification {
   created_at: string;
 }
 
-/** Roles the bell can be mounted under (S17 — settings may pass `admin`;
- *  S19 widens this again for PARTY). */
-export type BellRole = 'talent' | 'venue' | 'admin';
+/** Roles the bell can be mounted under (S17 added `admin`; S19 `party`). */
+export type BellRole = 'talent' | 'venue' | 'admin' | 'party';
 
 /** Human line + destination per notification kind. */
 function describe(notification: Notification, role: BellRole): {
@@ -34,6 +33,17 @@ function describe(notification: Notification, role: BellRole): {
   if (role === 'admin') {
     const text = describe(notification, 'talent').text;
     return { text, href: '/dashboard/admin' };
+  }
+  // PARTY (S19): the only notifications the read-only persona receives are
+  // message replies to their venue inquiries; everything else falls back to
+  // venue discovery rather than a principal surface they cannot use.
+  if (role === 'party') {
+    const text = describe(notification, 'talent').text;
+    return {
+      text,
+      href:
+        notification.kind === 'message.received' ? '/dashboard/party/messages' : '/venues',
+    };
   }
   const payload = notification.payload ?? {};
   const gigTitle = typeof payload.gigTitle === 'string' ? payload.gigTitle : 'a gig';

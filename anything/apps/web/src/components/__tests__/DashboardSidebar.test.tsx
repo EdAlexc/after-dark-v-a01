@@ -73,6 +73,17 @@ describe('DashboardSidebar', () => {
 		expect(screen.queryByText('My Schedule')).not.toBeInTheDocument();
 	});
 
+	it('party variant renders discovery-only nav — no venue fallthrough (S19/F1)', () => {
+		nav.pathname = '/dashboard/party/messages';
+		wireFetch();
+		renderWithQueryClient(<DashboardSidebar role="party" />);
+		expectNav(['Discover Venues', 'Messages', 'Search']);
+		// The F1 bug rendered the VENUE nav for unknown roles — these are the tells.
+		expect(screen.queryByText('Post a Gig')).not.toBeInTheDocument();
+		expect(screen.queryByText('Applicants')).not.toBeInTheDocument();
+		expect(screen.queryByText('Venue Profile')).not.toBeInTheDocument();
+	});
+
 	it('shows the real session name, not a demo identity', async () => {
 		nav.pathname = '/dashboard/talent';
 		wireFetch();

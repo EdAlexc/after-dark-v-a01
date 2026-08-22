@@ -8,6 +8,29 @@
 
 ## 1. Current status — YOU ARE HERE
 
+- **Date:** 2026-08-22 · **Branch:** `claude/s19-login-issues-50159f` — **S19 landed: PARTY
+  persona completion** (975 vitest + 19 E2E green; typecheck/lint/build clean; details in
+  §7.3 S19) **plus a production incident found and fixed the same session**:
+  - **Incident (root cause of "can't sign up / can't sign in", reported with a
+    `{"status":500}` screenshot):** the production Neon database (`after-dark` /
+    `production` branch) had **migrations applied only through 0012** (2026-07-31) while
+    deployed `main` shipped 0022 — ten migrations of drift. First casualty: better-auth's
+    `rateLimit.storage: 'database'` (S1) writes the `"rateLimit"` table (migration 0013)
+    on **every** credential endpoint in production, so all sign-ins/sign-ups 500'd —
+    reproduced live (bogus-credential sign-in returned 500, not 401). Also missing: the
+    S13 `emailVerified` grandfather (0021), FTS indexes (0015), events/reviews/push/geo
+    (0016–0020), telemetry (0022). **Fix:** backup branch (`backup-pre-migrations-0013-0022`,
+    expires 2026-09-05) then `yarn db:migrate` with the owner string — 0013–0022 applied
+    cleanly; live re-probe now returns 401 with the styled "Invalid email or password"
+    error. **Residual for the operator:** the Neon-integration `vercel-dev` branch (created
+    2026-08-22, Development env) still sits at 0012 — run `yarn db:migrate` against it or
+    reset it from parent; and **the deploy pipeline has no migration step** — running
+    `yarn db:migrate --dry-run` (expect "No pending") after every merge, or wiring it into
+    CI/CD, is now a standing operator habit (see §4.6 note).
+  - S19 delivery summary: become-a-PARTY path (sentinel fix, onboarding card, role-aware
+    redirects), `/dashboard` root router (F1 404 fix), party sidebar/bell/messages
+    variants, public venue directory (`/api/venues` + `/venues{,/[id]}` + search arm), and
+    the server-resolved `venue_id` inquiry path. F8's misrouted search CTA fixed.
 - **Date:** 2026-08-18 (night) · **S15 gate calibration — both new gates fired on first
   contact, and both finds were real** (879 tests green):
   - **k6** crossed the pooled Apdex threshold while *every* functional assertion passed
@@ -435,7 +458,10 @@
    search server-side, 24-component-test beachhead. ~~**S18 — RUM & ops
    observability**~~ — ✅ **landed 2026-08-19** (§7.3): first-party RUM beacon,
    per-endpoint Apdex at the real T=300 bar, admin traffic/health cards, Sentry
-   source-map wiring. **Next dev slice: S19 — PARTY persona completion.**
+   source-map wiring. ~~**S19 — PARTY persona completion**~~ — ✅ **landed 2026-08-22**
+   (§7.3): become-a-PARTY path, `/dashboard` root router, venue directory + inquiry
+   path; same session diagnosed & fixed the production migration-drift auth outage
+   (§1 top entry). **Next dev slice: S20 — discovery & dashboard completion.**
 5. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min — owed since 2026-07-31).
 
 ---
@@ -1590,20 +1616,51 @@ typecheck/lint/build clean)
 
 #### Functionality wave
 
-**S19 — PARTY persona completion (~3–4 d)** — closes F1, F8
-- Become-a-PARTY path: signup sentinel fix (`'PERSONAL'` → `PARTY`), onboarding PARTY
-  card, role-aware completion redirect; a `/dashboard` **root router page** (fixes the
-  universal 404); a `party` sidebar variant with exhaustive ternaries (no more silent
-  venue fallthrough); role-aware post-2FA redirect; `NotificationsBell` role union widened.
-- Venue discovery: public `GET /api/venues` (+ detail) with a public-column projection, a
-  `/venues` page, and a `venues` arm in `/api/search`.
-- Inquiry path: `POST /api/conversations { venue_id }` resolves the counterpart
-  **server-side** (user ids still never ride the client); an "Inquire about a private
-  party" CTA on the venue page; a PARTY messages surface (widen `MessagesView`); seed a
-  PARTY fixture + inquiry so the already-working venue side has local data.
-- *Security gate:* the standing "PARTY is never a principal" matrix invariant stays green;
-  the venue directory leaks nothing beyond public profile columns; inquiries are
-  rate-limited and reportable (they already flow to `reports` via P5).
+**S19 — PARTY persona completion** — ✅ **landed 2026-08-22**, closes F1, F8 (975 vitest
++ 19 E2E green on the real stack; typecheck/lint/build clean)
+- ☑ **Become-a-PARTY path**: the dead `'PERSONAL'` signup sentinel now writes `PARTY`
+  and personal signups route through onboarding (pre-S19 they never got a role at all);
+  onboarding gained a Party People card whose flow is a single step (no profile —
+  §6.3: role only); completion redirects are role-aware via one shared
+  `dashboardPathFor()` (`src/lib/use-my-role.ts`), PARTY landing on `/venues`.
+- ☑ **`/dashboard` root router** (the F1 universal 404): reads the session role and
+  forwards — ADMIN/VENUE/TALENT homes, PARTY → venue discovery, roleless → onboarding.
+  The post-2FA redirect and the landing nav now target `/dashboard` instead of
+  hardcoding the talent home.
+- ☑ **Party UI variants, exhaustively**: `DashboardSidebar` gained a `party` nav
+  (Discover Venues / Messages / Search) and — the actual F1 bug — role lookups are now
+  exhaustive `Record<DashboardRole, …>` maps, so an unknown role can never silently
+  render the venue nav again; `NotificationsBell` widened with party deep links
+  (message → party inbox, anything else → `/venues`, mirroring the admin fallback);
+  `MessagesView` accepts `party` with its own empty state; settings accepts
+  `?role=party`.
+- ☑ **Venue discovery**: public `GET /api/venues` (+ `/api/venues/[id]`) on a
+  public-column projection (**no user_id, no street address in the list**; detail serves
+  address exactly as every gig card's venue join already does) via a new pure builder
+  (`venue-query.ts`, mirrored on talent-query); `/venues` directory page (debounced
+  search, infinite pages) + `/venues/[id]` detail; a `venues` arm in `/api/search` +
+  GlobalSearch/`/search` sections; migration `0023_venue_directory.sql` adds the 0015-
+  doctrine FTS GIN index + a partial directory-ordering index.
+- ☑ **Inquiry path**: `POST /api/conversations` accepts `venue_id` (public
+  venue_profiles.id) and resolves the venue's user **server-side** — user ids still
+  never ride the client; "Inquire about a private party" CTA on the venue page
+  (hidden for VENUE viewers; anon → sign-in with callback); rate proposals stay
+  hidden on PARTY_INQUIRY threads; seed adds `party.demo@afterdark.test` + a
+  venue↔party inquiry so both sides have local data. F8: the search page's Message
+  CTA is now rendered for VENUE viewers only (it sent every role to the venue inbox).
+- ☑ **Proof**: 41 new/extended vitest cases (venue builder + directory/detail routes
+  incl. SQLi parameterization and 404-on-non-uuid, search venue arm, conversations
+  venue-anchor semantics — PARTY_INQUIRY kind, gig-anchor 403 for PARTY, venue↔venue
+  400, unknown-venue 404 — sidebar/bell/messages party variants) + a new E2E party
+  journey on the production stack: `/dashboard` → `/venues` redirect, directory +
+  detail render, venue-anchored inquiry creates a PARTY_INQUIRY, party inbox renders
+  it. The S12 RLS-wiring gate caught both new files on first run — declared
+  `public-read`/`builder` with the other anon surfaces.
+- *Security gate met:* the standing "PARTY is never a principal" matrix invariant stays
+  green (E2E re-proves 403s live); the venue directory leaks nothing beyond public
+  profile columns (unit-asserted projection); inquiries are rate-limited
+  (`conversations-create`) and reportable (P5 report flow, asserted in the messages
+  component suite).
 
 **S20 — Discovery & dashboard completion (~2–3 d)** — closes F4, F5, F6 + the D3 decision
 - Saved talent persisted server-side (`saved_talent` table with RLS in-file, matrix row,
@@ -1666,3 +1723,11 @@ merges** — the runbook's premise ("every governed statement carries context") 
 false, and flipping today would silently break SSE realtime (A1). *(Update 2026-08-18: S12
 landed — once its PR merges, the flip is re-opened; follow `docs/rls-cutover.md`, expect
 23/23.)*
+
+**B6 (new, 2026-08-22 — from the migration-drift incident, §1):** production migrations
+are a manual operator step and drifted 10 files behind the deployed code, taking every
+credential endpoint down with 500s. Now that 0001–0023 are applied: after **every** merge
+that adds a `migrations/*.sql`, run `DATABASE_URL=<owner> yarn db:migrate` (or verify
+`--dry-run` prints "No pending") **before or immediately after the Vercel deploy** — or
+wire a migration step into CI/CD. The Neon-integration `vercel-dev` branch (Development
+env) still sits at 0012 and needs the same command once, if it is kept.

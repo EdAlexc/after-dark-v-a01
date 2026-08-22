@@ -101,6 +101,36 @@ describe('MessagesView', () => {
 		expect(screen.getAllByRole('button', { name: 'Accept rate' })).toHaveLength(1);
 	});
 
+	it('party empty state points at venue discovery, and hides the rate button (S19)', async () => {
+		mockFetch({
+			'/api/conversations': { conversations: [] },
+		});
+		renderWithQueryClient(<MessagesView role="party" />);
+		await waitFor(() =>
+			expect(screen.getByText(/inquire about hosting your private party/)).toBeInTheDocument()
+		);
+		expect(screen.getByRole('link', { name: /Discover venues/ })).toHaveAttribute(
+			'href',
+			'/venues'
+		);
+	});
+
+	it('hides the propose-rate control on PARTY_INQUIRY threads (rates are gig business)', async () => {
+		mockFetch({
+			'/api/conversations': {
+				conversations: [
+					{ ...CONVERSATION, id: 'c2', gig_id: null, kind: 'PARTY_INQUIRY', gig_title: null },
+				],
+			},
+			'/api/conversations/c2/messages': { messages: [] },
+		});
+		renderWithQueryClient(<MessagesView role="party" />);
+		await waitFor(() =>
+			expect(screen.getByText('Private-party inquiry')).toBeInTheDocument()
+		);
+		expect(screen.queryByTitle('Propose a rate')).not.toBeInTheDocument();
+	});
+
 	it('renders hostile message content as inert text (behavioral XSS gate)', async () => {
 		const { container } = renderWithQueryClient(<MessagesView role="talent" />);
 		await waitFor(() =>

@@ -30,11 +30,11 @@ export default function LandingPage() {
               <Link href="/dashboard/talent/browse" className="hover:text-white transition-colors">
                 Browse Gigs &amp; Events
               </Link>
-              <Link href="/dashboard/venue" className="hover:text-white transition-colors">
+              <Link href="/venues" className="hover:text-white transition-colors">
                 Venues
               </Link>
-              <Link href="/dashboard/talent" className="hover:text-white transition-colors">
-                Talent Network
+              <Link href="/dashboard" className="hover:text-white transition-colors">
+                Dashboard
               </Link>
             </div>
           </div>

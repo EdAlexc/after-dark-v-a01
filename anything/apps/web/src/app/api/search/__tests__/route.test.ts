@@ -23,6 +23,9 @@ beforeEach(() => {
   mocks.sql.mockImplementation(async (text: string) => {
     if (String(text).includes('FROM gigs g')) return [{ id: 'g1', title: 'Deep House Night' }];
     if (String(text).includes('FROM talent_profiles')) return [{ id: 't1', stage_name: 'Kira' }];
+    if (String(text).includes('FROM venue_profiles')) {
+      return [{ id: 'v1', venue_name: 'Nebula NYC' }];
+    }
     return [];
   });
 });
@@ -33,21 +36,32 @@ describe('GET /api/search', () => {
     expect((await searchGet(req('?q=a'), {})).status).toBe(400);
   });
 
-  it('returns both entity groups by default', async () => {
+  it('returns all three entity groups by default (S19 adds venues)', async () => {
     const res = await searchGet(req('?q=deep house'), {});
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.gigs).toHaveLength(1);
     expect(body.talent).toHaveLength(1);
+    expect(body.venues).toHaveLength(1);
   });
 
-  it('type=gigs skips the talent query entirely (and vice versa)', async () => {
+  it('type=gigs skips the talent and venue queries entirely', async () => {
     const res = await searchGet(req('?q=deep&type=gigs'), {});
     const body = await res.json();
     expect(body.gigs).toHaveLength(1);
     expect(body.talent).toEqual([]);
+    expect(body.venues).toEqual([]);
     const texts = mocks.sql.mock.calls.map(([text]) => String(text));
     expect(texts.some((text) => text.includes('FROM talent_profiles'))).toBe(false);
+    expect(texts.some((text) => text.includes('FROM venue_profiles'))).toBe(false);
+  });
+
+  it('type=venues serves only the venue arm', async () => {
+    const res = await searchGet(req('?q=nebula&type=venues'), {});
+    const body = await res.json();
+    expect(body.venues).toHaveLength(1);
+    expect(body.gigs).toEqual([]);
+    expect(body.talent).toEqual([]);
   });
 
   it('passes the term as a parameter, never in the SQL text', async () => {

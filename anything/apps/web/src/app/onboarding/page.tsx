@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Music, Wine, ShieldCheck, Megaphone, ArrowRight, Check } from 'lucide-react';
+import { Music, Wine, ShieldCheck, Megaphone, ArrowRight, Check, PartyPopper } from 'lucide-react';
+import { dashboardPathFor, type MarketplaceRole } from '@/lib/use-my-role';
 
 const ROLES = [
   {
@@ -24,6 +25,18 @@ const ROLES = [
     color: 'text-purple-400',
     border: 'border-purple-400',
     bg: 'bg-purple-400/10',
+  },
+  // S19 (§6.3): the consumer persona — read-only discovery, never a
+  // marketplace principal. No profile step; the role is all we record.
+  {
+    value: 'PARTY',
+    label: 'Party People',
+    description: 'I’m here to discover nights out and book venues for private parties.',
+    icon: PartyPopper,
+    examples: ['Find events', 'Browse venues', 'Private-party inquiries'],
+    color: 'text-pink-400',
+    border: 'border-pink-400',
+    bg: 'bg-pink-400/10',
   },
 ];
 
@@ -51,7 +64,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const pending = localStorage.getItem('pendingRole');
-      if (pending === 'TALENT' || pending === 'VENUE') {
+      if (pending === 'TALENT' || pending === 'VENUE' || pending === 'PARTY') {
         setSelectedRole(pending);
       }
     }
@@ -82,8 +95,9 @@ export default function OnboardingPage() {
         localStorage.removeItem('pendingRole');
       }
 
-      // Redirect to the appropriate dashboard
-      router.push(selectedRole === 'VENUE' ? '/dashboard/venue' : '/dashboard/talent');
+      // Role-aware landing (S19): venue/talent homes, venue discovery for
+      // the PARTY persona — the one surface their read-only scope is for.
+      router.push(dashboardPathFor(selectedRole as MarketplaceRole));
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -105,8 +119,12 @@ export default function OnboardingPage() {
           <p className="text-white/40 text-sm mt-2">Let's set up your profile</p>
         </div>
 
-        {/* Progress */}
-        <div className="flex items-center gap-2 mb-10 justify-center">
+        {/* Progress — hidden for PARTY, whose flow is a single step */}
+        <div
+          className={`flex items-center gap-2 mb-10 justify-center ${
+            selectedRole === 'PARTY' ? 'invisible' : ''
+          }`}
+        >
           {[1, 2].map((s) => (
             <div key={s} className="flex items-center gap-2">
               <div
@@ -170,13 +188,32 @@ export default function OnboardingPage() {
               })}
             </div>
 
+            {error && (
+              <div className="mb-4 rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">
+                {error}
+              </div>
+            )}
+
             <button
               type="button"
-              disabled={!selectedRole}
-              onClick={() => setStep(2)}
+              disabled={!selectedRole || loading}
+              // PARTY records the role and nothing else — no profile step.
+              onClick={() => (selectedRole === 'PARTY' ? void handleComplete() : setStep(2))}
               className="w-full bg-[#00FFCC] text-black font-bold py-3 rounded-xl text-sm hover:bg-[#00FFCC]/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              Continue <ArrowRight className="w-4 h-4" />
+              {selectedRole === 'PARTY' ? (
+                loading ? (
+                  'Setting up your account…'
+                ) : (
+                  <>
+                    Enter AfterDark <ArrowRight className="w-4 h-4" />
+                  </>
+                )
+              ) : (
+                <>
+                  Continue <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </div>
         )}

@@ -127,3 +127,59 @@ test('party journey: read-only discovery works, principal writes are denied', as
 		await context.close();
 	}
 });
+
+test('party journey S19: /dashboard routes to discovery, and a venue inquiry opens a thread', async ({ browser }) => {
+	test.setTimeout(120_000);
+	const context = await browser.newContext({
+		storageState: storageStateFor('party'),
+		viewport: DESKTOP_VIEWPORT,
+	});
+	try {
+		const page = await context.newPage();
+
+		await test.step('the /dashboard root router forwards PARTY to venue discovery (F1 404 fix)', async () => {
+			await page.goto('/dashboard');
+			await page.waitForURL('**/venues');
+			await expect(page.getByRole('heading', { name: 'Discover Venues' })).toBeVisible();
+		});
+
+		let venueId = '';
+		await test.step('the public venue directory lists the seeded venue', async () => {
+			const venuesRes = await context.request.get('/api/venues');
+			expect(venuesRes.ok()).toBe(true);
+			const { venues } = (await venuesRes.json()) as {
+				venues: Array<{ id: string; venue_name: string }>;
+			};
+			expect(venues.length).toBeGreaterThan(0);
+			venueId = venues[0].id;
+			await expect(page.getByText(venues[0].venue_name).first()).toBeVisible();
+		});
+
+		await test.step('the venue detail page renders with the private-party CTA', async () => {
+			await page.goto(`/venues/${venueId}`);
+			await expect(
+				page.getByRole('button', { name: 'Inquire about a private party' })
+			).toBeVisible();
+		});
+
+		await test.step('a venue-anchored inquiry opens (or reuses) a PARTY_INQUIRY thread', async () => {
+			const inquiry = await context.request.post('/api/conversations', {
+				data: { venue_id: venueId },
+			});
+			expect([200, 201]).toContain(inquiry.status());
+
+			const list = await context.request.get('/api/conversations');
+			const { conversations } = (await list.json()) as {
+				conversations: Array<{ kind: string }>;
+			};
+			expect(conversations.some((thread) => thread.kind === 'PARTY_INQUIRY')).toBe(true);
+		});
+
+		await test.step('the party messages surface renders the inquiry thread', async () => {
+			await page.goto('/dashboard/party/messages');
+			await expect(page.getByText('Private-party inquiry').first()).toBeVisible();
+		});
+	} finally {
+		await context.close();
+	}
+});

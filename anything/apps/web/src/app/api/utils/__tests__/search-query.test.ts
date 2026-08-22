@@ -8,6 +8,7 @@ import {
   SEARCH_LIMIT_MAX,
   buildGigSearchQuery,
   buildTalentSearchQuery,
+  buildVenueSearchQuery,
 } from '../search-query';
 
 const HOSTILE_TERMS = [
@@ -74,5 +75,33 @@ describe('buildTalentSearchQuery', () => {
 
   it('bounds the limit', () => {
     expect(buildTalentSearchQuery('kira', 999).values[2]).toBe(SEARCH_LIMIT_MAX);
+  });
+});
+
+describe('buildVenueSearchQuery (S19)', () => {
+  it('parameterizes the term', () => {
+    for (const term of HOSTILE_TERMS) {
+      const { text, values } = buildVenueSearchQuery(term, 8);
+      expect(text).not.toContain(term);
+      expect(values[0]).toBe(term);
+    }
+  });
+
+  it('only lists venue-named (published) profiles', () => {
+    const { text } = buildVenueSearchQuery('nebula', 8);
+    expect(text).toContain(`venue_name IS NOT NULL AND venue_name <> ''`);
+  });
+
+  it('projects public columns only — no user_id, email, address, or socials', () => {
+    const { text } = buildVenueSearchQuery('nebula', 8);
+    for (const banned of ['user_id', 'email', 'address', 'social_links', 'operating_hours']) {
+      expect(text).not.toContain(banned);
+    }
+  });
+
+  it('uses plainto_tsquery only and bounds the limit', () => {
+    const { text, values } = buildVenueSearchQuery('nebula', 999);
+    expect(text).toContain("plainto_tsquery('english', $1)");
+    expect(values[2]).toBe(SEARCH_LIMIT_MAX);
   });
 });

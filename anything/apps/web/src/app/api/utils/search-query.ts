@@ -7,6 +7,7 @@
  *    as plain words (no tsquery operators), so there is no query-language
  *    injection surface (the S5 security gate);
  *  - gigs are hard-pinned to PUBLISHED; talent to stage-named profiles;
+ *    venues (S19) to venue-named profiles;
  *  - only public columns are projected — never user ids, emails, or
  *    anything from the auth tables;
  *  - LIMIT is a server-bounded number, passed as a parameter.
@@ -24,6 +25,7 @@ export const SEARCH_LIMIT_MAX = 20;
 
 const GIG_TSV = `to_tsvector('english', coalesce(g.title, '') || ' ' || coalesce(g.description, ''))`;
 const TALENT_TSV = `to_tsvector('english', coalesce(stage_name, '') || ' ' || coalesce(bio, ''))`;
+const VENUE_TSV = `to_tsvector('english', coalesce(venue_name, '') || ' ' || coalesce(description, ''))`;
 
 export function buildGigSearchQuery(term: string, limit: number): BuiltQuery {
   const bounded = Math.max(1, Math.min(limit, SEARCH_LIMIT_MAX));
@@ -54,6 +56,24 @@ export function buildTalentSearchQuery(term: string, limit: number): BuiltQuery 
       WHERE stage_name IS NOT NULL AND stage_name <> ''
         AND (${TALENT_TSV} @@ plainto_tsquery('english', $1) OR LOWER(stage_name) LIKE $2)
       ORDER BY rank DESC, available_tonight DESC
+      LIMIT $3
+    `,
+    values: [term, `%${term.toLowerCase()}%`, bounded],
+  };
+}
+
+/** S19: venues arm — name-set profiles, public columns, 0023 index shape. */
+export function buildVenueSearchQuery(term: string, limit: number): BuiltQuery {
+  const bounded = Math.max(1, Math.min(limit, SEARCH_LIMIT_MAX));
+  return {
+    text: `
+      SELECT id, venue_name, venue_type, neighborhood, capacity, rating,
+             avatar_url,
+             ts_rank(${VENUE_TSV}, plainto_tsquery('english', $1)) AS rank
+      FROM venue_profiles
+      WHERE venue_name IS NOT NULL AND venue_name <> ''
+        AND (${VENUE_TSV} @@ plainto_tsquery('english', $1) OR LOWER(venue_name) LIKE $2)
+      ORDER BY rank DESC, rating DESC NULLS LAST
       LIMIT $3
     `,
     values: [term, `%${term.toLowerCase()}%`, bounded],

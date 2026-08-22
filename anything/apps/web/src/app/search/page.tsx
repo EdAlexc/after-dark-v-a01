@@ -13,10 +13,13 @@ import {
   DollarSign,
   MessageSquare,
   ArrowLeft,
+  Building2,
+  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatRateBand, type SearchResponse } from '@/components/GlobalSearch';
+import { useMyRole } from '@/lib/use-my-role';
 
 /**
  * URL-addressable search results (S5) — /search?q=…&type=gigs|talent.
@@ -34,8 +37,11 @@ function SearchResults() {
     setTerm(urlQuery);
   }, [urlQuery]);
 
-  const type = urlType === 'gigs' || urlType === 'talent' ? urlType : undefined;
+  const type =
+    urlType === 'gigs' || urlType === 'talent' || urlType === 'venues' ? urlType : undefined;
   const active = urlQuery.trim().length >= 2;
+  // S19 (F8): CTAs depend on who is looking — only venues get "Message talent".
+  const { role: myRole } = useMyRole();
 
   const { data, isPending } = useQuery({
     queryKey: ['search-results', urlQuery, type ?? 'all'],
@@ -58,7 +64,7 @@ function SearchResults() {
     router.replace(`/search?${params.toString()}`);
   };
 
-  const setType = (next: 'gigs' | 'talent' | undefined) => {
+  const setType = (next: 'gigs' | 'talent' | 'venues' | undefined) => {
     const params = new URLSearchParams({ q: urlQuery });
     if (next) params.set('type', next);
     router.replace(`/search?${params.toString()}`);
@@ -66,6 +72,7 @@ function SearchResults() {
 
   const gigs = data?.gigs ?? [];
   const talent = data?.talent ?? [];
+  const venues = data?.venues ?? [];
 
   return (
     <div className="min-h-screen bg-[#121212] text-white font-sans">
@@ -111,6 +118,7 @@ function SearchResults() {
               [undefined, 'All'],
               ['gigs', 'Gigs'],
               ['talent', 'Talent'],
+              ['venues', 'Venues'],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -134,11 +142,12 @@ function SearchResults() {
           <div className="flex items-center justify-center py-16">
             <div className="w-8 h-8 border-2 border-[#00FFCC]/20 border-t-[#00FFCC] rounded-full animate-spin" />
           </div>
-        ) : gigs.length === 0 && talent.length === 0 ? (
+        ) : gigs.length === 0 && talent.length === 0 && venues.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-sm font-bold text-white/40">No matches for “{urlQuery}”.</p>
             <p className="text-xs text-white/25 mt-1">
-              Try a different word — search covers gig titles, descriptions, stage names, and bios.
+              Try a different word — search covers gig titles, descriptions, stage names, bios,
+              and venues.
             </p>
           </div>
         ) : (
@@ -234,17 +243,64 @@ function SearchResults() {
                             </>
                           )}
                         </span>
-                        <Link href="/dashboard/venue/messages">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-white/10 text-white/60 hover:text-white text-xs h-7 flex items-center gap-1.5"
-                          >
-                            <MessageSquare className="w-3 h-3" /> Message
-                          </Button>
-                        </Link>
+                        {/* S19 (F8): messaging talent is a venue capability —
+                            the CTA used to send every role to the venue inbox. */}
+                        {myRole === 'VENUE' && (
+                          <Link href="/dashboard/venue/messages">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-white/10 text-white/60 hover:text-white text-xs h-7 flex items-center gap-1.5"
+                            >
+                              <MessageSquare className="w-3 h-3" /> Message
+                            </Button>
+                          </Link>
+                        )}
                       </div>
                     </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {venues.length > 0 && (
+              <section>
+                <h2 className="text-xs font-bold uppercase tracking-widest text-white/40 mb-3">
+                  Venues · {venues.length}
+                </h2>
+                <div className="grid sm:grid-cols-2 gap-2.5">
+                  {venues.map((venue) => (
+                    <Link
+                      key={venue.id}
+                      href={`/venues/${venue.id}`}
+                      className="p-4 rounded-xl bg-[#1E1E1E] border border-white/5 hover:border-[#00FFCC]/20 transition-colors group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-[#00FFCC]/10 border border-[#00FFCC]/20 flex items-center justify-center flex-shrink-0">
+                          <Building2 className="w-5 h-5 text-[#00FFCC]" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-black text-white truncate group-hover:text-[#00FFCC] transition-colors">
+                            {venue.venue_name}
+                          </p>
+                          <p className="text-xs text-white/40 truncate">
+                            {[venue.venue_type, venue.neighborhood].filter(Boolean).join(' · ')}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between mt-3 text-xs text-white/50">
+                        <span className="flex items-center gap-1">
+                          {venue.capacity ? (
+                            <>
+                              <Users className="w-3 h-3" /> Up to {venue.capacity}
+                            </>
+                          ) : null}
+                        </span>
+                        {Number(venue.rating) > 0 && (
+                          <span className="font-bold">★ {Number(venue.rating).toFixed(1)}</span>
+                        )}
+                      </div>
+                    </Link>
                   ))}
                 </div>
               </section>
