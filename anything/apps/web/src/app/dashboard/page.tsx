@@ -14,7 +14,7 @@ import { dashboardPathFor, useMyRole } from '@/lib/use-my-role';
 
 export default function DashboardRouterPage() {
   const router = useRouter();
-  const { role, signedIn, isPending } = useMyRole();
+  const { role, signedIn, isPending, isError } = useMyRole();
 
   useEffect(() => {
     if (isPending) return;
@@ -23,8 +23,14 @@ export default function DashboardRouterPage() {
       router.replace('/account/signin?callbackUrl=%2Fdashboard');
       return;
     }
+    if (isError) {
+      // Role UNKNOWN (network blip, suspension 403) ≠ "no role yet" — landing
+      // is safe either way; /onboarding would offer a role switch by mistake.
+      router.replace('/');
+      return;
+    }
     router.replace(dashboardPathFor(role));
-  }, [isPending, signedIn, role, router]);
+  }, [isPending, signedIn, isError, role, router]);
 
   return (
     <main className="min-h-screen bg-[#121212] flex items-center justify-center">

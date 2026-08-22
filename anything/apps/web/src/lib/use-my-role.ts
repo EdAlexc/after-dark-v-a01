@@ -28,11 +28,13 @@ export function useMyRole(): {
   role: MarketplaceRole | null;
   signedIn: boolean;
   isPending: boolean;
+  /** Fetch failed — `role: null` then means "unknown", NOT "no role yet". */
+  isError: boolean;
 } {
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const signedIn = Boolean(session?.user);
 
-  const { data, isPending: rolePending } = useQuery({
+  const { data, isPending: rolePending, isError } = useQuery({
     queryKey: ['my-role'],
     enabled: signedIn,
     staleTime: 5 * 60_000,
@@ -47,5 +49,6 @@ export function useMyRole(): {
     role: data?.user?.role ?? null,
     signedIn,
     isPending: sessionPending || (signedIn && rolePending),
+    isError: signedIn && isError,
   };
 }
