@@ -324,6 +324,11 @@ const REQUEST_BODY: Record<string, unknown | ((actor: Actor) => unknown)> = {
   'push.unsubscribe': { endpoint: 'https://push.example/endpoint-1' },
   'admin.users.update': { suspended: true, reason: 'matrix probe' },
   'admin.gigs.update': { status: 'CANCELLED', reason: 'matrix takedown' },
+  // S20 saved talent
+  'venue.savedTalent.write': {
+    talent_id: 'aa11bb22-cc33-4d44-8e55-ff6677889900',
+    saved: true,
+  },
 };
 
 /** Query strings for GET routes whose schema requires one. */

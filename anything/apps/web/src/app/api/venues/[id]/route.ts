@@ -8,6 +8,11 @@ import { ApiError, withRoute } from '@/app/api/utils/route-kit';
  * already exposes (gigs hosted). The street address is served here like it is
  * on every gig card's venue join; the owner's auth user id never leaves the
  * server — inquiries resolve it server-side from this row's id.
+ *
+ * response_rate (S20 D3): % of last-90d inbound conversations the venue
+ * answered, via the 0024 SECURITY DEFINER aggregate (conversations/messages
+ * are participant-private — a bare aggregate would zero out post-cutover).
+ * NULL below 3 inbound threads: a one-sample 0% or 100% reads as reputation.
  */
 export const GET = withRoute('venues.detail', async (_request, context) => {
   const params = await context.params;
@@ -24,8 +29,12 @@ export const GET = withRoute('venues.detail', async (_request, context) => {
              AS gigs_hosted,
            (SELECT COUNT(*)::int FROM gigs g
              WHERE g.venue_id = vp.id AND g.status = 'PUBLISHED')
-             AS open_gigs
+             AS open_gigs,
+           CASE WHEN rs.inbound_count >= 3
+                THEN ROUND(100.0 * rs.responded_count / rs.inbound_count)::int
+                ELSE NULL END AS response_rate
     FROM venue_profiles vp
+    LEFT JOIN LATERAL app_venue_response_stats(vp.id) rs ON TRUE
     WHERE vp.id = ${parsed.data}
       AND vp.venue_name IS NOT NULL AND vp.venue_name <> ''
     LIMIT 1

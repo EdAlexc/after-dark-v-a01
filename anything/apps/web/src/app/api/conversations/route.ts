@@ -56,6 +56,8 @@ export const GET = withRoute('conversations.list', async () => {
  *
  * Role semantics (§6.3): a PARTY user may only open PARTY_INQUIRY threads to
  * venues — that is their entire write surface. Gig threads are venue↔talent.
+ * Anchors: gig_id (talent→venue inquiries), venue_id (S19 party inquiries),
+ * talent_id (S20 venue outreach) — each resolved to a user id server-side.
  */
 export const POST = withRoute('conversations.create', async (request) => {
   const user = await authGuard.requireRole('TALENT', 'VENUE', 'PARTY');
@@ -84,6 +86,21 @@ export const POST = withRoute('conversations.create', async (request) => {
     `) as Array<{ user_id: string }>;
     if (venueOwner.length === 0) throw ApiError.notFound('Venue not found');
     counterpartId = venueOwner[0].user_id;
+  }
+  if (!counterpartId && body.talent_id) {
+    // S20 outreach anchor: venue-initiated messaging from the directory /
+    // saved-talent rail. VENUE-only by doctrine — talent↔talent threads do
+    // not exist, and PARTY's sole write surface stays venue inquiries.
+    if (user.role !== 'VENUE') {
+      throw ApiError.forbidden('Only venues can start a conversation with talent');
+    }
+    const talentOwner = (await sql`
+      SELECT user_id FROM talent_profiles
+      WHERE id = ${body.talent_id} AND stage_name IS NOT NULL AND stage_name <> ''
+      LIMIT 1
+    `) as Array<{ user_id: string }>;
+    if (talentOwner.length === 0) throw ApiError.notFound('Talent not found');
+    counterpartId = talentOwner[0].user_id;
   }
   if (!counterpartId) throw ApiError.badRequest('No counterpart resolved');
   if (counterpartId === user.id) {

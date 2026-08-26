@@ -40,9 +40,15 @@ async function loadGig(id: string, user?: RlsUser | null): Promise<GigDetailRow 
            vp.rating AS venue_rating, vp.avatar_url AS venue_avatar_url,
            (SELECT COUNT(*)::int FROM gigs g2
              WHERE g2.venue_id = g.venue_id AND g2.status IN ('FILLED', 'COMPLETED'))
-             AS venue_gigs_hosted
+             AS venue_gigs_hosted,
+           -- S20 D3: cutover-safe response-rate aggregate (0024 definer);
+           -- NULL below the 3-inbound-thread floor.
+           CASE WHEN rs.inbound_count >= 3
+                THEN ROUND(100.0 * rs.responded_count / rs.inbound_count)::int
+                ELSE NULL END AS venue_response_rate
     FROM gigs g
     JOIN venue_profiles vp ON g.venue_id = vp.id
+    LEFT JOIN LATERAL app_venue_response_stats(vp.id) rs ON TRUE
     WHERE g.id = ${id}
     LIMIT 1
   `;

@@ -25,6 +25,7 @@ import {
   X,
   PartyPopper,
   ShieldCheck,
+  Bell,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import GlobalSearch from '@/components/GlobalSearch';
@@ -94,6 +95,12 @@ const TALENT_NAV: SidebarItem[] = [
   },
   {
     kind: 'link',
+    label: 'Notifications',
+    href: '/dashboard/notifications?role=talent',
+    icon: <Bell className="w-5 h-5" />,
+  },
+  {
+    kind: 'link',
     label: 'My Profile',
     href: '/dashboard/talent/profile',
     icon: <User className="w-5 h-5" />,
@@ -124,6 +131,12 @@ const ADMIN_NAV: SidebarItem[] = [
     label: 'Audit Log',
     href: '/dashboard/admin#audit',
     icon: <Calendar className="w-5 h-5" />,
+  },
+  {
+    kind: 'link',
+    label: 'Notifications',
+    href: '/dashboard/notifications?role=admin',
+    icon: <Bell className="w-5 h-5" />,
   },
 ];
 
@@ -172,6 +185,12 @@ const VENUE_NAV: SidebarItem[] = [
     href: '/dashboard/venue/messages',
     icon: <MessageSquare className="w-5 h-5" />,
   },
+  {
+    kind: 'link',
+    label: 'Notifications',
+    href: '/dashboard/notifications?role=venue',
+    icon: <Bell className="w-5 h-5" />,
+  },
   // "Analytics" removed (S4): it pointed at a page that never existed. The
   // real venue KPIs live on the dashboard itself (wireframe p10, S6).
   {
@@ -196,6 +215,12 @@ const PARTY_NAV: SidebarItem[] = [
     label: 'Messages',
     href: '/dashboard/party/messages',
     icon: <MessageSquare className="w-5 h-5" />,
+  },
+  {
+    kind: 'link',
+    label: 'Notifications',
+    href: '/dashboard/notifications?role=party',
+    icon: <Bell className="w-5 h-5" />,
   },
   {
     kind: 'link',

@@ -18,7 +18,7 @@
 | Least-privilege GRANTs | ✅ conditional blocks in 0006/0011/0013/0014 **+ re-runnable `yarn db:grants`** (see below) |
 | Per-request context helper | ✅ `src/app/api/utils/rls.ts` (`withRlsContext`, single query or atomic batch, + `serviceContext` for cron/webhook/erasure) |
 | **Route wiring** | ✅ **complete — S2, repaired and machine-checked in S12 (2026-08-17).** The §7 audit falsified the original S2 claim: three surfaces that post-date the S2 sweep ran bare `sql` — `/api/stream`'s SSE fingerprint (realtime would freeze post-cutover), `/api/gigs/match-preview` (worked only by leaning implicitly on public-read policies), and `/api/user/role`'s profile INSERTs (onboarding would 500). S12 wired all three **and added `test/rls-wiring.test.ts`**: a structural gate, registry-style like the authz matrix, that fails CI whenever a file touching a governed table never enters an RLS context — this claim can no longer silently rot. |
-| Proof the policies enforce | ✅ `scripts/verify-rls.mjs` — **23 checks**: isolation, the 0014 semantics (applicant deep links, mark-read, SERVICE-only payout release + pseudonymization, stripe_events deny-by-default), and the S12 wiring canaries (SSE fingerprint with/without context; onboarding INSERT denied bare / allowed contexted). **Runs on every PR**: the CI `alpha-gates` job provisions a throwaway non-owner role (`scripts/ci-rls-role.mjs` + `yarn db:grants`) on its Postgres and executes the full suite as that role over the credential-faithful WebSocket tunnel (`scripts/pool-sql.mjs`). |
+| Proof the policies enforce | ✅ `scripts/verify-rls.mjs` — **28 checks**: isolation, the 0014 semantics (applicant deep links, mark-read, SERVICE-only payout release + pseudonymization, stripe_events deny-by-default), the S12 wiring canaries (SSE fingerprint with/without context; onboarding INSERT denied bare / allowed contexted), and the S20 additions (saved_talent owner-only in all three directions; the 0024 response-stats definer aggregating context-free). **Runs on every PR**: the CI `alpha-gates` job provisions a throwaway non-owner role (`scripts/ci-rls-role.mjs` + `yarn db:grants`) on its Postgres and executes the full suite as that role over the credential-faithful WebSocket tunnel (`scripts/pool-sql.mjs`). |
 | App connects as the non-owner role | ⛔ **The remaining operator step — see below** |
 
 Until the flip, the policies are **inert in production**: Postgres table owners bypass
@@ -91,7 +91,7 @@ and Preview), then redeploy. Keep the owner string somewhere safe — migrations
 ### 5. Verify
 
 ```bash
-OWNER_URL=<owner> RLS_URL=<afterdark_app> yarn db:verify-rls   # expect 23/23
+OWNER_URL=<owner> RLS_URL=<afterdark_app> yarn db:verify-rls   # expect 28/28
 ```
 
 Then walk TESTING.md §5 against the deployed app. Canaries for a botched cutover, in the

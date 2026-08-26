@@ -13,6 +13,7 @@ import {
 	PREVIEW_EMAILS,
 	previewPassword,
 	signInViaApi,
+	storageStateFor,
 } from './fixtures';
 
 test.use({ viewport: DESKTOP_VIEWPORT });
@@ -35,6 +36,87 @@ test('a published gig deep link renders anonymously and survives refresh', async
 	await expect(page.getByRole('heading', { name: gigs[0].title })).toBeVisible();
 	await page.reload();
 	await expect(page.getByRole('heading', { name: gigs[0].title })).toBeVisible();
+});
+
+test('a public talent profile deep link renders anonymously and survives refresh (S20)', async ({
+	page,
+	request,
+}) => {
+	const res = await request.get('/api/talent');
+	expect(res.ok()).toBe(true);
+	const { talent } = (await res.json()) as { talent: Array<{ id: string; stage_name: string }> };
+	expect(talent.length, 'listed talent profiles must exist').toBeGreaterThan(0);
+
+	await page.goto(`/talent/${talent[0].id}`);
+	await expect(page.getByRole('heading', { name: talent[0].stage_name })).toBeVisible();
+	await page.reload();
+	await expect(page.getByRole('heading', { name: talent[0].stage_name })).toBeVisible();
+});
+
+test('saved talent persists server-side and Contact lands on the thread (S20)', async ({
+	browser,
+}) => {
+	test.setTimeout(120_000);
+	const context = await browser.newContext({
+		storageState: storageStateFor('venue'),
+		viewport: DESKTOP_VIEWPORT,
+	});
+	try {
+		const listing = await context.request.get('/api/talent');
+		expect(listing.ok()).toBe(true);
+		const { talent } = (await listing.json()) as {
+			talent: Array<{ id: string; stage_name: string }>;
+		};
+		expect(talent.length).toBeGreaterThan(0);
+		const target = talent[0];
+
+		// Normalize for retries: start unsaved.
+		await context.request.put('/api/venue/saved-talent', {
+			data: { talent_id: target.id, saved: false },
+		});
+
+		const page = await context.newPage();
+		await page.goto('/dashboard/venue/browse');
+		// Let the saved-talent query settle (the rail's loaded empty state)
+		// before touching a toggle — clicking into the hydration burst is a
+		// machine-speed-only hazard.
+		await expect(page.getByText('No saved talent yet')).toBeVisible();
+
+		// One click; the heart is server-truth (no optimistic flip) and
+		// disables while the toggle is in flight, so the label change IS the
+		// server confirmation.
+		await page.getByRole('button', { name: `Save ${target.stage_name}` }).first().click();
+		await expect(
+			page.getByRole('button', { name: `Unsave ${target.stage_name}` }).first()
+		).toBeVisible();
+		const savedNow = (await (await context.request.get('/api/venue/saved-talent')).json()) as {
+			savedTalent: Array<{ id: string }>;
+		};
+		expect(savedNow.savedTalent.some((entry) => entry.id === target.id)).toBe(true);
+
+		// The bookmark survives a hard refresh (server truth, not useState):
+		// after reload the card heart AND the rail row both present as saved.
+		await page.reload();
+		await expect(
+			page.getByRole('button', { name: `Unsave ${target.stage_name}` }).first()
+		).toBeVisible();
+
+		// Contact opens (or resumes) the real thread and deep-links it (?c=).
+		await page.getByRole('button', { name: 'Contact' }).first().click();
+		await page.waitForURL(/\/dashboard\/venue\/messages\?c=/);
+		await expect(page.getByPlaceholder('Write a message…')).toBeVisible({ timeout: 15_000 });
+
+		// Unsave round-trips too (and re-normalizes for retries).
+		await page.goto('/dashboard/venue/browse');
+		await page.getByRole('button', { name: `Unsave ${target.stage_name}` }).first().click();
+		await expect(
+			page.getByRole('button', { name: `Save ${target.stage_name}` }).first()
+		).toBeVisible();
+		await page.reload();
+		await expect(page.getByRole('button', { name: `Unsave ${target.stage_name}` })).toHaveCount(0);
+	} finally {
+		await context.close();
+	}
 });
 
 test('search results are URL-addressable and refresh-stable', async ({ page }) => {

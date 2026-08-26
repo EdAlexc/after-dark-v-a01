@@ -49,6 +49,8 @@ const VIBES = [
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 interface TalentProfile {
+  /** talent_profiles.id — the public /talent/[id] identity (S20 Preview). */
+  id?: string;
   stage_name: string;
   pronouns: string;
   neighborhood: string;
@@ -309,10 +311,18 @@ export default function TalentProfilePage() {
           </div>
           <div className="flex items-center gap-3">
             <NotificationsBell role="talent" />
+            {/* S20: opens the real public /talent/[id] view — disabled until a
+                first save creates the profile row (no id to preview before). */}
             <Button
               type="button"
               size="sm"
               variant="outline"
+              disabled={!data?.profile?.id}
+              onClick={() => {
+                if (data?.profile?.id) {
+                  window.open(`/talent/${data.profile.id}`, '_blank', 'noopener');
+                }
+              }}
               className="border-white/10 text-white/60 hover:text-white hover:bg-white/5 text-xs gap-1.5"
             >
               <ExternalLink className="w-3.5 h-3.5" />

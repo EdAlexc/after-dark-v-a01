@@ -74,3 +74,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 -- S18 telemetry (0022): append-only + purge; history is never rewritten.
 GRANT SELECT, INSERT, DELETE ON rum_events, api_timings TO afterdark_app;
 REVOKE UPDATE ON rum_events, api_timings FROM afterdark_app;
+
+-- S20 saved talent (0024): bookmarks toggle on and off — no UPDATE surface.
+GRANT SELECT, INSERT, DELETE ON saved_talent TO afterdark_app;
+REVOKE UPDATE ON saved_talent FROM afterdark_app;
+
+-- S20 D3 response-rate aggregate (0024) — counts-only definer, same doctrine
+-- as the availability probe.
+GRANT EXECUTE ON FUNCTION app_venue_response_stats(UUID) TO afterdark_app;

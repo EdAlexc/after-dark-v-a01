@@ -8,6 +8,24 @@
 
 ## 1. Current status — YOU ARE HERE
 
+- **Date:** 2026-08-26 · **Branch:** `claude/dev-timeline-slices-e58867` — **S20 landed:
+  discovery & dashboard completion — the last planned development slice.** 1142 vitest
+  (975 → 1142) + 21 E2E green against a production build on a disposable Neon branch off
+  prod; typecheck/lint/build clean; `db:verify-rls` extended 23 → 28 and run green
+  against a real enforcing role; every new surface browser-verified live. Delivery
+  summary in §7.3 S20 — headlines: `saved_talent` server persistence (0024, RLS
+  in-file) + the conversations `talent_id` anchor with per-card Contact → real thread;
+  public `/talent/[id]` profiles (Preview buttons wired, directory/search deep links);
+  notifications history page + bell "View all"; gig-detail single-pin map w/
+  neighborhood fallback + create-gig live geocode preview (`/api/geocode`, A10-guarded);
+  **D3 response rate DEFINED** via a cutover-safe SECURITY DEFINER aggregate; the Q8
+  test-gap remainder closed (lifecycles, route-kit, schemas, push/subscribe,
+  match-preview). One bug found by live browser verification that the passing component
+  tests missed: `?c=` thread selection raced App Router client-side URL updates —
+  mechanism replaced (details in §7.3). **All §7 remediation slices S12–S20 are now
+  complete; what remains to alpha exit is operator work (§7.5: B2/B4/B5 env keys, the
+  RLS `DATABASE_URL` flip per `docs/rls-cutover.md` expecting 28/28, migrations 0024 on
+  prod after merge) + the human tabletop + the §11/TESTING.md §11 manual load lab.**
 - **Date:** 2026-08-22 · **Branch:** `claude/s19-login-issues-50159f` — **S19 landed: PARTY
   persona completion** (975 vitest + 19 E2E green; typecheck/lint/build clean; details in
   §7.3 S19) **plus a production incident found and fixed the same session**:
@@ -461,7 +479,12 @@
    source-map wiring. ~~**S19 — PARTY persona completion**~~ — ✅ **landed 2026-08-22**
    (§7.3): become-a-PARTY path, `/dashboard` root router, venue directory + inquiry
    path; same session diagnosed & fixed the production migration-drift auth outage
-   (§1 top entry). **Next dev slice: S20 — discovery & dashboard completion.**
+   (§1 top entry). ~~**S20 — discovery & dashboard completion**~~ — ✅ **landed
+   2026-08-26** (§7.3): saved-talent persistence + venue outreach, `/talent/[id]`,
+   notifications history, detail/wizard maps, D3 response rate, Q8 test remainder.
+   **No development slices remain — the plan through §7 is fully landed.** After the
+   merge: run `yarn db:migrate` against prod (adds 0024 — B6 habit), then the
+   remaining items are the operator gate (§7.5) and item 5 below.
 5. **Human tabletop** of `docs/incident-runbook.md` §4 (~20 min — owed since 2026-07-31).
 
 ---
@@ -1257,7 +1280,7 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 | Q5 | **No RUM**: zero `web-vitals`/`useReportWebVitals` usage. The scorecard rows (CWV p75, per-endpoint Apdex, front-end JS error rate) are unmeasurable in production; guardrail-§7's "RUM dashboards live" box has no implementation at all. **→ CLOSED in S18** (2026-08-19): first-party beacon → `rum_events`, route timings → per-endpoint Apdex at T=300, admin cards. JS error rate stays with Sentry (DSN = operator step B2). | repo-wide grep |
 | Q6 | Ready-made security gates not wired into CI: `yarn db:verify-rls` (the single proof RLS enforces) and `yarn db:backfill-media --verify` (the S3 zero-`data:`-rows gate, written to exit non-zero) are manual-only. **→ verify-rls half CLOSED in S12** (now 23 checks, Gate 0 of the CI `alpha-gates` job); the backfill-media half CLOSED in S15 (CI zero-inline-media step). Q6 is fully closed. | `scripts/verify-rls.mjs`; `scripts/backfill-media.ts:10,21` |
 | Q7 | **No audit-coverage gate**: nothing fails CI when a mutating route forgets `auditLogger` — unlike authZ, where the matrix machine-checks its concern. **→ CLOSED in S15:** test/audit-coverage.test.ts — audited-or-exempt-with-reason registry; stripe/webhook + upload retrofitted. | contrast `api/utils/__tests__/authz-matrix.test.ts:5-8` |
-| Q8 | **25 of 49 routes have no dedicated test suite.** The consequential ones are the money paths: `payouts/release` (**zero tests** — double-release, cron auth, unkeyed behavior all unasserted), `stripe/webhook` (**zero tests** — guardrail-§7 explicitly requires signature + fee-tamper tests; fee-tamper is argued structurally, never tested), `shifts/[id]` idempotency (k6-only, and that check can no-op), `upload` (caps/MediaError mapping), the DSR routes' two-factor confirm gates, `age-confirm` (G12), `push/subscribe`, `match-preview`; `/api/stream` is tested only with `STREAM_MAX_MS=0` so real-timing window/reconnect behavior is never exercised. Untested utils include **`rls.ts` itself**, `route-kit`, `schemas`, and both lifecycle matrices (`shift-lifecycle`, `application-lifecycle`). **→ worst-of CLOSED across S12–S14:** `rls.ts` (S12); `payouts/release`, `stripe/webhook`, `shifts/[id]` + the explicit fee-tamper, `upload`, DSR confirm gates, `age-confirm` (S14). Still open: `push/subscribe`, `match-preview`, stream-under-real-timing, `route-kit`/`schemas`/lifecycle utils — tracked with S15/S17. | route tree sweep |
+| Q8 | **25 of 49 routes have no dedicated test suite.** The consequential ones are the money paths: `payouts/release` (**zero tests** — double-release, cron auth, unkeyed behavior all unasserted), `stripe/webhook` (**zero tests** — guardrail-§7 explicitly requires signature + fee-tamper tests; fee-tamper is argued structurally, never tested), `shifts/[id]` idempotency (k6-only, and that check can no-op), `upload` (caps/MediaError mapping), the DSR routes' two-factor confirm gates, `age-confirm` (G12), `push/subscribe`, `match-preview`; `/api/stream` is tested only with `STREAM_MAX_MS=0` so real-timing window/reconnect behavior is never exercised. Untested utils include **`rls.ts` itself**, `route-kit`, `schemas`, and both lifecycle matrices (`shift-lifecycle`, `application-lifecycle`). **→ worst-of CLOSED across S12–S14:** `rls.ts` (S12); `payouts/release`, `stripe/webhook`, `shifts/[id]` + the explicit fee-tamper, `upload`, DSR confirm gates, `age-confirm` (S14). **Remainder CLOSED in S20** (2026-08-26): `push/subscribe`, `match-preview`, `route-kit`, `schemas`, both lifecycle matrices — 97 dedicated cases (they had been "tracked with S15/S17" but never landed). Stream-under-real-timing stays with the load lab, where real timing exists. | route tree sweep |
 | Q9 | **No DAST**: OWASP ZAP baseline (required by guardrail-§7 and CLAUDE.md §9's definition of done) does not exist in any form, so "no *new* ZAP high/medium" is unmeasurable; no stored-XSS regression suite (the probes in TESTING.md §10 #5 are manual). **→ CLOSED in S15:** ZAP baseline is CI Gate 4 (0 unaccepted High/Medium via zap-gate.mjs); stored-XSS structural gate landed (behavioral render tests follow with S17). | repo-wide |
 
 #### C. Missing functionality (testers will hit these)
@@ -1267,9 +1290,9 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 | F1 | **The PARTY persona is unreachable end-to-end.** Server side is complete and tested (all 63 authZ rows carry PARTY incl. a standing "never a principal" invariant; RLS is user-id-keyed so PARTY is least-privilege by construction). But: "Personal Account" signup writes a **`'PERSONAL'` sentinel nothing reads** → `role = NULL` forever; onboarding offers no PARTY card; **`/dashboard` 404s for every role** (no root router page); `DashboardSidebar` silently falls through to the **venue** nav for unknown roles; the post-2FA redirect hardcodes `/dashboard/talent`; there is **no venue directory** (API or page) though §6.3 requires "browse venues to book for private parties"; **no client can open a PARTY_INQUIRY** (`counterpart_user_id` deliberately never rides the client and no server-side resolver exists — the gig-detail Inquire button 403s for PARTY); no PARTY messages surface (`MessagesView` accepts only `'talent' \| 'venue'`). The venue *side* of inquiries works and renders the badge. | `account/signup/page.tsx:176,208`; `onboarding/page.tsx:7-30,54,86`; `app/dashboard/` (no `page.tsx`); `components/DashboardSidebar.tsx:30,476`; `account/two-factor/page.tsx:48`; `api/conversations/route.ts:97-102`; `components/MessagesView.tsx:53` |
 | F2 | **Dead controls on first-click surfaces**: bare notification-bell buttons with no `onClick` and no unread badge on **8 pages including both dashboard homes** (the real `NotificationsBell` is mounted on only 5 surfaces); create-gig "Preview" has no handler; landing "Talk to Sales" has no handler. **→ CLOSED in S17** (2026-08-18); the two profile-page "Preview" buttons remain, tracked with S20. | `dashboard/talent/page.tsx:256`; `dashboard/venue/page.tsx:282-283`; `create-gig/page.tsx:880-887`; `app/page.tsx:277-284` |
 | F3 | **Create-gig draft integrity**: Save Draft never retains the created id, so each click INSERTs a **duplicate draft**; blank fields are silently replaced with fabricated `2026-01-01` dates and "Untitled Gig"; "✓ Draft saved" implies autosave that doesn't exist (the wizard is lost on navigation). **→ CLOSED in S17** (2026-08-18): id-retaining PATCH re-save, real values only, honest label; restoring a draft INTO the wizard on return remains future work. | `create-gig/page.tsx:243-278,862-873` |
-| F4 | **Saved Talent is ephemeral**: plain `useState` — not even localStorage — lost on refresh, and filtered against the current results page only; "Message Saved Talent" links to messages with no talent context. | `dashboard/venue/browse/page.tsx:249,294-301,594-597` |
-| F5 | Notifications have no history surface — bell dropdown only, no View-all page. | `components/NotificationsBell.tsx:64-130` |
-| F6 | The gig **detail** page has no map (*"Map view coming soon"* — S10's `GigsMap` is browse-only) and no address show/hide toggle (wireframe p4); create-gig step 2 shows a dead "Map preview" box; the Location card disappears entirely for address-less gigs (neighborhood fallback unused). | `gigs/[id]/page.tsx:333-344`; `create-gig/page.tsx:464-469` |
+| F4 | **Saved Talent is ephemeral**: plain `useState` — not even localStorage — lost on refresh, and filtered against the current results page only; "Message Saved Talent" links to messages with no talent context. **→ CLOSED in S20** (2026-08-26): `saved_talent` server persistence + the conversations `talent_id` anchor — per-card Contact opens the real thread. | `dashboard/venue/browse/page.tsx:249,294-301,594-597` |
+| F5 | Notifications have no history surface — bell dropdown only, no View-all page. **→ CLOSED in S20**: paged `/dashboard/notifications` + "View all" from the bell. | `components/NotificationsBell.tsx:64-130` |
+| F6 | The gig **detail** page has no map (*"Map view coming soon"* — S10's `GigsMap` is browse-only) and no address show/hide toggle (wireframe p4); create-gig step 2 shows a dead "Map preview" box; the Location card disappears entirely for address-less gigs (neighborhood fallback unused). **→ CLOSED in S20**: single-pin detail map + neighborhood fallback + live wizard preview via `GET /api/geocode`. (The p4 show/hide toggle stays descoped: published-gig addresses are public by design on every card.) | `gigs/[id]/page.tsx:333-344`; `create-gig/page.tsx:464-469` |
 | F7 | Browse text-search only filters the currently fetched page on **both** browse surfaces — matching rows beyond page 1 are unfindable by text. **→ CLOSED in S17** (2026-08-18): server-side `q` on both list endpoints, debounced clients. | `dashboard/talent/browse/page.tsx:79`; `dashboard/venue/browse/page.tsx:277-286` |
 | F8 | The search-page "Message" CTA hardcodes `/dashboard/venue/messages` — wrong for talent, broken for PARTY. | `app/search/page.tsx:237` |
 | F9 | No notification preferences exist in Settings (the only opt-in in the app is the push toggle on the availability page) and no email preferences (nothing sends email — A2). | `dashboard/settings/page.tsx` section list |
@@ -1280,7 +1303,7 @@ found still **missing, fake, dark, or unverified** — inventoried in §7.2, sli
 |---|---|---|
 | D1 | "Sync Calendar" (p7) | Absent. External-integration scope — stays parked with Backlog #2. One line in the tester briefing. |
 | D2 | PDF tech-rider attachments (p6) | Image-only by the documented AV stance (`media.ts`, Backlog #10). Keep until an AV step exists; brief testers. |
-| D3 | Venue "response rate" (p4) | No data model behind it. Define (reply latency over conversations) in S20 — or drop it from the venue card. |
+| D3 | Venue "response rate" (p4) | **→ DEFINED in S20** (2026-08-26): share of last-90d inbound conversations the venue answered (non-SYSTEM messages only; hidden below 3 inbound), via the 0024 `app_venue_response_stats` SECURITY DEFINER — cutover-safe. Rendered on the gig-detail venue card and `/venues/[id]`. |
 | D4 | Profile-view count + 24/7 concierge card (p8) | Absent; no view tracking exists. Descope for alpha (the S6 `events` table can carry views post-alpha). |
 | D5 | "Viewing as: Talent / Venue" toggle (p4) | Never built. Descope — the shared preview accounts serve the need. |
 | D6 | Admin "uptime / traffic req/s" KPI (p1, PRD §3.4) | **→ CLOSED in S18** (2026-08-19): traffic + API-health cards from `api_timings`; "uptime" is expressed honestly as 5xx rate + cron health (no external prober exists). |
@@ -1662,12 +1685,86 @@ typecheck/lint/build clean)
   (`conversations-create`) and reportable (P5 report flow, asserted in the messages
   component suite).
 
-**S20 — Discovery & dashboard completion (~2–3 d)** — closes F4, F5, F6 + the D3 decision
-- Saved talent persisted server-side (`saved_talent` table with RLS in-file, matrix row,
-  venue-scoped API) replacing the ephemeral `useState`; a notifications history page +
-  "View all" from the bell; gig-detail map (reuse `GigsMap`, single pin) + address
-  fallback to neighborhood; create-gig step-2 live map preview; define-or-drop the p4
-  "response rate" (D3).
+**S20 — Discovery & dashboard completion** — ✅ **landed 2026-08-26**, closes F4, F5, F6,
+the D3 decision, the S17 Preview-button leftover, and the Q8 test-gap remainder (1142
+vitest + 21 E2E green; typecheck/lint/build clean; every surface browser-verified live
+against a disposable Neon branch off prod)
+- ☑ **F4 — saved talent is server truth**: migration `0024_discovery_dashboard.sql` —
+  `saved_talent` keyed (venue **user** id, public `talent_profiles.id`), composite PK,
+  RLS in-file (owner-only in all directions — no public read, no platform carve-out),
+  GRANTs SELECT/INSERT/DELETE with UPDATE revoked (no update shape exists). API:
+  `GET /api/venue/saved-talent` (joined public card columns, so the rail survives
+  paging) + `PUT` (idempotent save/unsave, `ON CONFLICT DO NOTHING`, rate-limited,
+  audit-exempt on the record). Browse page: optimistic heart toggle, rail rows from the
+  server list with per-row unsave/message/profile links; the dead "Message Saved
+  Talent" group CTA is gone. Export coverage: `saved_talent` added to
+  `account-data.ts` (stage-name joined for portability); erasure rides the user FK
+  cascade; retention row added.
+- ☑ **F4b — venue outreach without user ids**: `POST /api/conversations` gained a
+  `talent_id` anchor (mirrors S19's `venue_id` — the server resolves the talent's user
+  id; VENUE-only, PARTY/TALENT 403). Card "Contact" and the rail's message button open
+  (or dedupe into) the real thread and land on `/dashboard/venue/messages?c=<id>`;
+  `MessagesView` honors the `?c=` deep link. **Two bugs found by live verification
+  that the (passing) component tests could not see**: (1) reading `window.location`
+  in a mount effect races App Router client-side pushes — the URL can still be the
+  previous page's when effects first run, so the wrong thread got selected; fixed by
+  consuming the param when the conversations list arrives (post-round-trip, URL
+  settled), once — after that the user's own clicks win. (2) The first saved-talent
+  implementation was optimistic (instant heart flip + rollback) — the E2E exposed
+  that a late-landing stale list response silently clobbers the optimistic entry,
+  and a click inside that inconsistent window INVERTS the intent (a save becomes an
+  unsave); redesigned non-optimistic — heart state is server truth, hearts disable
+  while a toggle is in flight. Inquire flows (gig detail, venue detail) now carry
+  `?c=` too.
+- ☑ **F5 — notifications history**: `GET /api/notifications` gained `?page=` (sentinel
+  +1 pagination; page 1 byte-compatible with the bell's read); `/dashboard/
+  notifications` renders the paged feed for all four roles (role via `?role=` +
+  session fallback), Load-older, Mark-all-read; "View all notifications" footer in the
+  bell dropdown; a Notifications entry in all four sidebar navs. `describeNotification`
+  exported — one text/deep-link mapping for bell + page.
+- ☑ **F6 — maps**: gig detail renders a single-pin `GigsMap` (new `className`/
+  `showSummary`/`interactive`/`maxZoom` props; browse behavior unchanged) inside the
+  Location card, which now always renders — address, else neighborhood + "exact
+  address after you're hired"; "Map view coming soon" is gone. Create-gig step 2:
+  the dead placeholder is a live preview — debounced (800 ms) `GET /api/geocode`
+  (VENUE-only, 15/min/user, reuses the S10 `geocodeAddress` through the A10 safe-fetch
+  allowlist; sub-5-char input answers `{point:null}` with zero network; nothing
+  persisted — publish still geocodes authoritatively).
+- ☑ **D3 — response rate DEFINED** (not dropped): share of last-90-day inbound
+  conversations (first non-SYSTEM message from the counterpart) the venue answered
+  with a non-SYSTEM message afterwards; NULL below 3 inbound so a one-sample 100%
+  can't read as reputation. Computed by `app_venue_response_stats` — SECURITY DEFINER
+  (0017 doctrine: conversations/messages stay participant-private, the public card
+  needs only the aggregate; a bare aggregate would silently zero post-cutover).
+  Rendered on the gig-detail venue card and `/venues/[id]` (which also now shows its
+  fetched-but-never-rendered `rating_count`). Verified on-branch: 3 inbound / 1
+  replied → 33%; SYSTEM banners never count.
+- ☑ **S17 leftover — Preview buttons wired**: both profile editors open the real
+  public view in a new tab (`/talent/[id]` / `/venues/[id]`), disabled until the
+  first save creates the row. The talent side needed the page to exist: public
+  `GET /api/talent/[id]` + `/talent/[id]` (mirrors the S19 venue detail — public
+  columns + p9's portfolio/socials, socials rendered as inert text never hrefs, no
+  shift aggregates because those are participant-private under RLS). Directory
+  cards, the saved rail, and search talent results now deep-link to it (§5.3).
+- ☑ **Q8 remainder closed** (promised with S15/S17, never landed): dedicated suites
+  for `shift-lifecycle` + `application-lifecycle` (full actor×edge sweeps),
+  `route-kit` (ApiError mapping, opaque 500s, telemetry capture), `schemas` (31
+  contract cases incl. the S20 schemas), `push/subscribe` (key-gate, re-homing,
+  scoping), `match-preview` (shape, definer-only availability, 400s).
+- ☑ **Proof**: 1142 vitest (975 → 1142: ~15 new matrix rows' generated tests, 89
+  S20 route/migration cases, 15 component cases across 5 suites incl. the new
+  browse + history pages, 97 Q8-remainder cases); `db:verify-rls` 23 → **28 checks**
+  (saved_talent owner-only ×3 + forge-rejection; response-stats context-free) — run
+  green against a real enforcing role on the disposable branch; E2E grew 19 → 21
+  (`/talent/[id]` anonymous deep link; venue save→refresh→Contact→thread→unsave
+  loop) and the full suite passed against a production build on the branch; the
+  0024 structural block joined `marketplace-migrations.test.ts`.
+- *Security gate met:* saved_talent leaks nothing (no public read; the GET projection
+  is unit-asserted user-id-free); talent user ids never ride the client anywhere in
+  the outreach path; the geocode probe stays inside the A10 allowlist and is
+  role-gated + rate-limited; response-rate exposes counts-only aggregates through a
+  pinned-search-path definer; all three machine-checked registries (authZ matrix,
+  RLS wiring, audit coverage) gained their S20 rows on day one.
 
 **Descoped for alpha, recorded:** D1 (→ Backlog #2), D2 (→ #10 AV stance), D4, D5 — the
 tester briefing (TESTING.md §2.1) gains one line each.
@@ -1721,8 +1818,8 @@ VAPID pair, the human tabletop (owed since 2026-07-31), and `yarn db:backfill-me
 --verify` once B5 lands. **New:** the RLS `DATABASE_URL` flip is **blocked until S12
 merges** — the runbook's premise ("every governed statement carries context") is currently
 false, and flipping today would silently break SSE realtime (A1). *(Update 2026-08-18: S12
-landed — once its PR merges, the flip is re-opened; follow `docs/rls-cutover.md`, expect
-23/23.)*
+landed — once its PR merges, the flip is re-opened; follow `docs/rls-cutover.md`. Update
+2026-08-26: S20 grew the suite — expect **28/28**.)*
 
 **B6 (new, 2026-08-22 — from the migration-drift incident, §1):** production migrations
 are a manual operator step and drifted 10 files behind the deployed code, taking every

@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-interface Notification {
+export interface Notification {
   id: number;
   kind: string;
   payload: Record<string, unknown>;
@@ -23,22 +23,23 @@ interface Notification {
 /** Roles the bell can be mounted under (S17 added `admin`; S19 `party`). */
 export type BellRole = 'talent' | 'venue' | 'admin' | 'party';
 
-/** Human line + destination per notification kind. */
-function describe(notification: Notification, role: BellRole): {
+/** Human line + destination per notification kind. Exported since S20 — the
+ *  notifications history page renders the same lines and deep links. */
+export function describeNotification(notification: Notification, role: BellRole): {
   text: string;
   href: string;
 } {
   // Admin has no messages/applicants surfaces — every deep link falls back
   // to the moderation dashboard rather than a 404.
   if (role === 'admin') {
-    const text = describe(notification, 'talent').text;
+    const text = describeNotification(notification, 'talent').text;
     return { text, href: '/dashboard/admin' };
   }
   // PARTY (S19): the only notifications the read-only persona receives are
   // message replies to their venue inquiries; everything else falls back to
   // venue discovery rather than a principal surface they cannot use.
   if (role === 'party') {
-    const text = describe(notification, 'talent').text;
+    const text = describeNotification(notification, 'talent').text;
     return {
       text,
       href:
@@ -145,7 +146,7 @@ export function NotificationsBell({ role }: { role: BellRole }) {
                 </p>
               ) : (
                 (data?.notifications ?? []).map((notification) => {
-                  const { text, href } = describe(notification, role);
+                  const { text, href } = describeNotification(notification, role);
                   return (
                     <Link
                       key={notification.id}
@@ -177,6 +178,14 @@ export function NotificationsBell({ role }: { role: BellRole }) {
                 })
               )}
             </div>
+            {/* S20 F5 — full history page (the dropdown shows only page 1). */}
+            <Link
+              href={`/dashboard/notifications?role=${role}`}
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2.5 text-center text-[11px] font-bold text-[#00FFCC] hover:bg-white/[0.03] border-t border-white/5 transition-colors"
+            >
+              View all notifications
+            </Link>
           </div>
         </>
       )}

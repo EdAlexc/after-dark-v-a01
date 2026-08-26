@@ -20,6 +20,7 @@
 | Rate-limit counters (`rate_limit_counters`, `"rateLimit"`) | ≤ 1 day / ≤ 7 days | Window age | Daily purge (S1 stores hold `user:`/`ip:` keys — operational data only) | ✅ Automated (S2) |
 | Audit trail (`audit_logs`) | **Indefinite, pseudonymized on erasure** | Account deletion | `actor_id` → HMAC token before the user row is deleted | ✅ Automated |
 | Messages & attachments | Life of account | Account deletion | FK cascade from either participant (P5) | ✅ Automated |
+| Saved-talent bookmarks (`saved_talent`, S20) | Life of the venue account | Account deletion (either side) | FK `ON DELETE CASCADE` from the venue user AND the talent profile; included in the data export | ✅ Automated (S20) |
 | Platform telemetry (`events`, S6) | Operational analytics; no data-subject linkage (entity ids only) | — | Append-only; no user ids by schema + tests | ✅ By construction (S6) |
 | RUM + API timings (`rum_events`, `api_timings`, S18) | ≤ 30 days | Age | Daily purge deletes aged rows; no user ids, normalized paths only | ✅ Automated (S18) |
 | Server logs / IP addresses | ≤ 90 days | Age | Platform log retention (Vercel) | ⚠️ **Provider default — confirm and document the configured value** |

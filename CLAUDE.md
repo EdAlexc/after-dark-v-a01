@@ -40,14 +40,14 @@ yarn dev                    # Next.js dev server on port 4000
 yarn build                  # production build (strict — ignoreBuildErrors removed in P0)
 yarn typecheck              # tsc --noEmit
 yarn lint                   # oxlint (workspace .oxlintrc.json), warnings fail
-yarn test                   # vitest run (975 tests as of S19)
-yarn test:e2e               # Playwright E2E journeys (S16/S18/S19, 19 tests) — needs a running
+yarn test                   # vitest run (1142 tests as of S20)
+yarn test:e2e               # Playwright E2E journeys (S16/S18/S19/S20, 21 tests) — needs a running
                             #   production build + seeded DB (TESTING.md §3); CI Gate 1b
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:grants              # (re)apply scripts/grants.sql to the afterdark_app role (owner conn; S2)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
 yarn db:preview-accounts    # shared preview accounts; passwords derived from PREVIEW_ACCOUNTS_SECRET (S1)
-yarn db:verify-rls          # proves RLS isolation against a non-owner role (never run on prod; 23 checks — CI runs it per-PR since S12)
+yarn db:verify-rls          # proves RLS isolation against a non-owner role (never run on prod; 28 checks — CI runs it per-PR since S12)
 yarn db:backfill-media      # move inline data: images into Blob; --verify asserts zero remain (S3)
 yarn pwa:icons              # regenerate public/icons/* deterministically from vector art (P10.1)
 yarn gate:axe               # P10.4 axe smoke: 10 screens, fail on critical (needs running server)
@@ -81,7 +81,9 @@ yarn gate:lhci              # P10.4 Lighthouse §3.2 budgets, 3 passes (needs ru
   rate-limit stores; `0014_rls_completion.sql` adds the S2 cutover policy set (SERVICE/ADMIN
   platform context, gig read carve-outs, messages per-command policies, `legal_holds`). The
   `0022_telemetry.sql` adds the S18 RUM/timing stores (SERVICE-only writes, 30-day purge);
-  `0023_venue_directory.sql` adds the S19 venue FTS + directory indexes. The
+  `0023_venue_directory.sql` adds the S19 venue FTS + directory indexes;
+  `0024_discovery_dashboard.sql` adds the S20 `saved_talent` bookmarks (RLS in-file) +
+  the D3 response-rate SECURITY DEFINER aggregate. The
   runner records applied files in `_migrations`; because it is forward-only, role GRANTs are
   re-asserted via `yarn db:grants` (`scripts/grants.sql` is the living set). ⚠ Applying
   migrations to the production DB is a **manual operator step** — drift took auth down on
@@ -201,10 +203,10 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Sign up / sign in / logout | — | `src/app/account/*` | ✅ better-auth, social self-activating; S13 adds forgot/reset-password pages + email verification (key-gated on `RESEND_API_KEY`) |
 | Onboarding (role select + basics) | — | `src/app/onboarding/page.tsx` → `/api/user/role` | ✅ (but accepts `ADMIN` — see §7) |
 | Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | ✅ real `GET /api/gigs` (P1.1): validated filters, pagination, HOT/NEW badges; multi-select (S5) and text search (S17 `q`) server-side |
-| Browse talent (venue directory) | — | `dashboard/venue/browse/page.tsx` | ✅ real public `GET /api/talent` (P1.1); saved-talent list is client-local |
+| Browse talent (venue directory) | — | `dashboard/venue/browse/page.tsx` | ✅ real public `GET /api/talent` (P1.1); saved talent server-persisted (`saved_talent`, S20) w/ per-card Contact → real thread; public `/talent/[id]` profiles (S20) |
 | PARTY persona: signup→onboarding, venue discovery, private-party inquiries (§6.3) | p5 "Party People" | `/dashboard` root router, `/venues{,/[id]}` → `/api/venues{,/[id]}`, `dashboard/party/messages` | ✅ S19: role reachable end-to-end; public venue directory; `venue_id` inquiry resolved server-side; PARTY still never a principal (matrix invariant) |
 | Browse gigs: map view (3.2) | p2 | `components/GigsMap.tsx` in browse | ✅ MapLibre + OSM tiles (S10); pins = server-geocoded PUBLISHED gigs; escaped popups → `/gigs/[id]` |
-| Gig details + application + 5% fee estimator (3.2) | p4 | `gigs/[id]/page.tsx` → `/api/gigs/[id]` + `/apply` | ✅ detail + estimator (P1.2) + live apply/withdraw w/ proposed rate, ✓-Applied states, Inquire→thread (P3/P5); visible to applicants after FILLED |
+| Gig details + application + 5% fee estimator (3.2) | p4 | `gigs/[id]/page.tsx` → `/api/gigs/[id]` + `/apply` | ✅ detail + estimator (P1.2) + live apply/withdraw w/ proposed rate, ✓-Applied states, Inquire→thread (P3/P5); visible to applicants after FILLED; single-pin location map + neighborhood fallback + venue response rate (S20) |
 | Availability calendar, 3 slots (3.2) | p7 | `dashboard/talent/schedule/page.tsx` → `/api/availability` | ✅ real month grid + 3-slot editor + notes + Available Tonight + shift-conflict dots (P6) |
 | Talent dashboard: stats, applications, upcoming, check-in (3.2) | p8 | `dashboard/talent/page.tsx` | ✅ real earnings (payout ledger), applications, bookings w/ On-My-Way/Check-In/Out, Hot Tonight rail (P3/P7/P8) |
 | Talent public profile editor (3.2) | p9 | `dashboard/talent/profile/page.tsx` → `/api/talent/profile` | ✅ real; media now EXIF-stripped/resized via P4 (Blob when keyed, processed-inline fallback) |
@@ -216,7 +218,7 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Payments: Stripe Connect escrow & payouts (1, 2) | p4, p10 | `/api/stripe/*`, `/api/payouts/release` | 🟡 **key-gated**: 5% ledger, 24h escrow release (cron), webhook sig+replay guard all real; transfers activate when Stripe keys are set (none yet) (P8) |
 | Admin moderation: disputes, audit logs, verification (3.4) | p1 | `dashboard/admin` + `/api/admin/*` | ✅ triage, suspend/reinstate (AuthGuard-enforced platform-wide), takedowns, audit viewer + CSV, KPI cards (P9) |
 | Reports/disputes (schema §4) | p1 | `/api/reports` + admin triage | ✅ report → triage → REVIEWING/CLOSED w/ notes; moderation reads audited (P9) |
-| Notifications (bell/badges in every wireframe) | p1–p10 | `components/NotificationsBell.tsx` → `/api/notifications` | ✅ real bell + unread sidebar badges; emitted by applications/messages/shifts/payouts (P3.4) |
+| Notifications (bell/badges in every wireframe) | p1–p10 | `components/NotificationsBell.tsx` → `/api/notifications` | ✅ real bell + unread sidebar badges; emitted by applications/messages/shifts/payouts (P3.4); paged history page `/dashboard/notifications` + "View all" (S20) |
 | Global search "gigs or talent" (top bar) | p1–p10 | `components/GlobalSearch.tsx` + `/search` | ✅ Postgres FTS `/api/search` (S5); mounted on landing nav, sidebar, mobile drawer; URL-addressable results page |
 | Venue↔external calendar & ticketing integrations (2.B) | — | — | ❌ (post-alpha candidate) |
 | Settings (profile, password, 2FA) | — | `dashboard/settings/*` + `/api/settings*` | ✅ real (2FA = better-auth twoFactor plugin since 0005) |
@@ -250,7 +252,10 @@ PATCH takedown), **`/api/admin/audit-logs`** (JSON + audited CSV export), `/api/
 `/api/auth/two-factor/*` (better-auth twoFactor plugin),
 **`/api/search`** (GET public FTS, S5 — gigs+talent, +venues arm S19), **`/api/venue/stats`**
 (GET venue KPI aggregates, S6), **`/api/gigs/match-preview`** (GET venue Live Analysis, S7),
-**`/api/venues`** (GET public directory, S19), **`/api/venues/[id]`** (GET public detail, S19),
+**`/api/venues`** (GET public directory, S19), **`/api/venues/[id]`** (GET public detail, S19
++ S20 response rate), **`/api/talent/[id]`** (GET public talent profile, S20),
+**`/api/venue/saved-talent`** (GET list/PUT idempotent save-unsave toggle, S20),
+**`/api/geocode`** (GET venue-only create-gig map-preview probe, S20),
 **`/api/reviews`** (GET public list/aggregate, POST shift-scoped review, S8),
 **`/api/stream`** (GET SSE invalidation stream, S9), **`/api/rum`** (POST anonymous
 first-party web-vitals beacon, S18 — strict-validated, rate-limited), **`/api/push/subscribe`**

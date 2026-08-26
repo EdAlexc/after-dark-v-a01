@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import type { ApiGig } from '@/lib/gigs';
 import {
   ChevronRight,
   ChevronDown,
@@ -27,6 +29,9 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { NotificationsBell } from '@/components/NotificationsBell';
+
+// MapLibre touches window — never SSR it (same pattern as browse).
+const GigsMap = dynamic(() => import('@/components/GigsMap'), { ssr: false });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -244,6 +249,23 @@ export default function CreateGigPage() {
     staleTime: 30_000,
   });
   const matchCount = form.role_needed && preview ? preview.matches.total : 0;
+
+  // Live map preview (S20 F6): server-side geocode probe, debounced well
+  // past typing speed — the browser never talks to the geocoder directly.
+  const debouncedAddress = useDebounced(form.address, 800);
+  const addressReady = debouncedAddress.trim().length >= 5;
+  const { data: geoPreview, isFetching: geoFetching } = useQuery({
+    queryKey: ['geocode-preview', debouncedAddress.trim()],
+    enabled: addressReady,
+    staleTime: 5 * 60_000,
+    retry: false, // a 429 from the preview limiter should go quiet, not loop
+    queryFn: async () => {
+      const res = await fetch(`/api/geocode?address=${encodeURIComponent(debouncedAddress)}`);
+      if (!res.ok) throw new Error('Preview unavailable');
+      return res.json() as Promise<{ point: { lat: number; lng: number } | null }>;
+    },
+  });
+  const previewPoint = addressReady ? (geoPreview?.point ?? null) : null;
 
   /** The wizard's real values, nothing fabricated (S17 F3): empty dates ride
    *  as '' (the API stores NULL) and the title is never invented — Save Draft
@@ -483,13 +505,37 @@ export default function CreateGigPage() {
                       </div>
                     </InputField>
 
-                    {/* Map placeholder */}
-                    <div className="rounded-xl bg-[#1A1A1A] border border-white/5 h-40 flex items-center justify-center">
-                      <div className="text-center">
-                        <MapPin className="w-6 h-6 text-white/15 mx-auto mb-2" />
-                        <p className="text-xs text-white/20">Map preview will appear here</p>
+                    {/* Live map preview (S20 F6) — the pin is advisory; publish
+                        geocodes authoritatively server-side. */}
+                    {previewPoint ? (
+                      <GigsMap
+                        gigs={[
+                          {
+                            id: 'preview',
+                            title: form.title || 'New gig',
+                            lat: previewPoint.lat,
+                            lng: previewPoint.lng,
+                          } as unknown as ApiGig,
+                        ]}
+                        className="h-40"
+                        showSummary={false}
+                        interactive={false}
+                        maxZoom={15}
+                      />
+                    ) : (
+                      <div className="rounded-xl bg-[#1A1A1A] border border-white/5 h-40 flex items-center justify-center">
+                        <div className="text-center">
+                          <MapPin className="w-6 h-6 text-white/15 mx-auto mb-2" />
+                          <p className="text-xs text-white/20">
+                            {!addressReady
+                              ? 'Type the venue address to preview the map'
+                              : geoFetching
+                                ? 'Locating address…'
+                                : 'No pin yet — keep typing or refine the address'}
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </section>
               </>

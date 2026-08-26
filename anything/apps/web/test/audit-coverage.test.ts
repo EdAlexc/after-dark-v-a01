@@ -73,6 +73,12 @@ const AUDIT_COVERAGE: Record<string, AuditMode> = {
   'upload/route.ts': 'audited', // S15 retrofit — media is PII creation (G11)
   'user/role/route.ts': 'audited',
   'venue/profile/route.ts': 'audited',
+  'venue/saved-talent/route.ts': {
+    exempt:
+      'Self-scoped bookmark toggle (S20): a private venue-user preference the talent ' +
+      'never sees, with no money, moderation, or cross-tenant dimension. The outreach ' +
+      'it can lead to (conversations.create) IS audited.',
+  },
 };
 
 function walk(dir: string): string[] {

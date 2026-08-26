@@ -97,6 +97,7 @@ const RLS_WIRING: Record<string, WiringMode> = {
   'stream/route.ts': 'wrapped', // S12 — was bare; a bare fingerprint kills SSE post-cutover
   'stripe/connect/route.ts': 'wrapped',
   'stripe/webhook/route.ts': 'wrapped',
+  'talent/[id]/route.ts': 'public-read', // S20 anon talent detail — public columns only
   'talent/applications/route.ts': 'wrapped',
   'talent/profile/route.ts': 'wrapped',
   'talent/route.ts': 'public-read', // anon talent directory — public columns only
@@ -105,6 +106,7 @@ const RLS_WIRING: Record<string, WiringMode> = {
   'venue/applications/route.ts': 'wrapped',
   'venue/gigs/route.ts': 'wrapped',
   'venue/profile/route.ts': 'wrapped',
+  'venue/saved-talent/route.ts': 'wrapped', // S20 bookmarks — owner policy (0024)
   'venue/shifts/route.ts': 'wrapped',
   'venue/stats/route.ts': 'wrapped',
   'venues/[id]/route.ts': 'public-read', // S19 anon venue detail — public columns only

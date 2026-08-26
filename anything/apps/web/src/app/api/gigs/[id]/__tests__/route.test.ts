@@ -151,6 +151,29 @@ describe('GET /api/gigs/[id]', () => {
     wireSql({ gig: gigRow({ status: 'CANCELLED' }), role: 'ADMIN' });
     expect((await GET(...get(GIG_ID))).status).toBe(200);
   });
+
+  it('joins the S20 response-rate aggregate and still strips the owner id', async () => {
+    wireSql({ gig: gigRow({ venue_response_rate: 92 }) });
+    const res = await GET(...get(GIG_ID));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The definer-derived rate rides through while venue_user_id stays server-side.
+    expect(body.gig.venue_response_rate).toBe(92);
+    expect(JSON.stringify(body)).not.toContain('venue_user_id');
+
+    const loadCall = mocks.sql.mock.calls.find((call) => {
+      const text = Array.isArray(call[0]) ? (call[0] as string[]).join('') : String(call[0]);
+      return text.includes('FROM gigs g');
+    });
+    expect(loadCall).toBeDefined();
+    const text = Array.isArray(loadCall![0])
+      ? (loadCall![0] as string[]).join('')
+      : String(loadCall![0]);
+    // Cutover-safe: the rate comes from the 0024 SECURITY DEFINER function,
+    // never a bare conversations/messages join.
+    expect(text).toContain('app_venue_response_stats');
+    expect(text).toContain('AS venue_response_rate');
+  });
 });
 
 describe('PATCH /api/gigs/[id] (status transitions)', () => {

@@ -385,6 +385,53 @@ const onboardWithContext = await sql.transaction([
 ]);
 check('the same INSERT succeeds under the owner context', onboardWithContext[1].length === 1);
 
+// 22–25. S20 saved_talent: bookmarks are the venue user's own — invisible and
+// unwritable to everyone else, including other valid contexts.
+const probeTalent = await owner`SELECT id FROM talent_profiles WHERE stage_name IS NOT NULL LIMIT 1`;
+await owner`DELETE FROM saved_talent WHERE venue_user_id = ${venueUser}`;
+const saveWithContext = await sql.transaction([
+  sql`SELECT set_config('app.user_id', ${venueUser}, true)`,
+  sql`
+    INSERT INTO saved_talent (venue_user_id, talent_id)
+    VALUES (${venueUser}, ${probeTalent[0].id})
+    ON CONFLICT (venue_user_id, talent_id) DO NOTHING RETURNING talent_id
+  `,
+]);
+check('venue can save talent under its own context', saveWithContext[1].length === 1);
+const savedBare = await sql`SELECT talent_id FROM saved_talent WHERE venue_user_id = ${venueUser}`;
+check('saved talent is invisible without context (no public read)', savedBare.length === 0);
+const savedAsRival = await sql.transaction([
+  sql`SELECT set_config('app.user_id', 'rls-rival-user', true)`,
+  sql`SELECT talent_id FROM saved_talent WHERE venue_user_id = ${venueUser}`,
+]);
+check("another user's context cannot read the bookmarks", savedAsRival[1].length === 0);
+let savedForgeBlocked = false;
+let savedForgeDetail = 'INSERT unexpectedly succeeded';
+try {
+  await sql.transaction([
+    sql`SELECT set_config('app.user_id', 'rls-rival-user', true)`,
+    sql`INSERT INTO saved_talent (venue_user_id, talent_id) VALUES (${venueUser}, ${probeTalent[0].id})`,
+  ]);
+} catch (error) {
+  savedForgeBlocked = /row-level security|permission denied/i.test(error.message);
+  savedForgeDetail = error.message.split('\n')[0];
+}
+check("a bookmark cannot be forged into another user's list", savedForgeBlocked, savedForgeDetail);
+
+// 26. S20 D3: the response-stats definer answers under ANY context (that is
+// its whole point — the public venue card needs the aggregate even though
+// conversations/messages stay participant-private).
+const responseStats = await sql`
+  SELECT rs.inbound_count FROM venue_profiles vp
+  LEFT JOIN LATERAL app_venue_response_stats(vp.id) rs ON TRUE
+  LIMIT 1
+`;
+check(
+  'response-stats definer aggregates without a context',
+  responseStats.length === 1 && Number.isInteger(responseStats[0].inbound_count),
+  `inbound=${responseStats[0]?.inbound_count}`
+);
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} isolation checks passed`);
 process.exit(failed.length === 0 ? 0 : 1);

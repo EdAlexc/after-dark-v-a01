@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { NotificationsBell } from '../NotificationsBell';
+import { NotificationsBell, describeNotification, type Notification } from '../NotificationsBell';
 import { mockFetch, renderWithQueryClient } from '../../../test/component-utils';
 
 function notification(overrides: Record<string, unknown> = {}) {
@@ -116,5 +116,41 @@ describe('NotificationsBell', () => {
 		await waitFor(() =>
 			expect(screen.getByText(/Nothing yet — activity on your gigs/)).toBeInTheDocument()
 		);
+	});
+
+	it('dropdown footer links to the history page with the mounted role (S20)', async () => {
+		mockFetch({
+			'/api/notifications': { notifications: [notification()], unreadCount: 1 },
+		});
+		renderWithQueryClient(<NotificationsBell role="venue" />);
+		fireEvent.click(screen.getByRole('button', { name: 'Notifications' }));
+		const viewAll = await screen.findByRole('link', { name: 'View all notifications' });
+		expect(viewAll).toHaveAttribute('href', '/dashboard/notifications?role=venue');
+	});
+
+	it('history link carries the party role on party mounts (S20)', async () => {
+		mockFetch({
+			'/api/notifications': { notifications: [], unreadCount: 0 },
+		});
+		renderWithQueryClient(<NotificationsBell role="party" />);
+		fireEvent.click(screen.getByRole('button', { name: 'Notifications' }));
+		const viewAll = await screen.findByRole('link', { name: 'View all notifications' });
+		expect(viewAll).toHaveAttribute('href', '/dashboard/notifications?role=party');
+	});
+});
+
+describe('describeNotification (exported since S20 — the history page reuses it)', () => {
+	it('maps an application notification to the venue applicants surface', () => {
+		const n: Notification = {
+			id: 7,
+			kind: 'application.received',
+			payload: { gigTitle: 'Neon Nights' },
+			read_at: null,
+			created_at: '2026-08-18T20:00:00Z',
+		};
+		expect(describeNotification(n, 'venue')).toEqual({
+			text: 'New application for Neon Nights',
+			href: '/dashboard/venue/applicants',
+		});
 	});
 });

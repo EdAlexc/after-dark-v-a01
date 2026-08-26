@@ -69,16 +69,27 @@ configured later (DEV_TIMELINE §4.3 B3), re-brief testers that money now moves 
 test sandbox — still no real funds; (2) the in-app legal pages already state that payments
 are not live (`src/lib/legal.ts` `ALPHA_NOTICE`), so the briefing and the product agree.
 
+Known descopes to mention when asked (DEV_TIMELINE §7.2 D — recorded, not bugs):
+
+- **"Sync Calendar" does nothing external** — availability lives in-app only; external
+  calendar/ticketing integrations are post-alpha (Backlog #2).
+- **Message attachments are images only** — no PDFs (tech riders etc.) until an AV
+  scanning step exists (Backlog #10's documented stance).
+- **No profile-view counts or 24/7 concierge** — the talent-dashboard cards from the
+  wireframe are descoped for alpha (view tracking can ride the S6 events table later).
+- **No "Viewing as: Talent / Venue" toggle on gig pages** — use the §2 shared preview
+  accounts to see the other side.
+
 ## 3. Automated suites
 
 Run from `anything/apps/web` (all wired into CI on every PR):
 
 ```bash
-yarn test        # vitest — 975 tests, no DB needed (route handlers run against mocked sql/auth)
+yarn test        # vitest — 1142 tests, no DB needed (route handlers run against mocked sql/auth)
 yarn typecheck   # tsc --noEmit, strict
 yarn lint        # oxlint (correctness rule set from anything/.oxlintrc.json), warnings = failures
 yarn build       # production build — must print the full route table (all routes marked ƒ)
-yarn test:e2e    # Playwright journeys (19 tests, S16/S18/S19) — needs a RUNNING production build
+yarn test:e2e    # Playwright journeys (21 tests, S16/S18/S19/S20) — needs a RUNNING production build
                  # (BASE_URL, default :4000) on a migrated+seeded DB with the §2 preview
                  # accounts + PREVIEW_ACCOUNTS_SECRET; CI runs it as alpha-gates Gate 1b
 ```
@@ -662,3 +673,46 @@ state, the noisy-neighbor and 2 h soak scenarios — is deliberately NOT in CI. 
 against a dedicated Neon branch before opening signup; note shift transitions are
 rate-limited 60/h/user, so scenario #4 at full scale needs one venue account per 50
 check-ins (or a temporary `RATE_LIMIT_STORE=memory` on the app under test).
+
+## 12. S20 discovery & dashboard completion (added 2026-08-26)
+
+Automated coverage: route suites for `venue/saved-talent`, `talent/[id]`, `geocode`, the
+conversations `talent_id` anchor, notifications pagination; component suites for the
+venue-browse saved rail, the notifications history page, the bell "View all" link and the
+MessagesView `?c=` deep link; the 0024 structural block in `marketplace-migrations`; and
+five new `db:verify-rls` checks (28 total — saved_talent owner-only in all directions,
+response-stats definer context-free). An E2E case in `deep-links.spec.ts` covers the
+anonymous `/talent/[id]` deep link and the venue save→refresh→Contact→unsave loop.
+
+Manual verification (executed live 2026-08-26 against a disposable Neon branch off prod):
+
+1. **Saved talent (F4)**: as `venue.preview`, heart a talent in Browse Talent → refresh —
+   the heart AND the right-rail row survive (server truth; pre-S20 they vanished). The
+   rail row deep-links to `/talent/[id]`; its ✕ unsaves; saving is idempotent (double-tap
+   ≠ two rows — DB composite PK). Signed out, `GET /api/venue/saved-talent` → 401;
+   as talent/party → 403.
+2. **Contact → real thread (F4)**: a card's Contact (or the rail's message icon) lands on
+   `/dashboard/venue/messages?c=<id>` with that thread selected. The talent's user id
+   never appears in any response — the server resolves it from the public talent id
+   (`conversations.create talent_id`; PARTY/TALENT callers get 403).
+3. **Notifications history (F5)**: bell dropdown → "View all notifications" →
+   `/dashboard/notifications?role=…` renders the paged feed (30/page, "Load older" until
+   `hasMore` is false), unread dots, Mark-all-read; the sidebar of every role carries the
+   Notifications entry.
+4. **Gig-detail map + address fallback (F6)**: a geocoded PUBLISHED gig shows a single-pin
+   map in the Location card (no pin-count chip, no popup); an address-less gig still
+   renders the card with the venue neighborhood + "Exact address shared after you're
+   hired." CSP is unchanged (`tile.openstreetmap.org` was already pinned in S10).
+5. **Create-gig live map preview (F6)**: step 2, type ≥5 address chars → after the 800 ms
+   debounce the placeholder becomes a live pin (`GET /api/geocode` — VENUE-only,
+   15/min/user; the browser never contacts Nominatim directly). The pin is advisory:
+   publish still geocodes server-side.
+6. **Response rate (D3 — defined, not dropped)**: with ≥3 inbound conversations in 90
+   days, the venue card on gig detail shows "Responds to N% of inquiries" and
+   `/venues/[id]` shows the same under the stat grid; below 3 the line is absent (NULL).
+   SYSTEM messages never count as replies. Verified on-branch: 3 inbound / 1 replied →
+   33%. The aggregate rides the 0024 SECURITY DEFINER, so it keeps answering after the
+   RLS cutover while thread contents stay participant-private.
+7. **Profile Preview buttons (S17 leftover)**: both profile editors' Preview opens the
+   real public view (`/talent/[id]` / `/venues/[id]`) in a new tab; disabled until the
+   first save creates the profile row.

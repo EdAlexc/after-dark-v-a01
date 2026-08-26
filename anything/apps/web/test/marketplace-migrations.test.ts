@@ -134,3 +134,53 @@ describe('0012_admin_trust.sql (P9)', () => {
     }
   });
 });
+
+describe('0024_discovery_dashboard.sql (S20)', () => {
+  const sql = read('0024_discovery_dashboard.sql');
+
+  it('ships saved_talent RLS in the same file, keyed on the request context', () => {
+    expect(sql).toContain('ALTER TABLE saved_talent ENABLE ROW LEVEL SECURITY');
+    expect(sql).toMatch(
+      /saved_talent_owner_all[\s\S]*?FOR ALL[\s\S]*?current_setting\('app\.user_id', true\)/
+    );
+    // Strictly private: no public-read policy on bookmarks.
+    expect(sql).not.toContain('FOR SELECT USING (true)');
+  });
+
+  it('makes one-bookmark-per-pair a DB fact and erasure a cascade', () => {
+    expect(sql).toContain('PRIMARY KEY (venue_user_id, talent_id)');
+    expect(sql).toMatch(/venue_user_id TEXT NOT NULL REFERENCES "user"\(id\) ON DELETE CASCADE/);
+    expect(sql).toMatch(
+      /talent_id UUID NOT NULL REFERENCES talent_profiles\(id\) ON DELETE CASCADE/
+    );
+  });
+
+  it('grants no UPDATE surface at the privilege level (save/unsave only)', () => {
+    expect(sql).toContain('GRANT SELECT, INSERT, DELETE ON saved_talent TO afterdark_app');
+    expect(sql).toContain('REVOKE UPDATE ON saved_talent FROM afterdark_app');
+    // No grant line hands UPDATE to the app role for this table.
+    expect(sql).not.toMatch(/GRANT[^;]*UPDATE[^;]*ON saved_talent/);
+  });
+
+  it('hardens the response-stats function: definer, pinned path, STABLE', () => {
+    const fn = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION app_venue_response_stats'));
+    expect(fn).toContain('SECURITY DEFINER');
+    expect(fn).toContain('SET search_path = public');
+    expect(fn).toContain('STABLE');
+    expect(sql).toContain('GRANT EXECUTE ON FUNCTION app_venue_response_stats(UUID) TO afterdark_app');
+  });
+
+  it('is idempotent (guarded DDL on every statement that needs it)', () => {
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS saved_talent');
+    expect(sql).toMatch(/CREATE INDEX IF NOT EXISTS idx_saved_talent_venue_created/);
+    expect(sql).toContain('DROP POLICY IF EXISTS saved_talent_owner_all');
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION app_venue_response_stats');
+    // No unguarded variants anywhere in the file.
+    const statements = sql
+      .split('\n')
+      .filter((line) => /^(CREATE TABLE|CREATE INDEX|CREATE FUNCTION)/.test(line.trim()));
+    for (const statement of statements) {
+      expect(statement).toMatch(/IF NOT EXISTS|OR REPLACE/);
+    }
+  });
+});

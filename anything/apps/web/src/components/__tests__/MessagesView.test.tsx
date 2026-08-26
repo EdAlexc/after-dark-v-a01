@@ -39,6 +39,16 @@ const CONVERSATION = {
 	unread_count: 1,
 };
 
+/** Second thread for the S20 ?c= deep-link cases — distinct name and gig so
+ *  "which pane is active" is observable from text alone. */
+const CONVERSATION_2 = {
+	...CONVERSATION,
+	id: 'c2',
+	other_name: 'Ava DiMarco',
+	gig_title: 'Techno Tuesday',
+	unread_count: 0,
+};
+
 const MESSAGES = [
 	{
 		id: 'm1',
@@ -80,6 +90,8 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.unstubAllGlobals();
+	// The S20 deep-link cases push ?c= URLs — never leak them across tests.
+	window.history.replaceState(null, '', '/');
 });
 
 describe('MessagesView', () => {
@@ -129,6 +141,38 @@ describe('MessagesView', () => {
 			expect(screen.getByText('Private-party inquiry')).toBeInTheDocument()
 		);
 		expect(screen.queryByTitle('Propose a rate')).not.toBeInTheDocument();
+	});
+
+	it('selects the thread named by ?c= on mount (S20 deep link)', async () => {
+		const calls = mockFetch({
+			'/api/conversations/c1/messages': { messages: MESSAGES },
+			'/api/conversations/c2/messages': { messages: [] },
+			'/api/conversations': { conversations: [CONVERSATION, CONVERSATION_2] },
+		});
+		window.history.pushState({}, '', '/dashboard/talent/messages?c=c2');
+		renderWithQueryClient(<MessagesView role="talent" />);
+		// Active pane = the SECOND thread: its name shows in the list AND the
+		// thread header (the default would have been c1, the first thread).
+		await waitFor(() => expect(screen.getAllByText('Ava DiMarco').length).toBeGreaterThan(1));
+		await waitFor(() =>
+			expect(calls.some((call) => call.url.includes('/api/conversations/c2/messages'))).toBe(true)
+		);
+		expect(calls.some((call) => call.url.includes('/api/conversations/c1/messages'))).toBe(false);
+	});
+
+	it('falls back to the first thread when ?c= names a conversation not in the list', async () => {
+		const calls = mockFetch({
+			'/api/conversations/c1/messages': { messages: MESSAGES },
+			'/api/conversations/nope/messages': { messages: [] },
+			'/api/conversations': { conversations: [CONVERSATION, CONVERSATION_2] },
+		});
+		window.history.pushState({}, '', '/dashboard/talent/messages?c=nope');
+		renderWithQueryClient(<MessagesView role="talent" />);
+		// Once the list loads, the stale/forged id gives way to the first thread.
+		await waitFor(() => expect(screen.getAllByText('Marcus Chen').length).toBeGreaterThan(1));
+		await waitFor(() =>
+			expect(calls.some((call) => call.url.includes('/api/conversations/c1/messages'))).toBe(true)
+		);
 	});
 
 	it('renders hostile message content as inert text (behavioral XSS gate)', async () => {
