@@ -57,6 +57,8 @@ interface OperatingHours {
 }
 
 interface VenueProfile {
+  /** venue_profiles.id — the public /venues/[id] identity (S20 Preview). */
+  id?: string;
   venue_name: string;
   neighborhood: string;
   address: string;
@@ -319,9 +321,18 @@ export default function VenueProfilePage() {
           </div>
           <div className="flex items-center gap-3">
             <NotificationsBell role="venue" />
+            {/* S20: opens the real public /venues/[id] view — disabled until a
+                first save creates the profile row (no id to preview before). */}
             <Button
+              type="button"
               size="sm"
               variant="outline"
+              disabled={!data?.profile?.id}
+              onClick={() => {
+                if (data?.profile?.id) {
+                  window.open(`/venues/${data.profile.id}`, '_blank', 'noopener');
+                }
+              }}
               className="border-white/10 text-white/60 hover:text-white hover:bg-white/5 text-xs gap-1.5"
             >
               <ExternalLink className="w-3.5 h-3.5" />

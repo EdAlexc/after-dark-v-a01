@@ -84,6 +84,26 @@ describe('DashboardSidebar', () => {
 		expect(screen.queryByText('Venue Profile')).not.toBeInTheDocument();
 	});
 
+	it('every role nav links to the S20 notifications history with its own role', () => {
+		const cases: Array<['talent' | 'venue' | 'admin' | 'party', string]> = [
+			['talent', '/dashboard/notifications?role=talent'],
+			['venue', '/dashboard/notifications?role=venue'],
+			['admin', '/dashboard/notifications?role=admin'],
+			['party', '/dashboard/notifications?role=party'],
+		];
+		for (const [role, href] of cases) {
+			nav.pathname = `/dashboard/${role}`;
+			wireFetch();
+			const { unmount } = renderWithQueryClient(<DashboardSidebar role={role} />);
+			const links = screen.getAllByRole('link', { name: 'Notifications' });
+			expect(links.length).toBeGreaterThan(0);
+			for (const link of links) {
+				expect(link).toHaveAttribute('href', href);
+			}
+			unmount();
+		}
+	});
+
 	it('shows the real session name, not a demo identity', async () => {
 		nav.pathname = '/dashboard/talent';
 		wireFetch();

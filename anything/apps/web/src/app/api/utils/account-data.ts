@@ -37,6 +37,8 @@ export interface AccountExport {
   availability: Record<string, unknown>[];
   shifts: Record<string, unknown>[];
   payouts: Record<string, unknown>[];
+  /** S20: venue-user talent bookmarks (erasure rides the user FK cascade). */
+  saved_talent: Record<string, unknown>[];
   audit_log: Record<string, unknown>[];
 }
 
@@ -62,6 +64,7 @@ export async function collectAccountExport(userId: string): Promise<AccountExpor
     availabilityRows,
     shiftRows,
     payoutRows,
+    savedTalentRows,
     auditRows,
   ] = await Promise.all([
     sql`
@@ -115,6 +118,16 @@ export async function collectAccountExport(userId: string): Promise<AccountExpor
       ORDER BY created_at DESC
       LIMIT ${EXPORT_ROW_LIMIT}
     `),
+    // S20 bookmarks: the ids alone are opaque, so the export carries the
+    // saved talent's public stage name alongside (public-read join).
+    withRlsContext(subject, sql`
+      SELECT st.talent_id, tp.stage_name, st.created_at
+      FROM saved_talent st
+      LEFT JOIN talent_profiles tp ON tp.id = st.talent_id
+      WHERE st.venue_user_id = ${userId}
+      ORDER BY st.created_at DESC
+      LIMIT ${EXPORT_ROW_LIMIT}
+    `),
     withRlsContext(subject, sql`
       SELECT action, entity_type, entity_id, metadata, created_at
       FROM audit_logs WHERE actor_id = ${userId}
@@ -142,6 +155,7 @@ export async function collectAccountExport(userId: string): Promise<AccountExpor
     availability: availabilityRows as Record<string, unknown>[],
     shifts: shiftRows as Record<string, unknown>[],
     payouts: payoutRows as Record<string, unknown>[],
+    saved_talent: savedTalentRows as Record<string, unknown>[],
     audit_log: auditRows as Record<string, unknown>[],
   };
 }

@@ -214,7 +214,8 @@ function SearchResults() {
                       key={person.id}
                       className="p-4 rounded-xl bg-[#1E1E1E] border border-white/5 hover:border-white/10 transition-colors"
                     >
-                      <div className="flex items-center gap-3">
+                      {/* S20: talent results deep-link to the public profile. */}
+                      <Link href={`/talent/${person.id}`} className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-[#00FFCC]/10 border border-[#00FFCC]/20 flex items-center justify-center flex-shrink-0">
                           <Zap className="w-5 h-5 text-[#00FFCC]" />
                         </div>
@@ -233,7 +234,7 @@ function SearchResults() {
                               .join(' · ')}
                           </p>
                         </div>
-                      </div>
+                      </Link>
                       <div className="flex items-center justify-between mt-3">
                         <span className="text-xs font-bold text-white/50 flex items-center gap-1">
                           {formatRateBand(person.hourly_rate_min, person.hourly_rate_max) && (
@@ -244,9 +245,11 @@ function SearchResults() {
                           )}
                         </span>
                         {/* S19 (F8): messaging talent is a venue capability —
-                            the CTA used to send every role to the venue inbox. */}
+                            the CTA used to send every role to the venue inbox.
+                            S20: it lands on the profile, whose Message button
+                            opens the real thread (talent_id anchor). */}
                         {myRole === 'VENUE' && (
-                          <Link href="/dashboard/venue/messages">
+                          <Link href={`/talent/${person.id}`}>
                             <Button
                               size="sm"
                               variant="outline"

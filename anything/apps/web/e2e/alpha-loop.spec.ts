@@ -119,7 +119,8 @@ test('alpha loop: publish → apply → negotiate → hire → shift → payout 
 
 		await test.step('talent opens a thread and proposes a rate', async () => {
 			await talent.getByRole('button', { name: 'Inquire about this gig' }).click();
-			await talent.waitForURL('**/dashboard/talent/messages');
+			// S20: Inquire now lands with the created thread deep-linked (?c=).
+			await talent.waitForURL('**/dashboard/talent/messages**');
 			// The fresh thread is auto-selected; the xl right rail pins the gig.
 			await expect(talent.getByText('Gig in focus')).toBeVisible();
 			await expect(talent.getByText(gigTitle).first()).toBeVisible();

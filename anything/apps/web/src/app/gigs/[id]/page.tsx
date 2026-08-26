@@ -2,12 +2,14 @@
 
 /**
  * Public gig detail + application panel (wireframe p4, P1.2 + P3 live
- * applications). Payout hero, about, venue card, the 5% fee estimator, real
- * Submit/Withdraw, and "Inquire" opening a P5 conversation. Map view is
- * deferred (Technical Backlog #1).
+ * applications). Payout hero, about, venue card (with the S20 D3 response
+ * rate), the 5% fee estimator, real Submit/Withdraw, and "Inquire" opening a
+ * P5 conversation. S20: single-pin location map for geocoded gigs, with the
+ * neighborhood as the address fallback.
  */
 
 import React, { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -43,7 +45,12 @@ interface GigDetail extends ApiGig {
   venue_type?: string | null;
   capacity?: number | null;
   venue_gigs_hosted?: number;
+  /** S20 D3 — null under the 3-inbound-conversation floor. */
+  venue_response_rate?: number | null;
 }
+
+// MapLibre touches window — never SSR it (same pattern as browse).
+const GigsMap = dynamic(() => import('@/components/GigsMap'), { ssr: false });
 
 interface MyApplication {
   id: string;
@@ -163,7 +170,12 @@ export default function GigDetailPage() {
       if (!res.ok) throw new Error(body?.error ?? 'Could not open conversation');
       return body?.conversation?.id;
     },
-    onSuccess: () => router.push('/dashboard/talent/messages'),
+    onSuccess: (conversationId) =>
+      router.push(
+        conversationId
+          ? `/dashboard/talent/messages?c=${encodeURIComponent(conversationId)}`
+          : '/dashboard/talent/messages'
+      ),
     onError: (error: Error) => {
       if (error.message === 'signin') {
         router.push(`/account/signin?callbackUrl=${encodeURIComponent(`/gigs/${gigId}`)}`);
@@ -330,16 +342,34 @@ export default function GigDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Location */}
-          {gig.address && (
+          {/* Location (S20 F6): address with the neighborhood as fallback, and a
+              single-pin map when the server geocoded the gig (lat/lng are always
+              server-written — never client input). */}
+          {(gig.address || gig.venue_neighborhood) && (
             <Card className="bg-[#1E1E1E] border-white/5">
               <CardContent className="p-6">
                 <h2 className="text-lg font-bold mb-3">Location</h2>
                 <p className="text-white/60 text-sm flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-[#00FFCC] flex-shrink-0" />
-                  {gig.address}
+                  {gig.address ?? gig.venue_neighborhood}
                 </p>
-                <p className="text-white/20 text-xs mt-2">Map view coming soon.</p>
+                {typeof gig.lat === 'number' && typeof gig.lng === 'number' ? (
+                  <div className="mt-4">
+                    <GigsMap
+                      gigs={[gig]}
+                      className="h-56"
+                      showSummary={false}
+                      interactive={false}
+                      maxZoom={15}
+                    />
+                  </div>
+                ) : (
+                  !gig.address && (
+                    <p className="text-white/20 text-xs mt-2">
+                      Exact address shared after you&apos;re hired.
+                    </p>
+                  )
+                )}
               </CardContent>
             </Card>
           )}
@@ -374,6 +404,9 @@ export default function GigDetailPage() {
                       </span>
                     )}
                     <span>{gig.venue_gigs_hosted ?? 0} gigs hosted</span>
+                    {typeof gig.venue_response_rate === 'number' && (
+                      <span>Responds to {gig.venue_response_rate}% of inquiries</span>
+                    )}
                   </div>
                   {gig.venue_description && (
                     <p className="text-white/50 text-sm mt-3 leading-relaxed line-clamp-3">

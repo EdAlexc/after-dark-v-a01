@@ -65,6 +65,17 @@ export function MessagesView({ role }: { role: 'talent' | 'venue' | 'party' }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // S20: ?c=<conversationId> deep link (Inquire / saved-talent outreach land
+  // on their new thread). Two traps shape the mechanism: useSearchParams
+  // would demand a Suspense boundary that never resolves under the nonce-CSP
+  // setup (the settings page learned this the hard way), and reading
+  // window.location in a mount effect races App Router client-side pushes —
+  // the URL can still be the PREVIOUS page's when effects first run. So the
+  // param is consumed when the conversations list arrives (a network round
+  // trip later, the URL has settled), and only once — after that the user's
+  // own thread clicks win.
+  const consumedDeepLink = useRef<string | null>(null);
+
   const { data: listData, isPending: listPending } = useQuery({
     queryKey: ['conversations'],
     queryFn: async () => {
@@ -77,9 +88,24 @@ export function MessagesView({ role }: { role: 'talent' | 'venue' | 'party' }) {
   const conversations = useMemo(() => listData?.conversations ?? [], [listData]);
   const selected = conversations.find((conversation) => conversation.id === selectedId) ?? null;
 
-  // Default to the most recent thread once loaded.
+  // Select the ?c= thread once the list is in; default to the most recent
+  // thread otherwise. A ?c= id that is not in the caller's own list (stale
+  // or forged) falls through to the default.
   useEffect(() => {
-    if (!selectedId && conversations.length > 0) setSelectedId(conversations[0].id);
+    if (conversations.length === 0) return;
+    const wanted = new URLSearchParams(window.location.search).get('c');
+    if (
+      wanted &&
+      consumedDeepLink.current !== wanted &&
+      conversations.some((conversation) => conversation.id === wanted)
+    ) {
+      consumedDeepLink.current = wanted;
+      setSelectedId(wanted);
+      return;
+    }
+    if (!selectedId || !conversations.some((conversation) => conversation.id === selectedId)) {
+      setSelectedId(conversations[0].id);
+    }
   }, [selectedId, conversations]);
 
   const { data: threadData } = useQuery({

@@ -43,6 +43,8 @@ interface VenueDetail {
   rating_count: number | null;
   gigs_hosted: number;
   open_gigs: number;
+  /** S20 D3 — null under the 3-inbound-conversation floor. */
+  response_rate: number | null;
 }
 
 export default function VenueDetailPage() {
@@ -78,9 +80,11 @@ export default function VenueDetailPage() {
       if (!res.ok) throw new Error(body?.error ?? 'Could not open conversation');
       return body?.conversation?.id;
     },
-    onSuccess: () => {
+    onSuccess: (conversationId) => {
       const inbox = myRole === 'TALENT' ? '/dashboard/talent/messages' : '/dashboard/party/messages';
-      router.push(inbox);
+      router.push(
+        conversationId ? `${inbox}?c=${encodeURIComponent(conversationId)}` : inbox
+      );
     },
     onError: (error: Error) => {
       if (error.message === 'signin') {
@@ -217,6 +221,9 @@ export default function VenueDetailPage() {
                     </p>
                     <p className="text-[10px] text-white/40 uppercase tracking-wider flex items-center justify-center gap-1">
                       <Star className="w-3 h-3" /> Rating
+                      {typeof venue.rating_count === 'number' && venue.rating_count > 0 && (
+                        <span className="normal-case tracking-normal">({venue.rating_count})</span>
+                      )}
                     </p>
                   </div>
                   <div>
@@ -230,6 +237,14 @@ export default function VenueDetailPage() {
                     <p className="text-[10px] text-white/40 uppercase tracking-wider">Open gigs</p>
                   </div>
                 </div>
+                {/* S20 D3 — only rendered past the 3-inbound-thread floor. */}
+                {typeof venue.response_rate === 'number' && (
+                  <p className="mt-4 pt-4 border-t border-white/5 text-center text-xs text-white/50">
+                    Responds to{' '}
+                    <span className="text-white font-bold">{venue.response_rate}%</span> of
+                    inquiries (last 90 days)
+                  </p>
+                )}
               </div>
 
               {myRole !== 'VENUE' && (

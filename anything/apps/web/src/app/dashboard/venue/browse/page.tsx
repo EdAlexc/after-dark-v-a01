@@ -2,7 +2,9 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Search,
   MapPin,
@@ -54,6 +56,25 @@ interface TalentListResponse {
   hasMore: boolean;
 }
 
+/** GET /api/venue/saved-talent row (S20 F4): the directory's public columns
+ *  plus when it was saved — the rail no longer depends on the current page. */
+interface SavedTalentRow {
+  id: string;
+  stage_name: string;
+  pronouns: string | null;
+  neighborhood: string | null;
+  primary_role: string | null;
+  genres_vibes: string[] | null;
+  hourly_rate_min: string | number | null;
+  hourly_rate_max: string | number | null;
+  avatar_url: string | null;
+  available_tonight: boolean | null;
+  rating: string | number | null;
+  rating_count: number | null;
+  trust_score: number | null;
+  saved_at: string;
+}
+
 const ROLES = [
   'DJ',
   'Mixologist',
@@ -67,7 +88,7 @@ const ROLES = [
 const NEIGHBORHOODS = ['Brooklyn', 'Midtown', 'Chelsea', 'Queens', 'Williamsburg', 'Harlem', 'LES'];
 const RATE_RANGE_DEFAULT: number[] = [20, 400];
 
-function rateBand(t: ApiTalent): string | null {
+function rateBand(t: Pick<ApiTalent, 'hourly_rate_min' | 'hourly_rate_max'>): string | null {
   const min = t.hourly_rate_min === null ? null : Number(t.hourly_rate_min);
   const max = t.hourly_rate_max === null ? null : Number(t.hourly_rate_max);
   if (min !== null && max !== null) return `$${min.toFixed(0)}–$${max.toFixed(0)}`;
@@ -111,11 +132,17 @@ function TalentAvatar({ talent, className }: { talent: ApiTalent; className?: st
 function TalentCard({
   talent,
   saved,
+  savePending,
   onToggleSave,
+  onMessage,
+  messagePending,
 }: {
   talent: ApiTalent;
   saved: boolean;
-  onToggleSave: (id: string) => void;
+  savePending: boolean;
+  onToggleSave: (talent: ApiTalent) => void;
+  onMessage: (talentId: string) => void;
+  messagePending: boolean;
 }) {
   const genres = Array.isArray(talent.genres_vibes) ? talent.genres_vibes.slice(0, 4) : [];
   const band = rateBand(talent);
@@ -133,20 +160,23 @@ function TalentCard({
           <div className="flex-1 p-4 flex flex-col gap-2.5 min-w-0">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-sm font-black text-white group-hover:text-[#00FFCC] transition-colors leading-tight">
-                  {talent.stage_name}
-                  {talent.pronouns && (
-                    <span className="text-white/30 font-medium text-xs ml-1.5">
-                      {talent.pronouns}
-                    </span>
-                  )}
-                </p>
+                <Link href={`/talent/${talent.id}`}>
+                  <p className="text-sm font-black text-white group-hover:text-[#00FFCC] transition-colors leading-tight">
+                    {talent.stage_name}
+                    {talent.pronouns && (
+                      <span className="text-white/30 font-medium text-xs ml-1.5">
+                        {talent.pronouns}
+                      </span>
+                    )}
+                  </p>
+                </Link>
                 <p className="text-xs text-[#00FFCC] font-bold">
                   {talent.primary_role || 'Nightlife Talent'}
                 </p>
               </div>
               <button
-                onClick={() => onToggleSave(talent.id)}
+                onClick={() => onToggleSave(talent)}
+                disabled={savePending}
                 aria-label={saved ? `Unsave ${talent.stage_name}` : `Save ${talent.stage_name}`}
                 className={cn(
                   'w-7 h-7 rounded-lg flex items-center justify-center transition-colors border flex-shrink-0',
@@ -201,16 +231,17 @@ function TalentCard({
               </div>
             )}
 
-            {/* Actions */}
+            {/* Actions — Contact opens (or resumes) a real thread with THIS
+                talent via the S20 conversations talent_id anchor. */}
             <div className="flex items-center gap-2 mt-auto pt-1">
-              <Link href="/dashboard/venue/messages">
-                <Button
-                  size="sm"
-                  className="bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold text-xs h-7 px-3 flex items-center gap-1.5"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" /> Contact
-                </Button>
-              </Link>
+              <Button
+                size="sm"
+                disabled={messagePending}
+                onClick={() => onMessage(talent.id)}
+                className="bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold text-xs h-7 px-3 flex items-center gap-1.5"
+              >
+                <MessageSquare className="w-3.5 h-3.5" /> Contact
+              </Button>
               {typeof talent.trust_score === 'number' ? (
                 <span
                   className={cn(
@@ -256,8 +287,9 @@ export default function VenueBrowsePage() {
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [selectedNeighborhoods, setSelectedNeighborhoods] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
-  const [savedIds, setSavedIds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
+  const router = useRouter();
+  const qc = useQueryClient();
 
   // Same param strategy as gig browse (S5/#27): selections filter server-side
   // via the validated /api/talent params; multi-selects ride as CSV lists.
@@ -297,14 +329,71 @@ export default function VenueBrowsePage() {
     );
     setPage(1);
   };
-  const toggleSave = (id: string) =>
-    setSavedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  // S20 F4: the saved list is server truth (saved_talent, RLS-scoped) — it
+  // survives refreshes and shows people from every page, not just this one.
+  const { data: savedData } = useQuery({
+    queryKey: ['saved-talent'],
+    queryFn: async () => {
+      const res = await fetch('/api/venue/saved-talent');
+      if (!res.ok) throw new Error('Failed to load saved talent');
+      return res.json() as Promise<{ savedTalent: SavedTalentRow[] }>;
+    },
+  });
+  const savedTalent = useMemo(() => savedData?.savedTalent ?? [], [savedData]);
+  const savedIds = useMemo(() => new Set(savedTalent.map((t) => t.id)), [savedTalent]);
+
+  const saveMutation = useMutation({
+    mutationFn: async ({ talent, saved }: { talent: ApiTalent | SavedTalentRow; saved: boolean }) => {
+      const res = await fetch('/api/venue/saved-talent', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ talent_id: talent.id, saved }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? 'Could not update saved talent');
+      }
+    },
+    // Deliberately NOT optimistic: heart state is server truth, refetched on
+    // settle, and hearts disable while a toggle is in flight. An optimistic
+    // flip here can be silently clobbered by a late-landing list response,
+    // and a re-click during the inconsistent window inverts the intent (a
+    // save becomes an unsave) — found by the S20 E2E.
+    onError: (error: Error) => toast.error(error.message),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['saved-talent'] }),
+  });
+  const toggleSave = (talent: ApiTalent | SavedTalentRow) => {
+    if (saveMutation.isPending) return;
+    saveMutation.mutate({ talent, saved: !savedIds.has(talent.id) });
+  };
+
+  // Contact → open/resume the thread with that talent, then land on it.
+  const messageMutation = useMutation({
+    mutationFn: async (talentId: string) => {
+      const res = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ talent_id: talentId }),
+      });
+      const body = (await res.json().catch(() => null)) as
+        | { conversation?: { id: string }; error?: string }
+        | null;
+      if (!res.ok) throw new Error(body?.error ?? 'Could not open conversation');
+      return body?.conversation?.id;
+    },
+    onSuccess: (conversationId) =>
+      router.push(
+        conversationId
+          ? `/dashboard/venue/messages?c=${encodeURIComponent(conversationId)}`
+          : '/dashboard/venue/messages'
+      ),
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   const activeFilters =
     selectedRoles.length +
     selectedNeighborhoods.length +
     (rateRange[0] !== RATE_RANGE_DEFAULT[0] || rateRange[1] !== RATE_RANGE_DEFAULT[1] ? 1 : 0);
-  const savedTalent = allTalent.filter((t) => savedIds.includes(t.id));
 
   return (
     <div className="min-h-screen bg-[#121212] text-white flex font-sans pt-14 md:pt-0">
@@ -518,8 +607,11 @@ export default function VenueBrowsePage() {
                     <TalentCard
                       key={t.id}
                       talent={t}
-                      saved={savedIds.includes(t.id)}
+                      saved={savedIds.has(t.id)}
+                      savePending={saveMutation.isPending}
                       onToggleSave={toggleSave}
+                      onMessage={messageMutation.mutate}
+                      messagePending={messageMutation.isPending}
                     />
                   ))}
                 </div>
@@ -573,33 +665,46 @@ export default function VenueBrowsePage() {
                     key={t.id}
                     className="flex items-center gap-3 p-3 rounded-xl bg-[#1A1A1A] border border-white/5 hover:border-white/10 transition-colors"
                   >
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black border border-white/10 flex-shrink-0 bg-[#00FFCC]/20 text-[#00FFCC] overflow-hidden">
-                      {t.avatar_url ? (
-                        <img
-                          src={t.avatar_url}
-                          alt={t.stage_name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        initials(t.stage_name)
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-white truncate">{t.stage_name}</p>
-                      <div className="flex items-center justify-between mt-0.5">
-                        <p className="text-[11px] text-[#00FFCC]">
+                    <Link
+                      href={`/talent/${t.id}`}
+                      className="flex items-center gap-3 flex-1 min-w-0"
+                    >
+                      <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black border border-white/10 flex-shrink-0 bg-[#00FFCC]/20 text-[#00FFCC] overflow-hidden">
+                        {t.avatar_url ? (
+                          <img
+                            src={t.avatar_url}
+                            alt={t.stage_name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          initials(t.stage_name)
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-white truncate">{t.stage_name}</p>
+                        <p className="text-[11px] text-[#00FFCC] mt-0.5 truncate">
                           {rateBand(t) ? `${rateBand(t)}/hr` : t.primary_role ?? ''}
                         </p>
                       </div>
-                    </div>
+                    </Link>
+                    <button
+                      onClick={() => messageMutation.mutate(t.id)}
+                      disabled={messageMutation.isPending}
+                      aria-label={`Message ${t.stage_name}`}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center border bg-[#00FFCC]/10 border-[#00FFCC]/30 text-[#00FFCC] hover:bg-[#00FFCC]/20 transition-colors flex-shrink-0"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => toggleSave(t)}
+                      disabled={saveMutation.isPending}
+                      aria-label={`Unsave ${t.stage_name}`}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center border bg-white/5 border-white/10 text-white/30 hover:text-white transition-colors flex-shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 ))}
-
-                <Link href="/dashboard/venue/messages">
-                  <Button className="w-full mt-2 bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold text-xs flex items-center gap-2">
-                    <MessageSquare className="w-3.5 h-3.5" /> Message Saved Talent
-                  </Button>
-                </Link>
               </div>
             )}
           </div>

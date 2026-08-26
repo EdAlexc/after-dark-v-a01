@@ -129,6 +129,17 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     note: 'Selects no auth-table columns; PARTY discovery depends on this staying public.',
   },
   {
+    id: 'talent.detail',
+    route: 'talent/[id]/route.ts',
+    method: 'GET',
+    summary: 'Public talent detail — public columns + portfolio/socials (S20)',
+    expect: PUBLIC,
+    note:
+      'Keyed by the public talent_profiles.id; the talent user id never leaves the ' +
+      'server — venue outreach resolves it server-side (conversations.create talent_id). ' +
+      'No shift/booking aggregates: those are participant-private under RLS.',
+  },
+  {
     id: 'venues.list',
     route: 'venues/route.ts',
     method: 'GET',
@@ -230,6 +241,37 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
     summary: 'Own KPI aggregates from the S6 event capture (time-to-hire, filling rate)',
     expect: VENUE_ONLY,
     note: 'Events carry no PII; the projection is per-venue counts and durations only.',
+  },
+  {
+    id: 'geocode.preview',
+    route: 'geocode/route.ts',
+    method: 'GET',
+    summary: 'Create-gig step-2 map preview — server-side Nominatim probe (S20)',
+    expect: VENUE_ONLY,
+    note:
+      'Hiring tool like match-preview: the browser never talks to the geocoder ' +
+      '(A10 safe-fetch allowlist stays the only egress); nothing is persisted — ' +
+      'publish still geocodes authoritatively.',
+  },
+  {
+    id: 'venue.savedTalent.list',
+    route: 'venue/saved-talent/route.ts',
+    method: 'GET',
+    summary: "The venue user's own saved-talent bookmarks + public card columns (S20)",
+    expect: VENUE_ONLY,
+    note:
+      'RLS 0024 owner-scoped; the join serves the same public columns as the ' +
+      'directory and never the talent user id.',
+  },
+  {
+    id: 'venue.savedTalent.write',
+    route: 'venue/saved-talent/route.ts',
+    method: 'PUT',
+    summary: 'Idempotent save/unsave toggle for one public talent id (S20)',
+    expect: VENUE_ONLY,
+    note:
+      'Bookmark = private preference: invisible to the talent, unaudited by ' +
+      'declared exemption, no UPDATE shape exists (insert/delete only).',
   },
 
   // ─── Profiles (§6.1 settings/profile rows) ──────────────────────────────────

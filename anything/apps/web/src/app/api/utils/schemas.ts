@@ -120,6 +120,21 @@ export const GigPatchSchema = z.union([
 /** Path id for /api/gigs/[id] — reject non-UUIDs before they reach Postgres. */
 export const GigIdSchema = z.string().uuid();
 export const VenueIdSchema = z.string().uuid();
+export const TalentIdSchema = z.string().uuid();
+
+/** PUT /api/venue/saved-talent (S20 F4) — one idempotent toggle body: save
+ *  or unsave a public talent_profiles.id. No UPDATE shape exists at all. */
+export const SavedTalentPutSchema = z.strictObject({
+  talent_id: z.string().uuid(),
+  saved: z.boolean(),
+});
+
+/** GET /api/geocode (S20 F6) — optional so an empty wizard field costs
+ *  nothing; the route answers { point: null } without any network call
+ *  below the geocoder's own 5-char floor. */
+export const GeocodePreviewQuerySchema = z.object({
+  address: z.string().max(200).optional().default(''),
+});
 
 /** 1-based page for public listings; bounded so OFFSET stays sane. */
 const page = z.coerce.number().int().min(1).max(500).optional().default(1);
@@ -333,6 +348,12 @@ export const NotificationsReadSchema = z.object({
   ids: z.array(z.number().int().positive()).max(100).optional(),
 });
 
+/** GET /api/notifications (S20 F5) — the history page pages through the
+ *  same list the bell reads; page 1 is byte-identical to the pre-S20 shape. */
+export const NotificationsListQuerySchema = z.object({
+  page,
+});
+
 // ─── Messaging (P5) ───────────────────────────────────────────────────────────
 
 export const ConversationCreateSchema = z
@@ -344,10 +365,15 @@ export const ConversationCreateSchema = z
     /** S19 inquiry path: a public venue_profiles.id — the server resolves the
      *  venue's user server-side (PARTY private-party inquiries, §6.3). */
     venue_id: z.string().uuid().nullish(),
+    /** S20 outreach path: a public talent_profiles.id — VENUE-initiated
+     *  saved-talent messaging; the server resolves the talent's user, so
+     *  user ids never ride the client here either. */
+    talent_id: z.string().uuid().nullish(),
   })
-  .refine((body) => body.counterpart_user_id || body.gig_id || body.venue_id, {
-    message: 'counterpart_user_id, gig_id, or venue_id is required',
-  });
+  .refine(
+    (body) => body.counterpart_user_id || body.gig_id || body.venue_id || body.talent_id,
+    { message: 'counterpart_user_id, gig_id, venue_id, or talent_id is required' }
+  );
 
 export const MessageCreateSchema = z
   .object({

@@ -106,4 +106,30 @@ describe('GET /api/venues/[id] (public detail)', () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it('derives response_rate through the S20 definer aggregate, not a bare join', async () => {
+    mocks.sql.mockResolvedValue([{ id: VENUE_ID, venue_name: 'Nebula NYC' }]);
+    await venueDetail(
+      new Request(`http://test.local/api/venues/${VENUE_ID}`),
+      context(VENUE_ID)
+    );
+    const [first] = mocks.sql.mock.calls[0] as [unknown];
+    const text = Array.isArray(first) ? (first as string[]).join('') : String(first);
+    // Cutover-safe: conversations/messages are participant-private, so the
+    // rate must come from the 0024 SECURITY DEFINER function.
+    expect(text).toContain('app_venue_response_stats');
+    expect(text).toContain('AS response_rate');
+  });
+
+  it('serves the computed response_rate through to the JSON', async () => {
+    mocks.sql.mockResolvedValue([
+      { id: VENUE_ID, venue_name: 'Nebula NYC', response_rate: 88 },
+    ]);
+    const res = await venueDetail(
+      new Request(`http://test.local/api/venues/${VENUE_ID}`),
+      context(VENUE_ID)
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).venue.response_rate).toBe(88);
+  });
 });
