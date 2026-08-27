@@ -8,7 +8,23 @@
 
 ## 1. Current status — YOU ARE HERE
 
-- **Date:** 2026-08-26 · **Branch:** `claude/dev-timeline-slices-e58867` — **S20 landed:
+- **Date:** 2026-08-27 · **Branch:** `claude/nyc-events-afterdark-907eae` — **Test-data
+  population: real NYC events through Oct 2026** so test users have full browse / map /
+  venues / search surfaces. Crawled 7 of the 8 requested public sources (Resident
+  Advisor, Dice, Eventbrite, Ticketmaster, redeyeny.com, Posh, Ticket Tailor; **Tixr
+  skipped** — login-gated, no public city directory) and distilled them into
+  `scripts/seed-events.data.ts` (46 real venues w/ coordinates + 131 events → gigs,
+  roles varied across DJ/Security/Bartender/Photographer/Go-Go/Bottle Server, 18+/21+
+  from the listings, provenance cited per row). New idempotent importer
+  `yarn db:seed-events` (venues keyed by email, gigs by venue+title+start; venue users
+  are data carriers with discarded random passwords). **Verified end-to-end on a
+  disposable Neon branch off prod** (`seed-events-verify`): 0024 applied, import + re-run
+  idempotency green, and the app browser-checked live against it (landing Hot Gigs
+  Tonight, talent browse w/ HOT/NEW badges, venue directory, FTS search, gig detail w/
+  21+ badge + fee estimator + pin). A second branch (`seed-events-sql-rehearsal`)
+  rehearsed the same content as pure idempotent SQL. **Prod remains for the operator**
+  (session permission gate blocked prod writes): run `yarn db:migrate` (applies pending
+  0024 — §7.5 item) then `yarn db:seed-events`, both with the prod owner string.
   discovery & dashboard completion — the last planned development slice.** 1142 vitest
   (975 → 1142) + 21 E2E green against a production build on a disposable Neon branch off
   prod; typecheck/lint/build clean; `db:verify-rls` extended 23 → 28 and run green

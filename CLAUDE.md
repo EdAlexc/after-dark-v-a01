@@ -46,6 +46,8 @@ yarn test:e2e               # Playwright E2E journeys (S16/S18/S19/S20, 21 tests
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:grants              # (re)apply scripts/grants.sql to the afterdark_app role (owner conn; S2)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
+yarn db:seed-events         # 46 real NYC venues + 131 event gigs (crawled 2026-08-27, thru Oct '26;
+                            #   idempotent; dataset+provenance in scripts/seed-events.data.ts)
 yarn db:preview-accounts    # shared preview accounts; passwords derived from PREVIEW_ACCOUNTS_SECRET (S1)
 yarn db:verify-rls          # proves RLS isolation against a non-owner role (never run on prod; 28 checks — CI runs it per-PR since S12)
 yarn db:backfill-media      # move inline data: images into Blob; --verify asserts zero remain (S3)

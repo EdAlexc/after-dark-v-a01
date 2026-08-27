@@ -13,6 +13,7 @@
 		"db:migrate": "node scripts/migrate.mjs",
 		"db:grants": "node scripts/apply-grants.mjs",
 		"db:seed": "tsx scripts/seed.ts",
+		"db:seed-events": "tsx scripts/seed-events.ts",
 		"db:preview-accounts": "tsx scripts/create-preview-accounts.ts",
 		"db:verify-rls": "node scripts/verify-rls.mjs",
 		"db:backfill-media": "tsx scripts/backfill-media.ts",
