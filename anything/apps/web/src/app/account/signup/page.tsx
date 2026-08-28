@@ -33,7 +33,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
           </p>
         </div>
         {children}
-        <p className="text-center text-xs text-white/20 mt-6">
+        <p className="text-center text-xs text-white/40 mt-6">
           By joining, you agree to our{' '}
           <Link href="/legal/terms" className="text-white/40 hover:text-[#00FFCC] underline">
             Terms of Service
@@ -83,7 +83,7 @@ function AccountTypeStep({
               For professionals looking to post and book gigs in NYC and its Boroughs.
             </p>
           </div>
-          <div className="text-white/20 group-hover:text-[#00FFCC]/60 transition-colors mt-1 flex-shrink-0">
+          <div className="text-white/40 group-hover:text-[#00FFCC]/60 transition-colors mt-1 flex-shrink-0">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path
                 d="M6 3l5 5-5 5"
@@ -111,7 +111,7 @@ function AccountTypeStep({
               For people exploring events in NYC.
             </p>
           </div>
-          <div className="text-white/20 group-hover:text-white/40 transition-colors mt-1 flex-shrink-0">
+          <div className="text-white/40 group-hover:text-white/40 transition-colors mt-1 flex-shrink-0">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path
                 d="M6 3l5 5-5 5"
@@ -226,7 +226,7 @@ function SignUpForm({
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1.5 text-xs text-white/30 hover:text-white/60 transition-colors mb-4"
+          className="flex items-center gap-1.5 text-xs text-white/45 hover:text-white/60 transition-colors mb-4"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           Back
@@ -298,7 +298,7 @@ function SignUpForm({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
-          className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all"
+          className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all"
         />
       </label>
 
@@ -314,7 +314,7 @@ function SignUpForm({
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Min. 8 characters"
-          className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all"
+          className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all"
         />
       </label>
 

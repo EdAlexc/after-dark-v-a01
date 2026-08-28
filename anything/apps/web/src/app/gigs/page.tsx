@@ -110,7 +110,7 @@ export default function PublicGigsPage() {
               onChange={(event) => setTerm(event.target.value)}
               placeholder="Search gigs by title, venue, or role…"
               aria-label="Search gigs"
-              className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
+              className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
             />
           </div>
           <Link
@@ -178,7 +178,7 @@ export default function PublicGigsPage() {
           <div className="text-center py-24">
             <BriefcaseBusiness className="w-10 h-10 text-white/10 mx-auto mb-3" />
             <p className="text-sm font-bold text-white/40">No open gigs match.</p>
-            <p className="text-xs text-white/25 mt-1">
+            <p className="text-xs text-white/40 mt-1">
               Try clearing a filter — venues post new roles all the time.
             </p>
           </div>
@@ -235,7 +235,7 @@ export default function PublicGigsPage() {
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-black text-[#00FFCC]">{formatRate(gig)}</p>
-                      <p className="text-[10px] text-white/30 mt-0.5 group-hover:text-white/50 transition-colors">
+                      <p className="text-[10px] text-white/45 mt-0.5 group-hover:text-white/70 transition-colors">
                         View &amp; Apply
                       </p>
                     </div>

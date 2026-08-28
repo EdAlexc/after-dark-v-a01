@@ -141,7 +141,7 @@ export function NotificationsBell({ role }: { role: BellRole }) {
             </div>
             <div className="max-h-96 overflow-y-auto">
               {(data?.notifications ?? []).length === 0 ? (
-                <p className="px-4 py-8 text-center text-xs text-white/30">
+                <p className="px-4 py-8 text-center text-xs text-white/45">
                   Nothing yet — activity on your gigs and messages lands here.
                 </p>
               ) : (
@@ -163,7 +163,7 @@ export function NotificationsBell({ role }: { role: BellRole }) {
                         )}
                         <div className="min-w-0">
                           <p className="text-xs text-white/80 leading-snug">{text}</p>
-                          <p className="text-[10px] text-white/30 mt-0.5">
+                          <p className="text-[10px] text-white/45 mt-0.5">
                             {new Date(notification.created_at).toLocaleString(undefined, {
                               month: 'short',
                               day: 'numeric',

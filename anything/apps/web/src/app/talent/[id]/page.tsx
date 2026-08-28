@@ -150,7 +150,7 @@ export default function TalentDetailPage() {
                   <h1 className="text-2xl font-black tracking-tight leading-tight">
                     {talent.stage_name}
                     {talent.pronouns && (
-                      <span className="text-white/30 font-medium text-sm ml-2">
+                      <span className="text-white/45 font-medium text-sm ml-2">
                         {talent.pronouns}
                       </span>
                     )}
@@ -230,7 +230,7 @@ export default function TalentDetailPage() {
                   <dl className="space-y-1.5">
                     {socials.map(([network, handle]) => (
                       <div key={network} className="flex items-baseline gap-3 text-sm">
-                        <dt className="text-white/30 capitalize w-24 flex-shrink-0">{network}</dt>
+                        <dt className="text-white/45 capitalize w-24 flex-shrink-0">{network}</dt>
                         <dd className="text-white/70 truncate">{handle}</dd>
                       </div>
                     ))}

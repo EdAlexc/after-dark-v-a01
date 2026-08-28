@@ -49,7 +49,7 @@ export default function LegalLayout({ children }: { children: ReactNode }) {
       </article>
 
       <footer className="border-t border-white/5 py-8 mt-8">
-        <div className="max-w-3xl mx-auto px-4 flex flex-wrap items-center justify-between gap-4 text-xs text-white/30">
+        <div className="max-w-3xl mx-auto px-4 flex flex-wrap items-center justify-between gap-4 text-xs text-white/45">
           <span>© 2026 AfterDark Marketplace Inc.</span>
           <Link href="/" className="hover:text-[#00FFCC] transition-colors">
             Back to AfterDark

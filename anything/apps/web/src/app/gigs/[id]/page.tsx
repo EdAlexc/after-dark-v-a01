@@ -325,7 +325,7 @@ export default function GigDetailPage() {
                   {gig.description}
                 </p>
               ) : (
-                <p className="text-white/30 text-sm italic">
+                <p className="text-white/45 text-sm italic">
                   The venue hasn't added a description yet — inquire for details.
                 </p>
               )}
@@ -365,7 +365,7 @@ export default function GigDetailPage() {
                   </div>
                 ) : (
                   !gig.address && (
-                    <p className="text-white/20 text-xs mt-2">
+                    <p className="text-white/40 text-xs mt-2">
                       Exact address shared after you&apos;re hired.
                     </p>
                   )
@@ -479,9 +479,9 @@ export default function GigDetailPage() {
                       placeholder={baseRate !== null ? String(baseRate) : 'e.g. 150'}
                       value={proposedRate}
                       onChange={(e) => setProposedRate(e.target.value)}
-                      className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all"
+                      className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all"
                     />
-                    <p className="text-[11px] text-white/30 mt-1.5">
+                    <p className="text-[11px] text-white/45 mt-1.5">
                       Leave blank to accept the venue's base rate.
                     </p>
                   </div>
@@ -497,7 +497,7 @@ export default function GigDetailPage() {
                       placeholder="Why you're the right fit for this night…"
                       value={coverMessage}
                       onChange={(e) => setCoverMessage(e.target.value)}
-                      className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all resize-none"
+                      className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all resize-none"
                     />
                   </div>
 

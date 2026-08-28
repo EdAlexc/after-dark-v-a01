@@ -127,7 +127,7 @@ export default function LandingPage() {
             <Link href="/gigs">
               <Button
                 variant="outline"
-                className="w-full sm:w-auto border-white/20 hover:bg-white/5 h-14 px-8 text-lg text-black font-bold"
+                className="w-full sm:w-auto bg-transparent border-white/25 text-white hover:bg-white/10 hover:text-white h-14 px-8 text-lg font-bold"
               >
                 Browse Gigs
               </Button>
@@ -332,7 +332,7 @@ export default function LandingPage() {
                 <Button
                   size="lg"
                   variant="outline"
-                  className="w-full sm:w-auto border-black/20 hover:bg-black/5 h-16 px-12 text-xl font-bold rounded-full"
+                  className="w-full sm:w-auto bg-transparent border-black/30 text-black hover:bg-black/10 hover:text-black h-16 px-12 text-xl font-bold rounded-full"
                 >
                   Talk to Sales
                 </Button>
@@ -462,7 +462,7 @@ export default function LandingPage() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-4 mt-20 pt-8 border-t border-white/5 text-center text-white/20 text-xs font-bold tracking-widest uppercase">
+        <div className="max-w-7xl mx-auto px-4 mt-20 pt-8 border-t border-white/5 text-center text-white/40 text-xs font-bold tracking-widest uppercase">
           © 2026 AFTERDARK MARKETPLACE INC. ALL RIGHTS RESERVED.
         </div>
       </footer>

@@ -93,7 +93,7 @@ function TwoFactorForm() {
               setCode(mode === 'totp' ? e.target.value.replace(/\D/g, '') : e.target.value)
             }
             placeholder={mode === 'totp' ? '000000' : 'backup-code'}
-            className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-center text-xl tracking-[0.4em] font-mono outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all"
+            className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-center text-xl tracking-[0.4em] font-mono outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all"
           />
 
           <label className="flex items-center gap-2.5 text-sm text-white/50 cursor-pointer select-none">

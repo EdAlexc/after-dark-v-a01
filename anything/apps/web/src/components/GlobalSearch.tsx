@@ -140,7 +140,7 @@ export default function GlobalSearch({
           placeholder="Search gigs, talent, venues…"
           aria-label="Search gigs, talent, or venues"
           className={cn(
-            'w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-9 pr-3 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-[#00FFCC]/40 transition-colors',
+            'w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-9 pr-3 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-[#00FFCC]/40 transition-colors',
             compact ? 'py-2' : 'py-2.5'
           )}
         />
@@ -154,7 +154,7 @@ export default function GlobalSearch({
             <div className="max-h-80 overflow-y-auto">
               {data!.gigs.length > 0 && (
                 <div className="py-1.5">
-                  <p className="px-4 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-white/30">
+                  <p className="px-4 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-white/45">
                     Gigs
                   </p>
                   {data!.gigs.map((gig) => (
@@ -186,7 +186,7 @@ export default function GlobalSearch({
               )}
               {data!.talent.length > 0 && (
                 <div className="py-1.5 border-t border-white/5">
-                  <p className="px-4 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-white/30">
+                  <p className="px-4 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-white/45">
                     Talent
                   </p>
                   {data!.talent.map((talent) => (
@@ -221,7 +221,7 @@ export default function GlobalSearch({
               )}
               {venueHits.length > 0 && (
                 <div className="py-1.5 border-t border-white/5">
-                  <p className="px-4 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-white/30">
+                  <p className="px-4 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-white/45">
                     Venues
                   </p>
                   {venueHits.map((venue) => (

@@ -162,7 +162,7 @@ function UploadZone({
           <div className="w-10 h-10 rounded-xl bg-[#00FFCC]/10 flex items-center justify-center">
             <ImagePlus className="w-5 h-5 text-[#00FFCC]/60" />
           </div>
-          <p className="text-[11px] text-white/30 text-center leading-tight">{label}</p>
+          <p className="text-[11px] text-white/45 text-center leading-tight">{label}</p>
         </div>
       )}
     </div>
@@ -231,7 +231,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const inputCls =
-  'bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all';
+  'bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all';
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
@@ -401,7 +401,7 @@ export default function TalentProfilePage() {
           <Section title="Media Gallery" subtitle="Your face to the venue — make it count">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="md:col-span-2">
-                <p className="text-[11px] text-white/30 uppercase tracking-widest font-semibold mb-2">
+                <p className="text-[11px] text-white/45 uppercase tracking-widest font-semibold mb-2">
                   Primary Headshot
                 </p>
                 <UploadZone
@@ -413,7 +413,7 @@ export default function TalentProfilePage() {
                 />
               </div>
               <div className="md:col-span-2">
-                <p className="text-[11px] text-white/30 uppercase tracking-widest font-semibold mb-2">
+                <p className="text-[11px] text-white/45 uppercase tracking-widest font-semibold mb-2">
                   Portfolio Highlights
                 </p>
                 <div className="grid grid-cols-3 gap-2">
@@ -528,7 +528,7 @@ export default function TalentProfilePage() {
                     }
                   />
                 </div>
-                <span className="text-white/30 text-sm">—</span>
+                <span className="text-white/45 text-sm">—</span>
                 <div className="relative flex-1">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#00FFCC] text-sm font-bold">
                     $
@@ -544,7 +544,7 @@ export default function TalentProfilePage() {
                     }
                   />
                 </div>
-                <span className="text-white/30 text-sm flex-shrink-0">/ hr</span>
+                <span className="text-white/45 text-sm flex-shrink-0">/ hr</span>
               </div>
             </div>
           </Section>

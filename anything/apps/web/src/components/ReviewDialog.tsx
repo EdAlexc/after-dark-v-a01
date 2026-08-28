@@ -104,7 +104,7 @@ export default function ReviewDialog({
             value={comment}
             onChange={(event) => setComment(event.target.value)}
             placeholder="How did it go? (optional)"
-            className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-[#00FFCC]/40 transition-colors resize-none"
+            className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-[#00FFCC]/40 transition-colors resize-none"
           />
 
           <Button
