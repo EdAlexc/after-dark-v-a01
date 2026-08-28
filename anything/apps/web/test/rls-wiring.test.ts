@@ -111,6 +111,7 @@ const RLS_WIRING: Record<string, WiringMode> = {
   'venue/stats/route.ts': 'wrapped',
   'venues/[id]/route.ts': 'public-read', // S19 anon venue detail — public columns only
   'venues/route.ts': 'public-read', // S19 anon venue directory — public columns only
+  'events/route.ts': 'public-read', // 0025 anon event listings — PUBLISHED rows, public venue columns
 
   // Shared utils that execute governed SQL themselves
   'utils/account-data.ts': 'wrapped', // export = subject context; erasure = SERVICE
@@ -122,6 +123,7 @@ const RLS_WIRING: Record<string, WiringMode> = {
 
   // Pure query builders — never execute; the importing route owns the context
   // duty, and the builder's table refs are attributed to it (see scan below).
+  'utils/event-listings-query.ts': 'builder',
   'utils/gigs-query.ts': 'builder',
   'utils/match-query.ts': 'builder',
   'utils/search-query.ts': 'builder',

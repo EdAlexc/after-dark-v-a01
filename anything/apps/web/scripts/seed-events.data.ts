@@ -37,6 +37,40 @@ export interface SeedEvent {
   source: string;
 }
 
+/**
+ * Support-role gigs → the event they staff. Any gig title NOT in this map is
+ * its own event (its title names the happening). Keys and values are exact
+ * gig-title strings from EVENTS below; the importer groups by
+ * (venue, parent title) and derives one `events` row per group.
+ */
+export const EVENT_PARENTS: Record<string, string> = {
+  'Susanne Bartsch: ON TOP — Performers': 'Susanne Bartsch: ON TOP',
+  'POWER UP — Glow Dancers': "POWER UP: NYC's Glow Party",
+  'REGGAETON WAREHOUSE — VIP service': 'REGGAETON WAREHOUSE (21+)',
+  'Day & Night — floor security': 'Chaos In The CBD, Joe Claussell, Floorplan [Day & Night]',
+  'Day & Night — bar team': 'Chaos In The CBD, Joe Claussell, Floorplan [Day & Night]',
+  'Socafest 2026 — event security': 'Socafest 2026',
+  'SOLID GROOVES — VIP service': 'SOLID GROOVES New York',
+  'Teletech New York — floor security': 'Teletech New York',
+  'Flag Invasion — VIP service': 'International Flag Invasion — Labor Day',
+  'Teksupport: Four Tet — security': 'Teksupport: Four Tet',
+  'Teksupport: Four Tet — bar team': 'Teksupport: Four Tet',
+  'SACRO by MESTIZA — performers': 'SACRO by MESTIZA',
+  'September Standard Gala — photographer': 'The 2026 September Standard Gala',
+  'DAY+NIGHT — door security': 'DAY+NIGHT: D.Dan, Freddy K + more',
+  'Jada Kingdom Live — opening DJ': 'Jada Kingdom + Byron Messiah Live',
+  'Jamie Jones — VIP service': 'Jamie Jones',
+  'Honey Dijon Day & Night — performers': 'Honey Dijon: Day & Night',
+  'Honey Dijon Day & Night — bar team': 'Honey Dijon: Day & Night',
+  'LIBRA RISING — support DJ': 'LIBRA RISING: Aluna and More',
+  'HI-LO — event security': 'HI-LO w. Rebūke & Guests',
+  'City of Gods Festival — night one': 'City of Gods Festival',
+  'City of Gods Festival — main stage': 'City of Gods Festival',
+  'City of Gods Festival — bar team': 'City of Gods Festival',
+  'Bassvictim Halloween — security': 'Bassvictim — Halloween',
+  'Bassvictim Halloween — performers': 'Bassvictim — Halloween',
+};
+
 export const VENUES: SeedVenue[] = [
   { slug: 'nowadays', name: 'Nowadays', neighborhood: 'Ridgewood', address: '56-06 Cooper Ave, Ridgewood, NY', lat: 40.7059, lng: -73.9087, venueType: 'Club', capacity: 700, genres: ['House', 'Techno', 'Ambient'], description: 'Indoor/outdoor club and dance institution on the Ridgewood–Bushwick border. Demo profile seeded from public event listings (alpha test data).' },
   { slug: 'basement', name: 'BASEMENT', neighborhood: 'Maspeth', address: '52-19 Flushing Ave, Maspeth, NY', lat: 40.7146, lng: -73.9188, venueType: 'Club', capacity: 400, genres: ['Techno'], description: 'Dark, strict-door techno club beneath Knockdown Center. Demo profile seeded from public event listings (alpha test data).' },

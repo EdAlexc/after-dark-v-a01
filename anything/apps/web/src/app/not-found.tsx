@@ -45,7 +45,7 @@ export default function NotFound() {
           Back to Home
         </Link>
         <Link
-          href="/dashboard/talent/browse"
+          href="/gigs"
           className="border border-white/15 hover:border-white/30 hover:text-white text-white/80 font-medium px-6 py-3 rounded-md transition-colors"
         >
           Browse Gigs

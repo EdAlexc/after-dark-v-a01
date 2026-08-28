@@ -26,6 +26,7 @@ import {
   PartyPopper,
   ShieldCheck,
   Bell,
+  CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import GlobalSearch from '@/components/GlobalSearch';
@@ -204,6 +205,12 @@ const VENUE_NAV: SidebarItem[] = [
 // S19 (§6.3): the PARTY persona is read-only discovery — venues to book for
 // private parties, plus the inquiry threads those open. No principal surfaces.
 const PARTY_NAV: SidebarItem[] = [
+  {
+    kind: 'link',
+    label: 'Discover Events',
+    href: '/events',
+    icon: <CalendarDays className="w-5 h-5" />,
+  },
   {
     kind: 'link',
     label: 'Discover Venues',

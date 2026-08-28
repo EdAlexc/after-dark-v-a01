@@ -77,7 +77,7 @@ describe('DashboardSidebar', () => {
 		nav.pathname = '/dashboard/party/messages';
 		wireFetch();
 		renderWithQueryClient(<DashboardSidebar role="party" />);
-		expectNav(['Discover Venues', 'Messages', 'Search']);
+		expectNav(['Discover Events', 'Discover Venues', 'Messages', 'Search']);
 		// The F1 bug rendered the VENUE nav for unknown roles — these are the tells.
 		expect(screen.queryByText('Post a Gig')).not.toBeInTheDocument();
 		expect(screen.queryByText('Applicants')).not.toBeInTheDocument();

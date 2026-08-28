@@ -46,8 +46,9 @@ yarn test:e2e               # Playwright E2E journeys (S16/S18/S19/S20, 21 tests
 yarn db:migrate             # apply migrations/*.sql (forward-only runner; --dry-run supported)
 yarn db:grants              # (re)apply scripts/grants.sql to the afterdark_app role (owner conn; S2)
 yarn db:seed                # demo venue+talent+gigs (dev/local only; refuses prod)
-yarn db:seed-events         # 46 real NYC venues + 131 event gigs (crawled 2026-08-27, thru Oct '26;
-                            #   idempotent; dataset+provenance in scripts/seed-events.data.ts)
+yarn db:seed-events         # 46 real NYC venues + 107 event listings + 131 gigs linked to them
+                            #   (crawled 2026-08-27, thru Oct '26; idempotent; dataset+provenance
+                            #   in scripts/seed-events.data.ts)
 yarn db:preview-accounts    # shared preview accounts; passwords derived from PREVIEW_ACCOUNTS_SECRET (S1)
 yarn db:verify-rls          # proves RLS isolation against a non-owner role (never run on prod; 28 checks — CI runs it per-PR since S12)
 yarn db:backfill-media      # move inline data: images into Blob; --verify asserts zero remain (S3)
@@ -85,7 +86,9 @@ yarn gate:lhci              # P10.4 Lighthouse §3.2 budgets, 3 passes (needs ru
   `0022_telemetry.sql` adds the S18 RUM/timing stores (SERVICE-only writes, 30-day purge);
   `0023_venue_directory.sql` adds the S19 venue FTS + directory indexes;
   `0024_discovery_dashboard.sql` adds the S20 `saved_talent` bookmarks (RLS in-file) +
-  the D3 response-rate SECURITY DEFINER aggregate. The
+  the D3 response-rate SECURITY DEFINER aggregate; `0025_event_listings.sql` adds public
+  `event_listings` + `gigs.event_listing_id` (RLS in-file; NB the name — bare `events` is
+  0016's S6 analytics stream). The
   runner records applied files in `_migrations`; because it is forward-only, role GRANTs are
   re-asserted via `yarn db:grants` (`scripts/grants.sql` is the living set). ⚠ Applying
   migrations to the production DB is a **manual operator step** — drift took auth down on
@@ -204,7 +207,7 @@ Status legend: ✅ implemented & wired to DB · 🟡 UI exists but **mock data o
 | Landing page (3.1) | p5 | `src/app/page.tsx` | ✅ Hot Gigs Tonight real (P1.4); legal footer real (P2.1); rest static marketing copy |
 | Sign up / sign in / logout | — | `src/app/account/*` | ✅ better-auth, social self-activating; S13 adds forgot/reset-password pages + email verification (key-gated on `RESEND_API_KEY`) |
 | Onboarding (role select + basics) | — | `src/app/onboarding/page.tsx` → `/api/user/role` | ✅ (but accepts `ADMIN` — see §7) |
-| Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | ✅ real `GET /api/gigs` (P1.1): validated filters, pagination, HOT/NEW badges; multi-select (S5) and text search (S17 `q`) server-side |
+| Browse gigs: filters, list (3.2) | p2 | `dashboard/talent/browse/page.tsx` | ✅ real `GET /api/gigs` (P1.1): validated filters, pagination, HOT/NEW badges; multi-select (S5) and text search (S17 `q`) server-side; public `/gigs` list + `/events` listings split via the nav dropdown (0025 — apply stays Talent-only) |
 | Browse talent (venue directory) | — | `dashboard/venue/browse/page.tsx` | ✅ real public `GET /api/talent` (P1.1); saved talent server-persisted (`saved_talent`, S20) w/ per-card Contact → real thread; public `/talent/[id]` profiles (S20) |
 | PARTY persona: signup→onboarding, venue discovery, private-party inquiries (§6.3) | p5 "Party People" | `/dashboard` root router, `/venues{,/[id]}` → `/api/venues{,/[id]}`, `dashboard/party/messages` | ✅ S19: role reachable end-to-end; public venue directory; `venue_id` inquiry resolved server-side; PARTY still never a principal (matrix invariant) |
 | Browse gigs: map view (3.2) | p2 | `components/GigsMap.tsx` in browse | ✅ MapLibre + OSM tiles (S10); pins = server-geocoded PUBLISHED gigs; escaped popups → `/gigs/[id]` |
@@ -255,7 +258,7 @@ PATCH takedown), **`/api/admin/audit-logs`** (JSON + audited CSV export), `/api/
 **`/api/search`** (GET public FTS, S5 — gigs+talent, +venues arm S19), **`/api/venue/stats`**
 (GET venue KPI aggregates, S6), **`/api/gigs/match-preview`** (GET venue Live Analysis, S7),
 **`/api/venues`** (GET public directory, S19), **`/api/venues/[id]`** (GET public detail, S19
-+ S20 response rate), **`/api/talent/[id]`** (GET public talent profile, S20),
++ S20 response rate), **`/api/events`** (GET public event listings + open-role counts, 0025), **`/api/talent/[id]`** (GET public talent profile, S20),
 **`/api/venue/saved-talent`** (GET list/PUT idempotent save-unsave toggle, S20),
 **`/api/geocode`** (GET venue-only create-gig map-preview probe, S20),
 **`/api/reviews`** (GET public list/aggregate, POST shift-scoped review, S8),

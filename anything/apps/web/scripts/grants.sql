@@ -82,3 +82,6 @@ REVOKE UPDATE ON saved_talent FROM afterdark_app;
 -- S20 D3 response-rate aggregate (0024) — counts-only definer, same doctrine
 -- as the availability probe.
 GRANT EXECUTE ON FUNCTION app_venue_response_stats(UUID) TO afterdark_app;
+
+-- Event listings (0025): public happenings owned by the venue — full CRUD like gigs.
+GRANT SELECT, INSERT, UPDATE, DELETE ON event_listings TO afterdark_app;

@@ -15,9 +15,12 @@ import {
   MapPin,
   Users,
   ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AccountIdentityCard } from '@/components/AccountIdentityCard';
+import { uploadImageFile, UploadError } from '@/lib/upload-client';
 import { Progress } from '@/components/ui/progress';
 import { NotificationsBell } from '@/components/NotificationsBell';
 
@@ -107,11 +110,19 @@ function UploadZone({
   rounded?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  // P4 pipeline (validated, EXIF-stripped, resized) instead of raw base64 —
+  // oversized photos used to fail the whole save with a generic toast.
   const handleFile = useCallback(
-    (file: File) => {
-      const reader = new FileReader();
-      reader.onload = (e) => onChange(e.target?.result as string);
-      reader.readAsDataURL(file);
+    async (file: File) => {
+      setUploading(true);
+      try {
+        onChange(await uploadImageFile(file, 'gallery'));
+      } catch (error) {
+        toast.error(error instanceof UploadError ? error.message : 'Upload failed');
+      } finally {
+        setUploading(false);
+      }
     },
     [onChange]
   );
@@ -124,7 +135,7 @@ function UploadZone({
       onDrop={(e) => {
         e.preventDefault();
         const f = e.dataTransfer.files[0];
-        if (f) handleFile(f);
+        if (f) void handleFile(f);
       }}
       onDragOver={(e) => e.preventDefault()}
     >
@@ -135,10 +146,15 @@ function UploadZone({
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) handleFile(f);
+          if (f) void handleFile(f);
+          e.target.value = '';
         }}
       />
-      {value ? (
+      {uploading ? (
+        <div className="flex items-center justify-center h-full">
+          <Loader2 className="w-6 h-6 text-[#00FFCC] animate-spin" />
+        </div>
+      ) : value ? (
         <>
           <img src={value} alt={label} className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -256,7 +272,10 @@ export default function VenueProfilePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error('Failed to save');
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? 'Failed to save');
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -265,7 +284,7 @@ export default function VenueProfilePage() {
       void qc.invalidateQueries({ queryKey: ['venue-profile'] });
       toast.success('Venue profile saved!');
     },
-    onError: () => toast.error('Failed to save venue profile'),
+    onError: (error: Error) => toast.error(error.message || 'Failed to save venue profile'),
   });
 
   const set = <K extends keyof VenueProfile>(key: K, value: VenueProfile[K]) =>
@@ -389,6 +408,9 @@ export default function VenueProfilePage() {
           }}
           className="flex-1 overflow-y-auto p-6 space-y-5"
         >
+          {/* ── Account identity (moved here from Settings) ── */}
+          <AccountIdentityCard />
+
           {/* ── Media ── */}
           <Section title="Venue Media" subtitle="Show talent what your space looks and feels like">
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">

@@ -160,6 +160,17 @@ export const AUTHZ_MATRIX: readonly MatrixRow[] = [
       'server — inquiries resolve it server-side (conversations.create venue_id).',
   },
   {
+    id: 'events.list',
+    route: 'events/route.ts',
+    method: 'GET',
+    summary: 'Public event listings — upcoming PUBLISHED events + open-role counts',
+    expect: PUBLIC,
+    note:
+      'The visitor/party half of "Browse Gigs & Events". Venue join serves display ' +
+      'columns only (name/neighborhood/avatar), never user ids; applying to the ' +
+      'linked gigs stays talent-only on the gig surface.',
+  },
+  {
     id: 'search.list',
     route: 'search/route.ts',
     method: 'GET',
