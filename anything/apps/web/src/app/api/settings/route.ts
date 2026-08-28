@@ -5,7 +5,7 @@ import { parseBody } from '@/app/api/utils/validation';
 import { SettingsUpdateSchema } from '@/app/api/utils/schemas';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { buildUpdateByKey, jsonify } from '@/app/api/utils/sql-builder';
-import { MediaError, sanitizeMediaField } from '@/app/api/utils/media';
+import { MediaError, MediaUnavailableError, sanitizeMediaField } from '@/app/api/utils/media';
 
 /** Media-carrying route: avatar may be a base64 data URL for now. */
 const MAX_SETTINGS_BODY_BYTES = 3_000_000;
@@ -40,6 +40,9 @@ export const PUT = withRoute('settings.update', async (request) => {
       body.image = await sanitizeMediaField(body.image, 'avatar', user.id);
     }
   } catch (error) {
+    if (error instanceof MediaUnavailableError) {
+      throw ApiError.serviceUnavailable(error.message);
+    }
     if (error instanceof MediaError) throw ApiError.badRequest(error.message);
     throw error;
   }

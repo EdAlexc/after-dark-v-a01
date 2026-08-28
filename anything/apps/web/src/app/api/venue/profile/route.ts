@@ -4,7 +4,7 @@ import { auditLogger } from '@/app/api/utils/audit';
 import { parseBody } from '@/app/api/utils/validation';
 import { VenueProfileUpdateSchema } from '@/app/api/utils/schemas';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
-import { MediaError, sanitizeMediaField } from '@/app/api/utils/media';
+import { MediaError, MediaUnavailableError, sanitizeMediaField } from '@/app/api/utils/media';
 import { buildUpdateByKey, jsonify } from '@/app/api/utils/sql-builder';
 import { withRlsContext } from '@/app/api/utils/rls';
 
@@ -38,6 +38,9 @@ export const PUT = withRoute('venue.profile.update', async (request) => {
       );
     }
   } catch (error) {
+    if (error instanceof MediaUnavailableError) {
+      throw ApiError.serviceUnavailable(error.message);
+    }
     if (error instanceof MediaError) throw ApiError.badRequest(error.message);
     throw error;
   }

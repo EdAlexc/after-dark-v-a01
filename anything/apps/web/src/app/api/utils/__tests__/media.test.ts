@@ -81,3 +81,41 @@ describe('parseDataUrl guardrails (unchanged by S3 — regression pin)', () => {
     expect(() => parseDataUrl('data:image/png;base64,')).toThrow();
   });
 });
+
+// ─── Native-codec isolation (prod incident 2026-08-28) ────────────────────────
+//
+// sharp's platform binary failed to load on Vercel (`ERR_DLOPEN_FAILED:
+// libvips-cpp.so`). Because sharp was imported at MODULE SCOPE, every route
+// importing this file — /api/settings, /api/talent/profile,
+// /api/venue/profile, /api/upload — crashed at init, so even their text-only
+// GETs returned an HTML 500 with no telemetry row. Nobody could load or save
+// a profile at all. These pin the isolation that keeps that contained.
+
+describe('sharp is isolated from module load (prod 500 regression)', () => {
+  it('never imports sharp at module scope — only inside the codec path', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const source = readFileSync(join(process.cwd(), 'src/app/api/utils/media.ts'), 'utf8');
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, '') // strip block comments
+      .replace(/^\s*\/\/.*$/gm, ''); // strip line comments
+    expect(code).not.toMatch(/^\s*import\s+.*\bfrom\s+['"]sharp['"]/m);
+    expect(code).toMatch(/import\(['"]sharp['"]\)/); // the lazy load survives
+  });
+
+  it('reports a codec outage as MediaUnavailableError, still a MediaError', async () => {
+    const { MediaError, MediaUnavailableError } = await import('../media');
+    const outage = new MediaUnavailableError('codec down');
+    // Subclassing matters: every existing `catch (e instanceof MediaError)`
+    // keeps degrading gracefully instead of falling through to a raw 500.
+    expect(outage).toBeInstanceOf(MediaError);
+    expect(outage.message).toContain('codec down');
+  });
+
+  it('still processes a real image once the codec loads', async () => {
+    const { loadSharp } = await import('../media');
+    await expect(loadSharp()).resolves.toBeTypeOf('function');
+    const processed = await processImage(TINY_PNG);
+    expect(processed.contentType).toBe('image/webp');
+  });
+});

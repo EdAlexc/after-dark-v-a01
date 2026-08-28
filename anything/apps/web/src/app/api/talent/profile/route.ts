@@ -6,7 +6,7 @@ import { TalentProfileUpdateSchema } from '@/app/api/utils/schemas';
 import { withRoute } from '@/app/api/utils/route-kit';
 import { buildUpdateByKey, jsonify, stripUndefined } from '@/app/api/utils/sql-builder';
 import { computeTalentProfileCompletion } from '@/app/api/utils/profile-completion';
-import { MediaError, sanitizeMediaField } from '@/app/api/utils/media';
+import { MediaError, MediaUnavailableError, sanitizeMediaField } from '@/app/api/utils/media';
 import { ApiError } from '@/app/api/utils/route-kit';
 import { withRlsContext } from '@/app/api/utils/rls';
 
@@ -41,6 +41,9 @@ export const PUT = withRoute('talent.profile.update', async (request) => {
       );
     }
   } catch (error) {
+    if (error instanceof MediaUnavailableError) {
+      throw ApiError.serviceUnavailable(error.message);
+    }
     if (error instanceof MediaError) throw ApiError.badRequest(error.message);
     throw error;
   }

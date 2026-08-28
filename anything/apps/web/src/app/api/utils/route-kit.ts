@@ -41,6 +41,10 @@ export class ApiError extends Error {
   static tooManyRequests(retryAfterSeconds: number, message = 'Too many requests'): ApiError {
     return new ApiError(429, message, Math.max(1, Math.ceil(retryAfterSeconds)));
   }
+  /** A dependency we own is down (e.g. the native image codec) — not the caller's fault. */
+  static serviceUnavailable(message = 'Service temporarily unavailable'): ApiError {
+    return new ApiError(503, message);
+  }
 }
 
 export function jsonError(status: number, message: string, headers?: HeadersInit): Response {

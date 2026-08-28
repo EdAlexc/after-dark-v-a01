@@ -2,7 +2,7 @@ import { authGuard } from '@/app/api/utils/auth-guard';
 import { auditLogger } from '@/app/api/utils/audit';
 import { parseBody } from '@/app/api/utils/validation';
 import { UploadSchema } from '@/app/api/utils/schemas';
-import { MediaError, processImage, storeImage } from '@/app/api/utils/media';
+import { MediaError, MediaUnavailableError, processImage, storeImage } from '@/app/api/utils/media';
 import { ApiError, withRoute } from '@/app/api/utils/route-kit';
 import { clientKey, enforceRateLimit, getRateLimiter } from '@/app/api/utils/rate-limit';
 
@@ -42,6 +42,9 @@ export const POST = withRoute('media.upload', async (request) => {
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof MediaUnavailableError) {
+      throw ApiError.serviceUnavailable(error.message);
+    }
     if (error instanceof MediaError) throw ApiError.badRequest(error.message);
     throw error;
   }

@@ -28,7 +28,6 @@
  * until a real AV step exists.
  */
 
-import sharp from 'sharp';
 import { logger } from './logger';
 
 const log = logger.child('media');
@@ -47,6 +46,47 @@ export interface ProcessedImage {
 }
 
 export class MediaError extends Error {}
+
+/** Raised when the native image codec itself is unavailable (never a bad file). */
+export class MediaUnavailableError extends MediaError {}
+
+/**
+ * sharp is loaded LAZILY — never at module scope.
+ *
+ * sharp is a native binding (libvips). When its platform binary fails to load,
+ * a top-level `import sharp from 'sharp'` takes down EVERY route that imports
+ * this file — and that crash happens at module init, before `withRoute` can
+ * catch it, so it surfaces as an un-instrumented HTML 500 with no audit or
+ * telemetry row.
+ *
+ * That is exactly what happened in production (2026-08-28): the traced Vercel
+ * bundle shipped `@img/sharp-linux-x64` but not the `@img/sharp-libvips-*`
+ * `.so` it dlopens, so `/api/settings`, `/api/talent/profile`,
+ * `/api/venue/profile` and `/api/upload` all 500'd — including their
+ * text-only GETs. Nobody could even LOAD a profile, let alone save one.
+ *
+ * Deferring the import keeps the blast radius to actual image work: text
+ * fields save normally, and a broken codec degrades to one clear message.
+ */
+type SharpFactory = (typeof import('sharp'))['default'];
+let sharpPromise: Promise<SharpFactory> | null = null;
+
+export async function loadSharp(): Promise<SharpFactory> {
+  // Hold the promise locally: the catch below clears the cached field, and
+  // reading it again after that would narrow to null.
+  const pending = (sharpPromise ??= import('sharp').then((mod) => mod.default));
+  try {
+    return await pending;
+  } catch (error) {
+    // Drop the rejected promise so a later request can retry (a cold start on
+    // a healthy instance should not inherit this one's failure).
+    sharpPromise = null;
+    log.error('sharp failed to load — image processing unavailable', { error });
+    throw new MediaUnavailableError(
+      'Image processing is temporarily unavailable. Your other changes can still be saved — try again without a new photo.'
+    );
+  }
+}
 
 /** Parses a data URL into { mime, bytes }; throws MediaError on junk. */
 export function parseDataUrl(dataUrl: string): { mime: string; bytes: Buffer } {
@@ -69,6 +109,10 @@ export async function processImage(dataUrl: string): Promise<ProcessedImage> {
   if (!ALLOWED_INPUT.has(mime)) {
     throw new MediaError(`Unsupported image type ${mime} (allowed: jpeg, png, webp, gif)`);
   }
+
+  // Outside the try below: a codec that cannot load is an infrastructure
+  // fault, and must not be reported as "your file is corrupt".
+  const sharp = await loadSharp();
 
   let pipeline: Buffer;
   let meta: { width: number; height: number };
