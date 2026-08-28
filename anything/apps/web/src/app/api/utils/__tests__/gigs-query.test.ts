@@ -142,4 +142,15 @@ describe('buildGigsListQuery', () => {
     expect(GigListQuerySchema.safeParse({ neighborhoods: tooMany }).success).toBe(false);
     expect(GigListQuerySchema.safeParse({ roles: 'x'.repeat(81) }).success).toBe(false);
   });
+
+  it('filters by event listing as a parameter (events → open-roles deep link)', () => {
+    const eventId = '7d9a1f9c-8f4e-4d7b-9a3e-2f1b6c5d4e3a';
+    const { text, values } = buildGigsListQuery(GigListQuerySchema.parse({ event: eventId }));
+    expect(text).toContain('g.event_listing_id = $2');
+    expect(values[1]).toBe(eventId);
+  });
+
+  it('rejects a non-uuid event param at the schema layer', () => {
+    expect(() => GigListQuerySchema.parse({ event: "x'; DROP TABLE gigs; --" })).toThrow();
+  });
 });

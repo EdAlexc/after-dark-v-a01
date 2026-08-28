@@ -46,6 +46,12 @@ export function buildGigsListQuery(filters: GigListQuery): BuiltQuery {
     // already "tomorrow" in UTC, so DATE() comparisons drop tonight's gigs.
     text += ` AND g.start_time >= NOW() AND g.start_time < NOW() + INTERVAL '24 hours'`;
   }
+  if (filters.event) {
+    // /events → "open roles" deep link: only gigs staffing that event.
+    text += ` AND g.event_listing_id = $${index}`;
+    values.push(filters.event);
+    index++;
+  }
   // Multi-value filters (S5 / #27) supersede the single-value params; both
   // keep the identical LIKE-substring semantics, OR'd across values.
   if (filters.neighborhoods && filters.neighborhoods.length > 0) {

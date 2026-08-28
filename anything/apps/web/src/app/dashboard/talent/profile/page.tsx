@@ -14,10 +14,13 @@ import {
   Globe,
   Zap,
   ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { NotificationsBell } from '@/components/NotificationsBell';
+import { AccountIdentityCard } from '@/components/AccountIdentityCard';
+import { uploadImageFile, UploadError } from '@/lib/upload-client';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -87,31 +90,38 @@ function UploadZone({
   onChange,
   label,
   large,
+  purpose = 'portfolio',
 }: {
   value: string;
   onChange: (url: string) => void;
   label: string;
   large?: boolean;
+  purpose?: 'avatar' | 'portfolio';
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
+  // P4 pipeline (validated, EXIF-stripped, resized) instead of the old raw
+  // base64 inline — oversized photos used to fail the whole profile save
+  // with a generic toast.
   const handleFile = useCallback(
     async (file: File) => {
-      if (!file.type.startsWith('image/')) return;
-      // Simple base64 preview — in production, wire to real upload
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const url = e.target?.result as string;
-        onChange(url);
-      };
-      reader.readAsDataURL(file);
+      setUploading(true);
+      try {
+        onChange(await uploadImageFile(file, purpose));
+      } catch (error) {
+        toast.error(error instanceof UploadError ? error.message : 'Upload failed');
+      } finally {
+        setUploading(false);
+      }
     },
-    [onChange]
+    [onChange, purpose]
   );
 
   const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) void handleFile(file);
+    e.target.value = '';
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -136,7 +146,11 @@ function UploadZone({
         className="hidden"
         onChange={onInputChange}
       />
-      {value ? (
+      {uploading ? (
+        <div className="flex items-center justify-center h-full">
+          <Loader2 className="w-6 h-6 text-[#00FFCC] animate-spin" />
+        </div>
+      ) : value ? (
         <>
           <img src={value} alt={label} className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -257,7 +271,10 @@ export default function TalentProfilePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error('Failed to save');
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? 'Failed to save');
+      }
       return res.json();
     },
     onSuccess: (result) => {
@@ -271,7 +288,7 @@ export default function TalentProfilePage() {
       void qc.invalidateQueries({ queryKey: ['talent-profile'] });
       toast.success('Profile saved!');
     },
-    onError: () => toast.error('Failed to save profile'),
+    onError: (error: Error) => toast.error(error.message || 'Failed to save profile'),
   });
 
   const set = <K extends keyof TalentProfile>(key: K, value: TalentProfile[K]) =>
@@ -377,6 +394,9 @@ export default function TalentProfilePage() {
           onSubmit={handleSubmit}
           className="flex-1 overflow-y-auto p-6 space-y-5"
         >
+          {/* ── Account identity (moved here from Settings) ── */}
+          <AccountIdentityCard />
+
           {/* ── Media Gallery ── */}
           <Section title="Media Gallery" subtitle="Your face to the venue — make it count">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -389,6 +409,7 @@ export default function TalentProfilePage() {
                   onChange={(url) => set('avatar_url', url)}
                   label="Click or drag to upload · PNG, JPG · Max 5MB"
                   large
+                  purpose="avatar"
                 />
               </div>
               <div className="md:col-span-2">

@@ -27,6 +27,8 @@ import { toast } from 'sonner';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authClient } from '@/lib/auth-client';
 import { NotificationsBell } from '@/components/NotificationsBell';
+import { uploadImageFile, UploadError } from '@/lib/upload-client';
+import { Loader2 } from 'lucide-react';
 
 // ─── Section wrapper ───────────────────────────────────────────────────────────
 
@@ -113,11 +115,19 @@ function PasswordField({
 
 function AvatarUpload({ value, onChange }: { value: string; onChange: (url: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  // P4 pipeline instead of inlining raw base64 — oversized photos used to
+  // blow the settings PUT's payload caps with a generic "Failed to save".
   const handleFile = useCallback(
-    (file: File) => {
-      const reader = new FileReader();
-      reader.onload = (e) => onChange(e.target?.result as string);
-      reader.readAsDataURL(file);
+    async (file: File) => {
+      setUploading(true);
+      try {
+        onChange(await uploadImageFile(file, 'avatar'));
+      } catch (error) {
+        toast.error(error instanceof UploadError ? error.message : 'Upload failed');
+      } finally {
+        setUploading(false);
+      }
     },
     [onChange]
   );
@@ -134,10 +144,13 @@ function AvatarUpload({ value, onChange }: { value: string; onChange: (url: stri
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) handleFile(f);
+            if (f) void handleFile(f);
+            e.target.value = '';
           }}
         />
-        {value ? (
+        {uploading ? (
+          <Loader2 className="w-6 h-6 text-[#00FFCC] animate-spin" />
+        ) : value ? (
           <>
             <img src={value} alt="Avatar" className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -159,7 +172,7 @@ function AvatarUpload({ value, onChange }: { value: string; onChange: (url: stri
           onClick={() => inputRef.current?.click()}
           className="mt-2 text-xs text-[#00FFCC] hover:underline font-semibold"
         >
-          Upload new photo
+          {uploading ? 'Uploading…' : 'Upload new photo'}
         </button>
       </div>
     </div>
@@ -622,14 +635,19 @@ function SettingsInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error('Failed to save');
+      if (!res.ok) {
+        // Surface the server's message (validation details included) — the
+        // old generic toast made every rejection look like the same mystery.
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? 'Failed to save settings');
+      }
       return res.json();
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings'] });
       toast.success('Settings saved!');
     },
-    onError: () => toast.error('Failed to save settings'),
+    onError: (error: Error) => toast.error(error.message),
   });
 
   // ── change password ──
@@ -720,35 +738,60 @@ function SettingsInner() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-6 space-y-5 max-w-3xl">
-          {/* ── Profile Photo + Name ── */}
-          <Section
-            icon={<User className="w-4 h-4" />}
-            title="Profile"
-            subtitle="Your public identity"
-          >
-            <div className="space-y-5">
-              <AvatarUpload value={form.image} onChange={(url) => set('image', url)} />
-              <Field label="Display Name">
-                <input
-                  className={inputCls}
-                  placeholder="Your full name or stage name"
-                  value={form.name}
-                  onChange={(e) => set('name', e.target.value)}
-                />
-              </Field>
-              <div className="flex justify-end">
-                <Button
-                  onClick={() => saveMutation.mutate({ name: form.name, image: form.image })}
-                  disabled={saveMutation.isPending}
-                  className="bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold gap-1.5"
-                  size="sm"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  Save Profile
-                </Button>
+          {/* ── Profile Photo + Name ──
+              Talent and venues edit their identity on their profile page
+              (the card moved there); party/admin have no profile page, so
+              the card stays here for them. */}
+          {role === 'talent' || role === 'venue' ? (
+            <div className="bg-[#1E1E1E] border border-white/5 rounded-2xl px-6 py-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#00FFCC]/10 flex items-center justify-center text-[#00FFCC] flex-shrink-0">
+                  <User className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-white">Profile</h2>
+                  <p className="text-xs text-white/40">
+                    Your display name and photo now live on your profile page
+                  </p>
+                </div>
               </div>
+              <a
+                href={role === 'venue' ? '/dashboard/venue/profile' : '/dashboard/talent/profile'}
+                className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-md bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-semibold text-white/80 hover:bg-white/10 hover:text-white transition-colors"
+              >
+                {role === 'venue' ? 'Edit Venue Profile' : 'Edit My Profile'}
+              </a>
             </div>
-          </Section>
+          ) : (
+            <Section
+              icon={<User className="w-4 h-4" />}
+              title="Profile"
+              subtitle="Your public identity"
+            >
+              <div className="space-y-5">
+                <AvatarUpload value={form.image} onChange={(url) => set('image', url)} />
+                <Field label="Display Name">
+                  <input
+                    className={inputCls}
+                    placeholder="Your full name or stage name"
+                    value={form.name}
+                    onChange={(e) => set('name', e.target.value)}
+                  />
+                </Field>
+                <div className="flex justify-end">
+                  <Button
+                    onClick={() => saveMutation.mutate({ name: form.name, image: form.image })}
+                    disabled={saveMutation.isPending}
+                    className="bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 font-bold gap-1.5"
+                    size="sm"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    Save Profile
+                  </Button>
+                </div>
+              </div>
+            </Section>
+          )}
 
           {/* ── Account Information ── */}
           <Section

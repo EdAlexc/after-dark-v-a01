@@ -8,7 +8,28 @@
 
 ## 1. Current status — YOU ARE HERE
 
-- **Date:** 2026-08-27 · **Branch:** `claude/nyc-events-afterdark-907eae` — **Test-data
+- **Date:** 2026-08-28 · **Branch:** `claude/events-gigs-split-3f9a21` — **Events/Gigs
+  split + profile-save fix.** (1) `0025_event_listings.sql`: public `event_listings`
+  (+`gigs.event_listing_id`; named that way because bare `events` is 0016's S6 analytics
+  stream — found the hard way when `CREATE TABLE IF NOT EXISTS events` silently no-op'd
+  against it); seeder now derives 107 listings from the crawled dataset and links all 131
+  gigs. (2) Public **`/events`** (upcoming listings, TONIGHT/21+ chips, open-role counts
+  → `/gigs?event=<id>` deep link) and public **`/gigs`** (q + role chips, HOT/NEW) —
+  every audience can browse both; the landing "Browse Gigs & Events" tab is now a
+  CSS hover/focus dropdown (Events / Gigs), and applying stays Talent-only (anon apply
+  → 401 → sign-in redirect; matrix row `events.list` PUBLIC). Party sidebar gains
+  Discover Events. (3) **Root-caused "can't save Profile/account settings"**: every
+  avatar/portfolio picker inlined raw FileReader base64, so photos over ~1.4 MB blew the
+  PUT caps (400 schema / 413 body) behind a generic toast — all pickers now go through
+  `POST /api/upload` (P4: validated, EXIF-stripped, resized; new `lib/upload-client.ts`
+  with a real 5MB gate) and every save mutation surfaces the server's message. (4) The
+  Settings "Profile" card moved to My Profile / Venue Profile (shared
+  `AccountIdentityCard`; Settings keeps it only for party/admin, who have no profile
+  page). Tests 1163 (1142 → +21: listings builder, gig event filter, upload client,
+  sidebar) + typecheck/lint/build green; browser-verified live on a disposable Neon
+  branch off prod (`dev-events-split`). **Operator remainder: after merge run
+  `yarn db:migrate` (0025) + `yarn db:seed-events` against prod** (same pair as the
+  S20/0024 apply; prod writes stay permission-gated for the agent).
   population: real NYC events through Oct 2026** so test users have full browse / map /
   venues / search surfaces. Crawled 7 of the 8 requested public sources (Resident
   Advisor, Dice, Eventbrite, Ticketmaster, redeyeny.com, Posh, Ticket Tailor; **Tixr

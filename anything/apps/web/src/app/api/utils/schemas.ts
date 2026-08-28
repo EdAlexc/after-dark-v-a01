@@ -192,6 +192,8 @@ export const GigListQuerySchema = z
      *  page are findable; LIKE-substring over title/venue/role/neighborhood,
      *  same semantics the client filter used to apply to one page. */
     q: shortText(120).optional(),
+    /** Only gigs staffing this event (the /events → "open roles" deep link). */
+    event: z.string().uuid().optional(),
     tonightOnly: z
       .enum(['true', 'false'])
       .optional()
@@ -237,6 +239,20 @@ export const VenueListQuerySchema = z.object({
   venueType: shortText(80).optional(),
   /** Free-text — venue name/type/description/neighborhood, server-side. */
   q: shortText(120).optional(),
+  page,
+});
+
+/**
+ * Public event listings ("Browse Events" — every visitor, signed-in or not).
+ * Upcoming-only by default; same public-columns doctrine as the venue
+ * directory (the venue join serves name/neighborhood/avatar, never user ids).
+ */
+export const EventListQuerySchema = z.object({
+  neighborhood: shortText(80).optional(),
+  neighborhoods: csvList(10, 80).optional(),
+  /** Free-text — event title/venue name/neighborhood, server-side. */
+  q: shortText(120).optional(),
+  venueId: z.string().uuid().optional(),
   page,
 });
 
@@ -549,4 +565,5 @@ export type GigListQuery = z.infer<typeof GigListQuerySchema>;
 export type GigStatus = z.infer<typeof GigStatusSchema>;
 export type TalentListQuery = z.infer<typeof TalentListQuerySchema>;
 export type VenueListQuery = z.infer<typeof VenueListQuerySchema>;
+export type EventListQuery = z.infer<typeof EventListQuerySchema>;
 export type SearchQuery = z.infer<typeof SearchQuerySchema>;

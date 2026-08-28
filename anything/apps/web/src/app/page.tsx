@@ -14,6 +14,9 @@ import {
   CreditCard,
   ArrowRight,
   Menu,
+  ChevronDown,
+  Sparkles,
+  BriefcaseBusiness,
 } from 'lucide-react';
 
 export default function LandingPage() {
@@ -27,9 +30,48 @@ export default function LandingPage() {
               AFTERDARK
             </Link>
             <div className="hidden md:flex items-center gap-6 text-sm font-medium text-white/60">
-              <Link href="/dashboard/talent/browse" className="hover:text-white transition-colors">
-                Browse Gigs &amp; Events
-              </Link>
+              {/* Hover/focus dropdown — pure CSS (group-hover/focus-within), so it
+                  works in this server component and with keyboard navigation.
+                  Both halves are public: Events for going out, Gigs for working
+                  the night (applying still needs a Talent account). */}
+              <div className="relative group">
+                <Link
+                  href="/gigs"
+                  className="flex items-center gap-1 hover:text-white transition-colors"
+                  aria-haspopup="menu"
+                >
+                  Browse Gigs &amp; Events
+                  <ChevronDown className="w-3.5 h-3.5 transition-transform group-hover:rotate-180" />
+                </Link>
+                <div className="absolute left-0 top-full pt-3 opacity-0 -translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:pointer-events-auto transition-all duration-150">
+                  <div className="w-56 rounded-2xl bg-[#1E1E1E] border border-white/10 shadow-2xl shadow-black/50 p-2">
+                    <Link
+                      href="/events"
+                      className="flex items-start gap-3 rounded-xl px-3 py-2.5 hover:bg-white/5 transition-colors"
+                    >
+                      <Sparkles className="w-4 h-4 text-[#00FFCC] mt-0.5 flex-shrink-0" />
+                      <span>
+                        <span className="block text-sm font-bold text-white">Events</span>
+                        <span className="block text-xs text-white/40 mt-0.5">
+                          What&apos;s on across NYC
+                        </span>
+                      </span>
+                    </Link>
+                    <Link
+                      href="/gigs"
+                      className="flex items-start gap-3 rounded-xl px-3 py-2.5 hover:bg-white/5 transition-colors"
+                    >
+                      <BriefcaseBusiness className="w-4 h-4 text-[#00FFCC] mt-0.5 flex-shrink-0" />
+                      <span>
+                        <span className="block text-sm font-bold text-white">Gigs</span>
+                        <span className="block text-xs text-white/40 mt-0.5">
+                          Open roles — apply as Talent
+                        </span>
+                      </span>
+                    </Link>
+                  </div>
+                </div>
+              </div>
               <Link href="/venues" className="hover:text-white transition-colors">
                 Venues
               </Link>
@@ -82,7 +124,7 @@ export default function LandingPage() {
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <PostGigButton className="w-full sm:w-auto bg-[#00FFCC] text-black hover:bg-[#00FFCC]/90 h-14 px-8 text-lg font-bold" />
-            <Link href="/dashboard/talent/browse">
+            <Link href="/gigs">
               <Button
                 variant="outline"
                 className="w-full sm:w-auto border-white/20 hover:bg-white/5 h-14 px-8 text-lg text-black font-bold"
@@ -107,7 +149,7 @@ export default function LandingPage() {
             <p className="text-white/60">The most urgent opportunities in the city right now.</p>
           </div>
           <Link
-            href="/dashboard/talent/browse"
+            href="/gigs"
             className="hidden md:flex items-center gap-2 text-[#00FFCC] font-semibold hover:underline"
           >
             See All Listings <ArrowRight className="w-4 h-4" />
@@ -329,7 +371,7 @@ export default function LandingPage() {
             <ul className="space-y-4 text-sm font-medium text-white/60">
               <li>
                 <Link
-                  href="/dashboard/talent/browse"
+                  href="/gigs"
                   className="hover:text-[#00FFCC] transition-colors"
                 >
                   Browse Gigs
