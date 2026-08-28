@@ -75,7 +75,7 @@ export default function VenuesPage() {
               onChange={(event) => setTerm(event.target.value)}
               placeholder="Search venues by name, vibe, or neighborhood…"
               aria-label="Search venues"
-              className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
+              className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
             />
           </div>
         </div>
@@ -103,7 +103,7 @@ export default function VenuesPage() {
             <p className="text-sm font-bold text-white/40">
               {q.length >= 2 ? `No venues match “${q}”.` : 'No venues listed yet.'}
             </p>
-            <p className="text-xs text-white/25 mt-1">
+            <p className="text-xs text-white/40 mt-1">
               Venues appear here as soon as they complete their profile.
             </p>
           </div>

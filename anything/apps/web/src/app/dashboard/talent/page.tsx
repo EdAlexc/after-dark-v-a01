@@ -345,7 +345,7 @@ export default function TalentDashboard() {
                       <CardContent className="p-6 text-center">
                         <CalendarCheck className="w-6 h-6 text-white/20 mx-auto mb-2" />
                         <p className="text-sm text-white/40">No bookings yet.</p>
-                        <p className="text-xs text-white/25 mt-1">
+                        <p className="text-xs text-white/40 mt-1">
                           When a venue hires you, your shift appears here with live check-in.
                         </p>
                       </CardContent>
@@ -579,7 +579,7 @@ export default function TalentDashboard() {
                 </div>
                 <div className="space-y-3">
                   {hotGigs.length === 0 && (
-                    <p className="text-xs text-white/30">No open gigs right now — check back soon.</p>
+                    <p className="text-xs text-white/45">No open gigs right now — check back soon.</p>
                   )}
                   {hotGigs.map((gig) => (
                     <Link key={gig.id} href={`/gigs/${gig.id}`} className="block">
@@ -636,7 +636,7 @@ export default function TalentDashboard() {
                         <p className="text-sm font-bold text-[#00FFCC]">{dollars(heldCents)}</p>
                       </div>
                     </div>
-                    <p className="text-[11px] text-white/30 border-t border-white/5 pt-3">
+                    <p className="text-[11px] text-white/45 border-t border-white/5 pt-3">
                       Net of the 5% marketplace fee. Escrowed payouts release 24 hours after
                       checkout.
                     </p>

@@ -133,7 +133,7 @@ export default function OnboardingPage() {
                     ? 'bg-[#00FFCC] text-black'
                     : step === s
                       ? 'bg-[#00FFCC]/20 border border-[#00FFCC] text-[#00FFCC]'
-                      : 'bg-white/5 border border-white/10 text-white/30'
+                      : 'bg-white/5 border border-white/10 text-white/45'
                 }`}
               >
                 {step > s ? <Check className="w-4 h-4" /> : s}
@@ -176,7 +176,7 @@ export default function OnboardingPage() {
                         <span
                           key={ex}
                           className={`text-xs px-2 py-0.5 rounded-full ${
-                            isSelected ? `${r.bg} ${r.color}` : 'bg-white/5 text-white/30'
+                            isSelected ? `${r.bg} ${r.color}` : 'bg-white/5 text-white/45'
                           }`}
                         >
                           {ex}
@@ -265,7 +265,7 @@ export default function OnboardingPage() {
                       value={stageName}
                       onChange={(e) => setStageName(e.target.value)}
                       placeholder="e.g. DJ Nova, Marco V…"
-                      className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all"
+                      className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all"
                     />
                   </label>
 
@@ -278,7 +278,7 @@ export default function OnboardingPage() {
                       value={neighborhood}
                       onChange={(e) => setNeighborhood(e.target.value)}
                       placeholder="e.g. Brooklyn, Midtown, Lower East Side…"
-                      className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all"
+                      className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all"
                     />
                   </label>
                 </>
@@ -293,7 +293,7 @@ export default function OnboardingPage() {
                       value={venueName}
                       onChange={(e) => setVenueName(e.target.value)}
                       placeholder="e.g. Nebula NYC, The Loft…"
-                      className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all"
+                      className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all"
                     />
                   </label>
 
@@ -306,7 +306,7 @@ export default function OnboardingPage() {
                       value={neighborhood}
                       onChange={(e) => setNeighborhood(e.target.value)}
                       placeholder="e.g. Chelsea, Meatpacking District…"
-                      className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all"
+                      className="bg-[#121212] border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all"
                     />
                   </label>
                 </>

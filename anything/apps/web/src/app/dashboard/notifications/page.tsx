@@ -118,7 +118,7 @@ export default function NotificationsHistoryPage() {
               <div className="flex flex-col items-center justify-center py-24 text-center">
                 <Bell className="w-10 h-10 text-white/10 mb-3" />
                 <p className="text-sm text-white/40 font-semibold">Nothing yet</p>
-                <p className="text-xs text-white/20 mt-1">
+                <p className="text-xs text-white/40 mt-1">
                   Activity on your gigs and messages lands here.
                 </p>
               </div>
@@ -142,7 +142,7 @@ export default function NotificationsHistoryPage() {
                           )}
                           <div className="min-w-0">
                             <p className="text-sm text-white/80 leading-snug">{text}</p>
-                            <p className="text-[11px] text-white/30 mt-0.5">
+                            <p className="text-[11px] text-white/45 mt-0.5">
                               {new Date(notification.created_at).toLocaleString(undefined, {
                                 month: 'short',
                                 day: 'numeric',

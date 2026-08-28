@@ -133,7 +133,7 @@ function StepIndicator({ current }: { current: number }) {
                     ? 'bg-[#00FFCC] border-[#00FFCC] text-black'
                     : active
                       ? 'bg-transparent border-[#00FFCC] text-[#00FFCC]'
-                      : 'bg-transparent border-white/20 text-white/30'
+                      : 'bg-transparent border-white/20 text-white/45'
                 )}
               >
                 {done ? <Check className="w-3.5 h-3.5" /> : step.id}
@@ -141,7 +141,7 @@ function StepIndicator({ current }: { current: number }) {
               <span
                 className={cn(
                   'text-xs font-bold hidden sm:block',
-                  active ? 'text-white' : done ? 'text-[#00FFCC]' : 'text-white/30'
+                  active ? 'text-white' : done ? 'text-[#00FFCC]' : 'text-white/45'
                 )}
               >
                 {step.label}
@@ -181,13 +181,13 @@ function InputField({
         {required && <span className="text-[#00FFCC]">*</span>}
       </label>
       {children}
-      {hint && <p className="text-[11px] text-white/30">{hint}</p>}
+      {hint && <p className="text-[11px] text-white/45">{hint}</p>}
     </div>
   );
 }
 
 const inputClass =
-  'w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-[#00FFCC]/40 transition-colors';
+  'w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-[#00FFCC]/40 transition-colors';
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -526,7 +526,7 @@ export default function CreateGigPage() {
                       <div className="rounded-xl bg-[#1A1A1A] border border-white/5 h-40 flex items-center justify-center">
                         <div className="text-center">
                           <MapPin className="w-6 h-6 text-white/15 mx-auto mb-2" />
-                          <p className="text-xs text-white/20">
+                          <p className="text-xs text-white/40">
                             {!addressReady
                               ? 'Type the venue address to preview the map'
                               : geoFetching
@@ -568,7 +568,7 @@ export default function CreateGigPage() {
                           onChange={(e) => update('base_rate', e.target.value)}
                           className={cn(inputClass, 'pl-10')}
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-white/30 font-bold">
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-white/45 font-bold">
                           /hr
                         </span>
                       </div>
@@ -639,7 +639,7 @@ export default function CreateGigPage() {
                         <div className="flex items-center gap-3">
                           <Mic className="w-4 h-4 text-white/50" />
                           <span className="text-sm font-bold">Equipment & Attire</span>
-                          <span className="text-[11px] text-white/30">Optional</span>
+                          <span className="text-[11px] text-white/45">Optional</span>
                         </div>
                         {equipmentOpen ? (
                           <ChevronUp className="w-4 h-4 text-white/40" />
@@ -823,7 +823,7 @@ export default function CreateGigPage() {
               {/* Pricing hint from published-gig percentiles (S7) */}
               {preview && preview.pricing.sample >= 3 && preview.pricing.median !== null && (
                 <div className="mt-3 p-3 rounded-xl bg-[#1A1A1A] border border-white/5 space-y-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/45">
                     Going rate · {preview.pricing.sample} similar gigs
                   </p>
                   <div className="flex items-baseline gap-2">
@@ -908,10 +908,10 @@ export default function CreateGigPage() {
                 <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center mb-3">
                   <Users className="w-6 h-6 text-white/20" />
                 </div>
-                <p className="text-sm font-bold text-white/30">
+                <p className="text-sm font-bold text-white/45">
                   {form.role_needed ? 'No matching talent yet' : 'Select a role to see matching talent'}
                 </p>
-                <p className="text-[11px] text-white/20 mt-1">
+                <p className="text-[11px] text-white/40 mt-1">
                   {form.role_needed
                     ? 'Try widening the rate — matches update as you type'
                     : "We'll show you real candidates based on your gig details"}
@@ -936,7 +936,7 @@ export default function CreateGigPage() {
               {saving ? 'Saving…' : 'Save Draft'}
             </Button>
             {lastSavedAt && (
-              <span className="text-[11px] text-white/20 hidden sm:block">
+              <span className="text-[11px] text-white/40 hidden sm:block">
                 Draft saved{' '}
                 {lastSavedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} — in
                 Open Gigs; re-saving updates it
@@ -982,7 +982,7 @@ export default function CreateGigPage() {
               </>
             )}
             {step < STEPS.length && (
-              <div className="flex items-center gap-1.5 text-[11px] text-white/30">
+              <div className="flex items-center gap-1.5 text-[11px] text-white/45">
                 <div className="w-2 h-2 rounded-full bg-[#00FFCC]/40" />
                 Step {step} of {STEPS.length}
               </div>

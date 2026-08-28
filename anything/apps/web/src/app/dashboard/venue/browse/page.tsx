@@ -164,7 +164,7 @@ function TalentCard({
                   <p className="text-sm font-black text-white group-hover:text-[#00FFCC] transition-colors leading-tight">
                     {talent.stage_name}
                     {talent.pronouns && (
-                      <span className="text-white/30 font-medium text-xs ml-1.5">
+                      <span className="text-white/45 font-medium text-xs ml-1.5">
                         {talent.pronouns}
                       </span>
                     )}
@@ -182,7 +182,7 @@ function TalentCard({
                   'w-7 h-7 rounded-lg flex items-center justify-center transition-colors border flex-shrink-0',
                   saved
                     ? 'bg-[#00FFCC]/10 border-[#00FFCC]/30 text-[#00FFCC]'
-                    : 'bg-white/5 border-white/10 text-white/30 hover:text-white'
+                    : 'bg-white/5 border-white/10 text-white/45 hover:text-white'
                 )}
               >
                 <Heart className={cn('w-3.5 h-3.5', saved && 'fill-current')} />
@@ -206,7 +206,7 @@ function TalentCard({
               {talent.rating != null && (talent.rating_count ?? 0) > 0 && (
                 <span className="flex items-center gap-1 text-yellow-400">
                   ★ {Number(talent.rating).toFixed(1)}
-                  <span className="text-white/30">({talent.rating_count})</span>
+                  <span className="text-white/45">({talent.rating_count})</span>
                 </span>
               )}
             </div>
@@ -426,12 +426,12 @@ export default function VenueBrowsePage() {
                 placeholder="Search talent by name, role, or genre…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
+                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
               />
               {search && (
                 <button
                   onClick={() => setSearch('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/45 hover:text-white"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -593,7 +593,7 @@ export default function VenueBrowsePage() {
                   <Search className="w-8 h-8 text-white/20" />
                 </div>
                 <p className="text-white/40 font-semibold">No talent match your filters</p>
-                <p className="text-white/20 text-sm mt-1">Try adjusting your search or filters</p>
+                <p className="text-white/40 text-sm mt-1">Try adjusting your search or filters</p>
               </div>
             ) : (
               <>
@@ -649,14 +649,14 @@ export default function VenueBrowsePage() {
                 <Heart className="w-4 h-4 text-[#00FFCC] fill-current" />
                 <h3 className="text-sm font-bold">Saved Talent</h3>
               </div>
-              <span className="text-xs text-white/30">{savedTalent.length}</span>
+              <span className="text-xs text-white/45">{savedTalent.length}</span>
             </div>
 
             {savedTalent.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Heart className="w-8 h-8 text-white/10 mb-2" />
-                <p className="text-xs text-white/30">No saved talent yet</p>
-                <p className="text-[11px] text-white/20 mt-1">Click ♥ on any card to save</p>
+                <p className="text-xs text-white/45">No saved talent yet</p>
+                <p className="text-[11px] text-white/40 mt-1">Click ♥ on any card to save</p>
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -699,7 +699,7 @@ export default function VenueBrowsePage() {
                       onClick={() => toggleSave(t)}
                       disabled={saveMutation.isPending}
                       aria-label={`Unsave ${t.stage_name}`}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center border bg-white/5 border-white/10 text-white/30 hover:text-white transition-colors flex-shrink-0"
+                      className="w-7 h-7 rounded-lg flex items-center justify-center border bg-white/5 border-white/10 text-white/45 hover:text-white transition-colors flex-shrink-0"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>

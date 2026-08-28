@@ -122,13 +122,13 @@ export function AccountIdentityCard() {
               Display Name
             </span>
             <input
-              className="bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all w-full"
+              className="bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all w-full"
               placeholder="Your full name or stage name"
               value={form.name}
               onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
             />
           </label>
-          <p className="text-[11px] text-white/30 mt-1.5">PNG or JPG · Max 5MB</p>
+          <p className="text-[11px] text-white/45 mt-1.5">PNG or JPG · Max 5MB</p>
         </div>
         <div className="flex-shrink-0 sm:self-end">
           <Button

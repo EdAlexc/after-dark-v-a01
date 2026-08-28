@@ -232,7 +232,7 @@ export function MessagesView({ role }: { role: 'talent' | 'venue' | 'party' }) {
             {conversations.length === 0 && !listPending ? (
               <div className="p-6 text-center">
                 <MessageSquare className="w-8 h-8 text-white/10 mx-auto mb-2" />
-                <p className="text-xs text-white/30 leading-relaxed">
+                <p className="text-xs text-white/45 leading-relaxed">
                   No conversations yet.{' '}
                   {role === 'talent'
                     ? 'Open a gig and hit "Inquire" to start one.'
@@ -291,7 +291,7 @@ export function MessagesView({ role }: { role: 'talent' | 'venue' | 'party' }) {
                 {listPending ? (
                   <Loader2 className="w-6 h-6 text-[#00FFCC] animate-spin" />
                 ) : (
-                  <p className="text-white/30 text-sm">Select a conversation</p>
+                  <p className="text-white/45 text-sm">Select a conversation</p>
                 )}
               </div>
             ) : (
@@ -310,7 +310,7 @@ export function MessagesView({ role }: { role: 'talent' | 'venue' | 'party' }) {
                   </div>
                   <button
                     onClick={() => report.mutate()}
-                    className="text-white/30 hover:text-red-400 transition-colors flex items-center gap-1 text-xs"
+                    className="text-white/45 hover:text-red-400 transition-colors flex items-center gap-1 text-xs"
                   >
                     <Flag className="w-3.5 h-3.5" /> Report
                   </button>
@@ -324,7 +324,7 @@ export function MessagesView({ role }: { role: 'talent' | 'venue' | 'party' }) {
                       return (
                         <p
                           key={message.id}
-                          className="text-center text-[11px] text-white/30 py-1"
+                          className="text-center text-[11px] text-white/45 py-1"
                         >
                           — {message.content} —
                         </p>
@@ -375,7 +375,7 @@ export function MessagesView({ role }: { role: 'talent' | 'venue' | 'party' }) {
                               Accept rate
                             </Button>
                           )}
-                          <p className="text-[10px] text-white/25 mt-1">
+                          <p className="text-[10px] text-white/40 mt-1">
                             {new Date(message.created_at).toLocaleTimeString(undefined, {
                               hour: 'numeric',
                               minute: '2-digit',
@@ -488,7 +488,7 @@ export function MessagesView({ role }: { role: 'talent' | 'venue' | 'party' }) {
                       <Send className="w-4 h-4" />
                     </Button>
                   </div>
-                  <p className="text-[10px] text-white/20 text-center flex items-center justify-center gap-1">
+                  <p className="text-[10px] text-white/40 text-center flex items-center justify-center gap-1">
                     <ShieldCheck className="w-3 h-3" />
                     All communications and payments are secured via the AfterDark platform.
                   </p>

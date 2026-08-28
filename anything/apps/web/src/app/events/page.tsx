@@ -94,7 +94,7 @@ export default function EventsPage() {
               onChange={(event) => setTerm(event.target.value)}
               placeholder="Search events by name, venue, or neighborhood…"
               aria-label="Search events"
-              className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
+              className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
             />
           </div>
           <Link
@@ -128,7 +128,7 @@ export default function EventsPage() {
             <p className="text-sm font-bold text-white/40">
               {q.length >= 2 ? `No events match “${q}”.` : 'No upcoming events listed yet.'}
             </p>
-            <p className="text-xs text-white/25 mt-1">
+            <p className="text-xs text-white/40 mt-1">
               Events appear here as venues publish their calendars.
             </p>
           </div>
@@ -198,11 +198,11 @@ export default function EventsPage() {
                             {event.open_gig_count === 1 ? '' : 's'}
                           </Link>
                         ) : (
-                          <span className="text-xs text-white/25">Fully staffed</span>
+                          <span className="text-xs text-white/40">Fully staffed</span>
                         )}
                         {event.source_platform && (
                           <span
-                            className="text-[10px] text-white/20"
+                            className="text-[10px] text-white/40"
                             title="Public listing source"
                           >
                             via {event.source_platform}

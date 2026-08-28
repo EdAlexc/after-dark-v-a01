@@ -42,7 +42,7 @@ const STATUS_CHIPS: Record<Application['status'], { label: string; className: st
   },
   HIRED: { label: 'Hired 🎉', className: 'bg-[#00FFCC]/10 text-[#00FFCC] border-[#00FFCC]/30' },
   REJECTED: { label: 'Not selected', className: 'bg-red-500/10 text-red-400 border-red-500/20' },
-  WITHDRAWN: { label: 'Withdrawn', className: 'bg-white/5 text-white/30 border-white/5' },
+  WITHDRAWN: { label: 'Withdrawn', className: 'bg-white/5 text-white/45 border-white/5' },
 };
 
 export default function TalentApplicationsPage() {
@@ -104,7 +104,7 @@ export default function TalentApplicationsPage() {
                 <Search className="w-8 h-8 text-white/20" />
               </div>
               <p className="text-white/40 font-semibold">No applications yet</p>
-              <p className="text-white/20 text-sm mt-1 mb-4">
+              <p className="text-white/40 text-sm mt-1 mb-4">
                 Find tonight's gigs and put yourself forward.
               </p>
               <Link href="/dashboard/talent/browse">
@@ -170,7 +170,7 @@ export default function TalentApplicationsPage() {
                             <button
                               disabled={withdraw.isPending}
                               onClick={() => withdraw.mutate(application.id)}
-                              className="text-[11px] text-white/30 hover:text-red-400 flex items-center gap-1 transition-colors"
+                              className="text-[11px] text-white/45 hover:text-red-400 flex items-center gap-1 transition-colors"
                             >
                               <XCircle className="w-3 h-3" /> Withdraw
                             </button>
