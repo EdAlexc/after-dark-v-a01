@@ -116,14 +116,14 @@ function StatCard({
           <span
             className={cn(
               'text-xs font-semibold flex items-center gap-1',
-              muted ? 'text-white/30' : 'text-green-400'
+              muted ? 'text-white/45' : 'text-green-400'
             )}
           >
             {!muted && <TrendingUp className="w-3 h-3" />}
             {change}
           </span>
         </div>
-        <p className={cn('text-3xl font-black mb-1', muted ? 'text-white/30' : 'text-white')}>
+        <p className={cn('text-3xl font-black mb-1', muted ? 'text-white/45' : 'text-white')}>
           {value}
         </p>
         <p className="text-sm text-white/40 font-medium">{label}</p>
@@ -368,7 +368,7 @@ export default function VenueDashboard() {
                   ) : openGigs.length === 0 ? (
                     <div className="py-16 text-center">
                       <p className="text-white/40 font-semibold text-sm">No gigs yet</p>
-                      <p className="text-white/20 text-xs mt-1 mb-4">
+                      <p className="text-white/40 text-xs mt-1 mb-4">
                         Post your first gig and it shows up here.
                       </p>
                       <Link href="/dashboard/venue/create-gig">
@@ -383,7 +383,7 @@ export default function VenueDashboard() {
                   ) : (
                     <>
                       {/* Table Header */}
-                      <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto] gap-4 px-4 py-3 border-b border-white/5 text-[11px] font-bold uppercase tracking-widest text-white/30">
+                      <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto] gap-4 px-4 py-3 border-b border-white/5 text-[11px] font-bold uppercase tracking-widest text-white/45">
                         <span>Gig</span>
                         <span className="text-center">Applicants</span>
                         <span className="text-center">Status</span>
@@ -439,7 +439,7 @@ export default function VenueDashboard() {
                                     'flex items-center gap-1 text-sm font-bold',
                                     (gig.applicant_count ?? 0) > 0
                                       ? 'text-white hover:text-[#00FFCC] transition-colors'
-                                      : 'text-white/30'
+                                      : 'text-white/45'
                                   )}
                                 >
                                   <Users className="w-3.5 h-3.5 sm:hidden md:block opacity-60" />
@@ -569,7 +569,7 @@ export default function VenueDashboard() {
                   </div>
                   <Zap className="w-4 h-4 text-[#00FFCC] fill-current" />
                 </div>
-                <p className="text-[11px] text-white/30 -mt-2 mb-3">
+                <p className="text-[11px] text-white/45 -mt-2 mb-3">
                   Shifts created when you hire an applicant. Check talent in and out here — checkout
                   computes the payout ledger entry.
                 </p>
@@ -580,7 +580,7 @@ export default function VenueDashboard() {
                       <CardContent className="p-6 text-center">
                         <UserCheck className="w-6 h-6 text-white/20 mx-auto mb-2" />
                         <p className="text-sm text-white/40">No shifts yet.</p>
-                        <p className="text-xs text-white/25 mt-1">
+                        <p className="text-xs text-white/40 mt-1">
                           Hire an applicant to schedule their shift.
                         </p>
                       </CardContent>

@@ -254,7 +254,7 @@ export default function VenueSchedulePage() {
               {DAY_LABELS.map((d) => (
                 <div
                   key={d}
-                  className="text-center text-[11px] font-bold text-white/30 py-1.5 uppercase tracking-wider"
+                  className="text-center text-[11px] font-bold text-white/45 py-1.5 uppercase tracking-wider"
                 >
                   {d}
                 </div>
@@ -345,7 +345,7 @@ export default function VenueSchedulePage() {
 
             {/* Legend */}
             <div className="flex flex-wrap items-center gap-5 pt-3 border-t border-white/5">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-white/30">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-white/45">
                 Legend:
               </p>
               {Object.entries(STATUS_CONFIG).map(([, cfg]) => (
@@ -359,7 +359,7 @@ export default function VenueSchedulePage() {
             {/* Undated drafts (legacy rows without a start time) */}
             {undated.length > 0 && (
               <div className="pt-2">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-white/30 mb-2">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-white/45 mb-2">
                   Undated gigs
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -406,8 +406,8 @@ export default function VenueSchedulePage() {
                     <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center mb-3">
                       <PlusCircle className="w-5 h-5 text-white/20" />
                     </div>
-                    <p className="text-sm font-bold text-white/30">No gigs posted</p>
-                    <p className="text-xs text-white/20 mt-1 mb-4">
+                    <p className="text-sm font-bold text-white/45">No gigs posted</p>
+                    <p className="text-xs text-white/40 mt-1 mb-4">
                       Nothing scheduled for this day
                     </p>
                     <Link href="/dashboard/venue/create-gig">
@@ -421,7 +421,7 @@ export default function VenueSchedulePage() {
                   </div>
                 ) : (
                   <>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-white/45">
                       {selectedGigs.length} Gig{selectedGigs.length > 1 ? 's' : ''} Scheduled
                     </p>
 
@@ -510,7 +510,7 @@ export default function VenueSchedulePage() {
 
                     {/* Summary */}
                     <div className="p-3 rounded-xl bg-[#1A1A1A] border border-white/5 space-y-2">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-white/45">
                         Day Summary
                       </p>
                       <div className="flex items-center justify-between text-xs">
@@ -533,7 +533,7 @@ export default function VenueSchedulePage() {
                             'font-bold',
                             selectedGigs.some((g) => g.status === 'PUBLISHED')
                               ? 'text-yellow-400'
-                              : 'text-white/30'
+                              : 'text-white/45'
                           )}
                         >
                           {
@@ -564,8 +564,8 @@ export default function VenueSchedulePage() {
                 <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-3">
                   <Zap className="w-6 h-6 text-white/20" />
                 </div>
-                <p className="text-sm font-bold text-white/30">Pick a day</p>
-                <p className="text-xs text-white/20 mt-1">Click any date to view or manage gigs</p>
+                <p className="text-sm font-bold text-white/45">Pick a day</p>
+                <p className="text-xs text-white/40 mt-1">Click any date to view or manage gigs</p>
               </div>
             )}
           </div>

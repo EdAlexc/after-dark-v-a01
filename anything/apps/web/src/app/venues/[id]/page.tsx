@@ -158,7 +158,7 @@ export default function VenueDetailPage() {
                     ) : null}
                   </p>
                   {venue.address && (
-                    <p className="text-xs text-white/30 mt-2">{venue.address}</p>
+                    <p className="text-xs text-white/45 mt-2">{venue.address}</p>
                   )}
                 </div>
               </header>

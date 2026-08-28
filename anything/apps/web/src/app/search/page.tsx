@@ -91,7 +91,7 @@ function SearchResults() {
               onKeyDown={(event) => event.key === 'Enter' && submit()}
               placeholder="Search gigs or talent…"
               aria-label="Search gigs or talent"
-              className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
+              className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
             />
           </div>
           <Button
@@ -145,7 +145,7 @@ function SearchResults() {
         ) : gigs.length === 0 && talent.length === 0 && venues.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-sm font-bold text-white/40">No matches for “{urlQuery}”.</p>
-            <p className="text-xs text-white/25 mt-1">
+            <p className="text-xs text-white/40 mt-1">
               Try a different word — search covers gig titles, descriptions, stage names, bios,
               and venues.
             </p>

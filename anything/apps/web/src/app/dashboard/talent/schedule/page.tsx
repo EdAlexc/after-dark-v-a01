@@ -278,7 +278,7 @@ export default function TalentSchedulePage() {
                     </div>
                   ) : (
                     <>
-                      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold uppercase text-white/30 mb-1">
+                      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold uppercase text-white/45 mb-1">
                         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
                           <span key={i}>{d}</span>
                         ))}
@@ -359,7 +359,7 @@ export default function TalentSchedulePage() {
                   {!selectedDay ? (
                     <div className="text-center py-10">
                       <CalendarDays className="w-8 h-8 text-white/10 mx-auto mb-2" />
-                      <p className="text-xs text-white/30">Pick a day to edit its slots</p>
+                      <p className="text-xs text-white/45">Pick a day to edit its slots</p>
                     </div>
                   ) : (
                     <>

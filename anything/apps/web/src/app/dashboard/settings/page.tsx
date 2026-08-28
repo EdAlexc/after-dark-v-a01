@@ -73,7 +73,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const inputCls =
-  'bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all w-full';
+  'bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all w-full';
 
 // ─── Password Field ────────────────────────────────────────────────────────────
 
@@ -102,7 +102,7 @@ function PasswordField({
         <button
           type="button"
           onClick={() => setShow(!show)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-white/45 hover:text-white/60 transition-colors"
         >
           {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
         </button>
@@ -297,7 +297,7 @@ function TwoFASetupModal({ onEnabled, onClose }: { onEnabled: () => void; onClos
                   {qrUrl && <img src={qrUrl} alt="2FA QR code" className="w-40 h-40" />}
                 </div>
                 {manualSecret && (
-                  <p className="text-[11px] text-white/30 text-center mt-2">
+                  <p className="text-[11px] text-white/45 text-center mt-2">
                     Or enter manually:{' '}
                     <code className="text-[#00FFCC] font-mono break-all">{manualSecret}</code>
                   </p>
@@ -329,7 +329,7 @@ function TwoFASetupModal({ onEnabled, onClose }: { onEnabled: () => void; onClos
                     )}
                   </button>
                 </div>
-                <p className="text-[11px] text-white/30 mt-1.5">
+                <p className="text-[11px] text-white/45 mt-1.5">
                   Each code works once if you lose your authenticator. Store them somewhere safe —
                   they won't be shown again, and{' '}
                   <span className="text-white/50 font-semibold">
@@ -811,7 +811,7 @@ function SettingsInner() {
                     title="Your login email cannot be changed here"
                   />
                 </div>
-                <p className="text-[11px] text-white/30">
+                <p className="text-[11px] text-white/45">
                   Your login email · Contact support to change it
                 </p>
               </Field>
@@ -888,7 +888,7 @@ function SettingsInner() {
               <Field label="TikTok">
                 <div className="relative">
                   <svg
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/45"
                     viewBox="0 0 24 24"
                     fill="currentColor"
                   >
@@ -907,7 +907,7 @@ function SettingsInner() {
               <Field label="Twitter / X">
                 <div className="relative">
                   <svg
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/45"
                     viewBox="0 0 24 24"
                     fill="currentColor"
                   >
@@ -1029,7 +1029,7 @@ function SettingsInner() {
                   className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
                     form.twoFactorEnabled
                       ? 'bg-green-500/10 text-green-400'
-                      : 'bg-white/5 text-white/30'
+                      : 'bg-white/5 text-white/45'
                   }`}
                 >
                   {form.twoFactorEnabled ? (
@@ -1057,7 +1057,7 @@ function SettingsInner() {
                     {['Google Authenticator', 'Microsoft Authenticator', 'Authy'].map((app) => (
                       <span
                         key={app}
-                        className="text-[10px] font-semibold text-white/30 border border-white/10 rounded-full px-2.5 py-0.5 flex items-center gap-1"
+                        className="text-[10px] font-semibold text-white/45 border border-white/10 rounded-full px-2.5 py-0.5 flex items-center gap-1"
                       >
                         <QrCode className="w-2.5 h-2.5" />
                         {app}
@@ -1136,7 +1136,7 @@ function SettingsInner() {
                 </Button>
               </div>
 
-              <p className="text-[11px] text-white/25 leading-relaxed border-t border-white/5 pt-4">
+              <p className="text-[11px] text-white/40 leading-relaxed border-t border-white/5 pt-4">
                 Read our{' '}
                 <a href="/legal/privacy" className="text-white/40 hover:text-[#00FFCC] underline">
                   Privacy Policy

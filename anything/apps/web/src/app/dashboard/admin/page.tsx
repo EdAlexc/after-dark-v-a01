@@ -547,7 +547,7 @@ export default function AdminDashboard() {
                               </span>
                             </div>
                             <p className="text-sm text-white/80 truncate">{report.reason}</p>
-                            <p className="text-[11px] text-white/30 mt-0.5">
+                            <p className="text-[11px] text-white/45 mt-0.5">
                               #{report.id} · by {report.reporter_email ?? 'deleted user'} ·{' '}
                               {when(report.created_at)}
                               {report.resolution_note ? ` · note: ${report.resolution_note}` : ''}
@@ -637,7 +637,7 @@ export default function AdminDashboard() {
                               {user.name ?? 'Unnamed'}{' '}
                               <span className="text-white/40 font-normal">{user.email}</span>
                             </p>
-                            <p className="text-[11px] text-white/30">
+                            <p className="text-[11px] text-white/45">
                               {user.role ?? 'no role'} · joined {when(user.created_at)}
                               {user.open_reports > 0 && (
                                 <span className="text-red-400 font-bold">
@@ -695,7 +695,7 @@ export default function AdminDashboard() {
                             >
                               {gig.title}
                             </Link>
-                            <p className="text-[11px] text-white/30">
+                            <p className="text-[11px] text-white/45">
                               {gig.venue_name ?? gig.venue_email} · {gig.status} ·{' '}
                               {gig.applicant_count} applicant{gig.applicant_count === 1 ? '' : 's'}
                               {gig.open_reports > 0 && (
@@ -738,7 +738,7 @@ export default function AdminDashboard() {
                     {(auditData?.logs ?? []).map((log) => (
                       <div key={log.id} className="p-3">
                         <p className="text-xs font-bold text-white/80">{log.action}</p>
-                        <p className="text-[11px] text-white/30 break-all">
+                        <p className="text-[11px] text-white/45 break-all">
                           {log.actor_id} → {log.entity_type}
                           {log.entity_id ? ` ${log.entity_id.slice(0, 13)}…` : ''} ·{' '}
                           {when(log.created_at)}
@@ -750,7 +750,7 @@ export default function AdminDashboard() {
                     )}
                   </div>
                 </Card>
-                <p className="text-[11px] text-white/30 mt-2">
+                <p className="text-[11px] text-white/45 mt-2">
                   Newest 50 events; use Export for the filtered CSV (capped at 10,000 rows).
                 </p>
               </section>

@@ -166,7 +166,7 @@ function UploadZone({
           <div className="w-9 h-9 rounded-xl bg-[#00FFCC]/10 flex items-center justify-center">
             <ImagePlus className="w-4 h-4 text-[#00FFCC]/60" />
           </div>
-          <p className="text-[11px] text-white/30 text-center leading-tight">{label}</p>
+          <p className="text-[11px] text-white/45 text-center leading-tight">{label}</p>
         </div>
       )}
     </div>
@@ -231,7 +231,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const inputCls =
-  'bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/20 transition-all';
+  'bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-[#00FFCC] focus:ring-1 focus:ring-[#00FFCC] placeholder:text-white/35 transition-all';
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
@@ -415,7 +415,7 @@ export default function VenueProfilePage() {
           <Section title="Venue Media" subtitle="Show talent what your space looks and feels like">
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div className="md:col-span-2">
-                <p className="text-[11px] text-white/30 uppercase tracking-widest font-semibold mb-2">
+                <p className="text-[11px] text-white/45 uppercase tracking-widest font-semibold mb-2">
                   Venue Logo / Primary Photo
                 </p>
                 <UploadZone
@@ -426,7 +426,7 @@ export default function VenueProfilePage() {
                 />
               </div>
               <div className="md:col-span-3">
-                <p className="text-[11px] text-white/30 uppercase tracking-widest font-semibold mb-2">
+                <p className="text-[11px] text-white/45 uppercase tracking-widest font-semibold mb-2">
                   Gallery (Up to 4 Photos)
                 </p>
                 <div className="grid grid-cols-2 gap-2">
@@ -571,7 +571,7 @@ export default function VenueProfilePage() {
                         />
                       </button>
                       {h.closed ? (
-                        <span className="text-xs text-white/25 italic">Closed</span>
+                        <span className="text-xs text-white/40 italic">Closed</span>
                       ) : (
                         <div className="flex items-center gap-2">
                           <input
@@ -580,7 +580,7 @@ export default function VenueProfilePage() {
                             onChange={(e) => setHours(day, 'open', e.target.value)}
                             className="bg-[#121212] border border-white/10 rounded-lg px-2 py-1 text-xs text-white outline-none focus:border-[#00FFCC]"
                           />
-                          <span className="text-white/30 text-xs">to</span>
+                          <span className="text-white/45 text-xs">to</span>
                           <input
                             type="time"
                             value={h.close}

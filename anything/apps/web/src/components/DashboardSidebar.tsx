@@ -436,7 +436,7 @@ function MobileDrawer({
                     className={cn(
                       'w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200',
                       isOpen && 'rotate-180',
-                      hasActiveChild ? 'text-[#00FFCC]/60' : 'text-white/20'
+                      hasActiveChild ? 'text-[#00FFCC]/60' : 'text-white/40'
                     )}
                   />
                 </button>
@@ -636,7 +636,7 @@ export default function DashboardSidebar({ role, userName }: DashboardSidebarPro
           )}
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="text-white/30 hover:text-white transition-colors flex-shrink-0"
+            className="text-white/45 hover:text-white transition-colors flex-shrink-0"
             aria-label="Toggle sidebar"
           >
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -707,7 +707,7 @@ export default function DashboardSidebar({ role, userName }: DashboardSidebarPro
                         className={cn(
                           'w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200',
                           isOpen && 'rotate-180',
-                          hasActiveChild ? 'text-[#00FFCC]/60' : 'text-white/20'
+                          hasActiveChild ? 'text-[#00FFCC]/60' : 'text-white/40'
                         )}
                       />
                     </>

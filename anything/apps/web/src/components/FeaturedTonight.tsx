@@ -84,7 +84,7 @@ function FeaturedGigCard({ gig, tonight }: { gig: ApiGig; tonight: boolean }) {
               <span className="font-bold text-white">{formatRate(gig)}</span>
             </div>
           </div>
-          <Button className="w-full bg-white/5 hover:bg-white/10 border border-white/10">
+          <Button className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white">
             View Details
           </Button>
         </CardContent>
@@ -143,7 +143,7 @@ export function FeaturedTonight() {
         <CardContent className="py-16 flex flex-col items-center text-center gap-3">
           <CalendarDays className="w-10 h-10 text-[#00FFCC]/30" />
           <p className="text-white/60 font-bold">Tonight's lineups are coming</p>
-          <p className="text-white/30 text-sm max-w-sm">
+          <p className="text-white/45 text-sm max-w-sm">
             Venues are posting new gigs all the time. Create a profile and be first in line when
             they drop.
           </p>

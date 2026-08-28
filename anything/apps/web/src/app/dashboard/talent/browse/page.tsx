@@ -279,12 +279,12 @@ export default function BrowseGigsPage() {
                 placeholder="Search gigs, venues, roles…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
+                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-[#00FFCC]/40 transition-colors"
               />
               {search && (
                 <button
                   onClick={() => setSearch('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/45 hover:text-white"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -499,7 +499,7 @@ export default function BrowseGigsPage() {
                       <Search className="w-8 h-8 text-white/20" />
                     </div>
                     <p className="text-white/40 font-semibold">No gigs match your filters</p>
-                    <p className="text-white/20 text-sm mt-1">
+                    <p className="text-white/40 text-sm mt-1">
                       Try adjusting your search or filters
                     </p>
                   </div>
@@ -564,7 +564,7 @@ export default function BrowseGigsPage() {
             </div>
 
             {hotGigs.length === 0 ? (
-              <p className="text-xs text-white/30 leading-relaxed">
+              <p className="text-xs text-white/45 leading-relaxed">
                 Nothing starting in the next 24 hours yet. Check back after venues post tonight's
                 lineups.
               </p>

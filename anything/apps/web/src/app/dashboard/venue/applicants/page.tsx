@@ -155,7 +155,7 @@ export default function VenueApplicantsPage() {
                 <Users className="w-8 h-8 text-white/20" />
               </div>
               <p className="text-white/40 font-semibold">No applications yet</p>
-              <p className="text-white/20 text-sm mt-1">
+              <p className="text-white/40 text-sm mt-1">
                 Publish gigs and applications land here for review.
               </p>
             </div>
@@ -318,7 +318,7 @@ export default function VenueApplicantsPage() {
                             </>
                           )}
                           {application.status === 'WITHDRAWN' && (
-                            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-white/5 text-white/30 border border-white/5">
+                            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-white/5 text-white/45 border border-white/5">
                               Withdrawn by talent
                             </span>
                           )}
